@@ -30,7 +30,7 @@ use notify_rust::Notification;
 use regex::Regex;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::{sleep, Duration};
@@ -46,6 +46,11 @@ const MAX_RETRY_ATTEMPTS: u32 = 5;
 
 /// Delay between reconnection attempts in seconds
 const RETRY_DELAY_SECS: u64 = 5;
+
+/// Pre-compiled regex for extracting server identifiers from filenames
+/// Matches patterns like "us8399", "uk1234", "de5678" (2 letters + digits)
+static SERVER_NAME_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^([a-zA-Z]{2}\d+)").expect("Invalid regex pattern"));
 
 /// VPN connection state
 #[derive(Debug, Clone, PartialEq)]
@@ -134,6 +139,15 @@ impl VpnActor {
         }
     }
 
+    /// Check if the child process is still running
+    /// Returns true if the process exists and has not exited
+    fn is_child_running(&mut self) -> bool {
+        self.child
+            .as_mut()
+            .map(|c| c.try_wait().ok().flatten().is_none())
+            .unwrap_or(false)
+    }
+
     /// Run the actor's main loop
     pub async fn run(mut self) {
         // Initial server refresh
@@ -164,8 +178,10 @@ impl VpnActor {
                     if let Some(ref mut child) = self.child {
                         child.wait().await
                     } else {
-                        // Sleep forever if no child to monitor
-                        std::future::pending::<std::io::Result<std::process::ExitStatus>>().await
+                        // Sleep for a long time if no child to monitor
+                        // Using a bounded sleep instead of pending() to avoid potential resource issues
+                        sleep(Duration::from_secs(86400)).await; // 24 hours
+                        Ok(std::process::ExitStatus::default())
                     }
                 } => {
                     self.handle_process_exit().await;
@@ -209,7 +225,7 @@ impl VpnActor {
                 sleep(Duration::from_secs(3)).await;
 
                 // Check if process is still running (connection likely successful)
-                if self.child.as_mut().map(|c| c.try_wait().ok().flatten().is_none()).unwrap_or(false) {
+                if self.is_child_running() {
                     let mut state = self.state.write().await;
                     state.state = VpnState::Connected(server.to_string());
                     drop(state);
@@ -340,7 +356,7 @@ impl VpnActor {
                     sleep(Duration::from_secs(3)).await;
 
                     // Check if process is still running
-                    if self.child.as_mut().map(|c| c.try_wait().ok().flatten().is_none()).unwrap_or(false) {
+                    if self.is_child_running() {
                         let mut state = self.state.write().await;
                         state.state = VpnState::Connected(server.to_string());
                         drop(state);
@@ -456,8 +472,7 @@ fn clean_server_name(filename: &str) -> String {
     let name = filename.trim_end_matches(".ovpn");
 
     // Try to extract just the server identifier (before first dot)
-    let re = Regex::new(r"^([a-zA-Z]{2}\d+)").unwrap();
-    if let Some(caps) = re.captures(name) {
+    if let Some(caps) = SERVER_NAME_REGEX.captures(name) {
         return caps.get(1).map(|m| m.as_str().to_string()).unwrap_or_else(|| name.to_string());
     }
 
