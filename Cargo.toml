@@ -18,8 +18,8 @@ readme = "README.md"
 # - D-Bus for StatusNotifierItem (SNI) tray support on KDE Plasma
 
 [dependencies]
-# Async runtime with required features
-tokio = { version = "1", features = ["full", "signal"] }
+# Async runtime - only features we actually need (reduced from "full")
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "process"] }
 
 # Native KDE/SNI tray support
 ksni = { version = "0.3", features = ["blocking"] }
@@ -33,3 +33,18 @@ notify-rust = "4"
 
 # Ctrl-C handler for graceful shutdown
 ctrlc = "3.4"
+
+# Lazy static for one-time icon generation
+once_cell = "1.19"
+
+[profile.release]
+# Link-time optimization for smaller, faster binary
+lto = "thin"
+# Single codegen unit for better optimization (slightly slower compile)
+codegen-units = 1
+# Strip debug symbols
+strip = true
+# Optimize for size with performance (z = size, s = balanced, 3 = speed)
+opt-level = "s"
+# Abort on panic (smaller binary, no unwinding)
+panic = "abort"

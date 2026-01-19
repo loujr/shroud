@@ -21,6 +21,7 @@
 use ksni::{menu::CheckmarkItem, menu::StandardItem, MenuItem, Tray};
 use log::{debug, error, info, warn};
 use notify_rust::Notification;
+use once_cell::sync::Lazy;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -897,53 +898,48 @@ impl VpnSupervisor {
 //
 
 /// Get the active VPN connection name from NetworkManager (legacy compatibility wrapper)
+#[inline]
 async fn nm_get_active_vpn() -> Option<String> {
-    // Use the enhanced function and filter for fully activated VPNs only
     nm_get_active_vpn_with_state().await
         .filter(|info| info.state == NmVpnState::Activated)
         .map(|info| info.name)
 }
 
-/// Get the active VPN with detailed state information from NetworkManager
-/// This detects VPNs in activating, activated, or deactivating states
-async fn nm_get_active_vpn_with_state() -> Option<ActiveVpnInfo> {
-    debug!("Querying active VPN with state from NetworkManager");
-
-    let output = match timeout(
+/// Run nmcli and return the output, handling timeout and errors
+async fn run_nmcli(args: &[&str]) -> Option<std::process::Output> {
+    match timeout(
         Duration::from_secs(NMCLI_TIMEOUT_SECS),
         Command::new("nmcli")
-            .args(["-t", "-f", "NAME,TYPE,STATE", "con", "show", "--active"])
+            .args(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output(),
     )
     .await
     {
-        Ok(Ok(output)) => output,
+        Ok(Ok(output)) if output.status.success() => Some(output),
+        Ok(Ok(_)) => {
+            debug!("nmcli returned non-zero exit status");
+            None
+        }
         Ok(Err(e)) => {
             warn!("Failed to execute nmcli: {}", e);
-            return None;
+            None
         }
         Err(_) => {
             warn!("nmcli timed out after {} seconds", NMCLI_TIMEOUT_SECS);
-            return None;
+            None
         }
-    };
-
-    if !output.status.success() {
-        debug!("nmcli returned non-zero exit status");
-        return None;
     }
+}
 
-    // Collect all active VPNs with their states
-    let mut active_vpns: Vec<ActiveVpnInfo> = Vec::new();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    
-    debug!("nmcli active connections output: {}", stdout.trim());
+/// Parse VPN connections from nmcli output
+/// Returns all VPNs with their states
+fn parse_active_vpns(stdout: &str) -> Vec<ActiveVpnInfo> {
+    let mut vpns = Vec::new();
     
     for line in stdout.lines() {
-        // Split on colon, but only take the last 2 fields (TYPE and STATE)
-        // This handles connection names that contain colons
+        // Split on colon from the right to handle names with colons
         let parts: Vec<&str> = line.rsplitn(3, ':').collect();
         if parts.len() >= 3 {
             let state_str = parts[0];
@@ -951,145 +947,69 @@ async fn nm_get_active_vpn_with_state() -> Option<ActiveVpnInfo> {
             let name = parts[2];
             
             if conn_type == "vpn" {
-                let state = match state_str {
-                    "activated" => NmVpnState::Activated,
-                    "activating" => NmVpnState::Activating,
-                    "deactivating" => NmVpnState::Deactivating,
-                    _ => {
-                        debug!("Unknown VPN state '{}' for connection '{}'", state_str, name);
-                        continue;
-                    }
-                };
-                
-                debug!("Found VPN '{}' in state '{:?}'", name, state);
-                active_vpns.push(ActiveVpnInfo {
-                    name: name.to_string(),
-                    state,
-                });
+                if let Some(state) = match state_str {
+                    "activated" => Some(NmVpnState::Activated),
+                    "activating" => Some(NmVpnState::Activating),
+                    "deactivating" => Some(NmVpnState::Deactivating),
+                    _ => None,
+                } {
+                    vpns.push(ActiveVpnInfo {
+                        name: name.to_string(),
+                        state,
+                    });
+                }
             }
         }
     }
+    
+    vpns
+}
 
+/// Get the active VPN with detailed state information from NetworkManager
+async fn nm_get_active_vpn_with_state() -> Option<ActiveVpnInfo> {
+    let output = run_nmcli(&["-t", "-f", "NAME,TYPE,STATE", "con", "show", "--active"]).await?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    debug!("nmcli active connections: {}", stdout.trim());
+    
+    let vpns = parse_active_vpns(&stdout);
+    
     // Priority: activated > activating > deactivating
-    // Return the "most connected" VPN
-    if let Some(activated) = active_vpns.iter().find(|v| v.state == NmVpnState::Activated) {
-        debug!("Found activated VPN: {}", activated.name);
-        return Some(activated.clone());
-    }
-    
-    if let Some(activating) = active_vpns.iter().find(|v| v.state == NmVpnState::Activating) {
-        debug!("Found activating VPN: {}", activating.name);
-        return Some(activating.clone());
-    }
-    
-    if let Some(deactivating) = active_vpns.iter().find(|v| v.state == NmVpnState::Deactivating) {
-        debug!("Found deactivating VPN: {}", deactivating.name);
-        return Some(deactivating.clone());
-    }
-
-    debug!("No active VPN found");
-    None
+    vpns.iter()
+        .find(|v| v.state == NmVpnState::Activated)
+        .or_else(|| vpns.iter().find(|v| v.state == NmVpnState::Activating))
+        .or_else(|| vpns.iter().find(|v| v.state == NmVpnState::Deactivating))
+        .cloned()
 }
 
 /// Get the precise state of a specific VPN connection
-/// Returns None if the connection is not active
+#[inline]
 async fn nm_get_vpn_state(connection_name: &str) -> Option<NmVpnState> {
-    debug!("Querying state for VPN connection: {}", connection_name);
-
-    let output = match timeout(
-        Duration::from_secs(NMCLI_TIMEOUT_SECS),
-        Command::new("nmcli")
-            .args(["-t", "-f", "NAME,TYPE,STATE", "con", "show", "--active"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output(),
-    )
-    .await
-    {
-        Ok(Ok(output)) => output,
-        Ok(Err(e)) => {
-            warn!("Failed to execute nmcli: {}", e);
-            return None;
-        }
-        Err(_) => {
-            warn!("nmcli timed out after {} seconds", NMCLI_TIMEOUT_SECS);
-            return None;
-        }
-    };
-
-    if !output.status.success() {
-        return None;
-    }
-
+    let output = run_nmcli(&["-t", "-f", "NAME,TYPE,STATE", "con", "show", "--active"]).await?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     
-    for line in stdout.lines() {
-        let parts: Vec<&str> = line.rsplitn(3, ':').collect();
-        if parts.len() >= 3 {
-            let state_str = parts[0];
-            let conn_type = parts[1];
-            let name = parts[2];
-            
-            if conn_type == "vpn" && name == connection_name {
-                let state = match state_str {
-                    "activated" => NmVpnState::Activated,
-                    "activating" => NmVpnState::Activating,
-                    "deactivating" => NmVpnState::Deactivating,
-                    _ => return None,
-                };
-                debug!("VPN '{}' state: {:?}", connection_name, state);
-                return Some(state);
-            }
-        }
-    }
-
-    debug!("VPN '{}' not found in active connections", connection_name);
-    None
+    parse_active_vpns(&stdout)
+        .into_iter()
+        .find(|v| v.name == connection_name)
+        .map(|v| v.state)
 }
 
 /// List all VPN connections configured in NetworkManager
 async fn nm_list_vpn_connections() -> Vec<String> {
     debug!("Listing VPN connections from NetworkManager");
 
-    let output = match timeout(
-        Duration::from_secs(NMCLI_TIMEOUT_SECS),
-        Command::new("nmcli")
-            .args(["-t", "-f", "NAME,TYPE", "con", "show"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output(),
-    )
-    .await
-    {
-        Ok(Ok(output)) => output,
-        Ok(Err(e)) => {
-            warn!("Failed to execute nmcli: {}", e);
-            return Vec::new();
-        }
-        Err(_) => {
-            warn!("nmcli timed out after {} seconds", NMCLI_TIMEOUT_SECS);
-            return Vec::new();
-        }
+    let output = match run_nmcli(&["-t", "-f", "NAME,TYPE", "con", "show"]).await {
+        Some(o) => o,
+        None => return Vec::new(),
     };
-
-    if !output.status.success() {
-        warn!("nmcli returned non-zero exit status");
-        return Vec::new();
-    }
-
+    
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut connections = Vec::new();
+    
     for line in stdout.lines() {
-        // Split on colon from the right, only split on last colon (TYPE field)
-        // This handles connection names that contain colons
         let parts: Vec<&str> = line.rsplitn(2, ':').collect();
-        if parts.len() >= 2 {
-            let conn_type = parts[0];
-            let name = parts[1];
-            
-            if conn_type == "vpn" {
-                connections.push(name.to_string());
-            }
+        if parts.len() >= 2 && parts[0] == "vpn" {
+            connections.push(parts[1].to_string());
         }
     }
 
@@ -1099,53 +1019,16 @@ async fn nm_list_vpn_connections() -> Vec<String> {
 
 /// Get the UUID of a VPN connection by name
 async fn nm_get_vpn_uuid(connection_name: &str) -> Option<String> {
-    debug!("Getting UUID for VPN connection: {}", connection_name);
-
-    let output = match timeout(
-        Duration::from_secs(NMCLI_TIMEOUT_SECS),
-        Command::new("nmcli")
-            .args(["-t", "-f", "UUID,NAME,TYPE", "con", "show"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output(),
-    )
-    .await
-    {
-        Ok(Ok(output)) => output,
-        Ok(Err(e)) => {
-            warn!("Failed to execute nmcli: {}", e);
-            return None;
-        }
-        Err(_) => {
-            warn!("nmcli timed out after {} seconds", NMCLI_TIMEOUT_SECS);
-            return None;
-        }
-    };
-
-    if !output.status.success() {
-        debug!("nmcli returned non-zero exit status");
-        return None;
-    }
-
+    let output = run_nmcli(&["-t", "-f", "UUID,NAME,TYPE", "con", "show"]).await?;
     let stdout = String::from_utf8_lossy(&output.stdout);
+    
     for line in stdout.lines() {
-        // Format: UUID:NAME:TYPE
-        // Handle connection names that contain colons by splitting from the right
-        // rsplitn returns parts in reverse order: [TYPE, NAME, UUID]
+        // Format: UUID:NAME:TYPE - split from right to handle names with colons
         let parts: Vec<&str> = line.rsplitn(3, ':').collect();
-        if parts.len() >= 3 {
-            let conn_type = parts[0];  // Last field (TYPE)
-            let name = parts[1];       // Middle field (NAME)
-            let uuid = parts[2];       // First field (UUID)
-
-            if conn_type == "vpn" && name == connection_name {
-                debug!("Found UUID for {}: {}", connection_name, uuid);
-                return Some(uuid.to_string());
-            }
+        if parts.len() >= 3 && parts[0] == "vpn" && parts[1] == connection_name {
+            return Some(parts[2].to_string());
         }
     }
-
-    debug!("No UUID found for connection: {}", connection_name);
     None
 }
 
@@ -1406,13 +1289,14 @@ async fn kill_orphan_openvpn_processes() {
 
 /// Extract a short display name from a VPN connection name
 /// e.g., "ie211-dublin" -> "ie211" or "us8399-ashburn" -> "us8399"
+#[inline]
 fn extract_short_name(full_name: &str) -> &str {
     // Take everything before the first hyphen, or the whole name if no hyphen
     full_name.split('-').next().unwrap_or(full_name)
 }
 
 /// Icon type for status indication
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum IconType {
     Connected,
     Connecting,
@@ -1420,19 +1304,30 @@ enum IconType {
     Failed,
 }
 
-/// Create a status icon with a shield shape in ARGB32 format
-///
+/// Pre-computed icons for each state (generated once at startup)
+static ICON_CONNECTED: Lazy<Vec<ksni::Icon>> = Lazy::new(|| generate_icon_data(IconType::Connected));
+static ICON_CONNECTING: Lazy<Vec<ksni::Icon>> = Lazy::new(|| generate_icon_data(IconType::Connecting));
+static ICON_DISCONNECTED: Lazy<Vec<ksni::Icon>> = Lazy::new(|| generate_icon_data(IconType::Disconnected));
+static ICON_FAILED: Lazy<Vec<ksni::Icon>> = Lazy::new(|| generate_icon_data(IconType::Failed));
+
+/// Get cached status icons (avoids regenerating on every tray update)
+#[inline]
+fn get_status_icon(icon_type: IconType) -> Vec<ksni::Icon> {
+    match icon_type {
+        IconType::Connected => ICON_CONNECTED.clone(),
+        IconType::Connecting => ICON_CONNECTING.clone(),
+        IconType::Disconnected => ICON_DISCONNECTED.clone(),
+        IconType::Failed => ICON_FAILED.clone(),
+    }
+}
+
+/// Generate icon data for a specific type
 /// Returns icons in common sizes (16x16, 24x24, 32x32, 48x48) for different DPI scales.
 /// The data is in ARGB32 format with network byte order (big endian).
-/// Each icon type has a distinctive color and symbol:
-/// - Connected: Green with checkmark
-/// - Connecting: Amber with dots  
-/// - Disconnected: Gray with dash
-/// - Failed: Red with X
-fn create_status_icon(icon_type: IconType) -> Vec<ksni::Icon> {
-    let sizes: [i32; 4] = [16, 24, 32, 48];
+fn generate_icon_data(icon_type: IconType) -> Vec<ksni::Icon> {
+    const SIZES: [i32; 4] = [16, 24, 32, 48];
     
-    sizes
+    SIZES
         .iter()
         .map(|&size| {
             let mut data = Vec::with_capacity((size * size * 4) as usize);
@@ -1606,19 +1501,15 @@ impl Tray for VpnTray {
     }
 
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        // Return status icons with recognizable symbols
+        // Return cached status icons (generated once at startup)
         let state = self.cached_state.read().unwrap();
         match state.state {
-            // Green circle with checkmark for connected
-            VpnState::Connected { .. } => create_status_icon(IconType::Connected),
-            // Yellow circle with dots for connecting/reconnecting
+            VpnState::Connected { .. } => get_status_icon(IconType::Connected),
             VpnState::Connecting { .. } | VpnState::Reconnecting { .. } => {
-                create_status_icon(IconType::Connecting)
+                get_status_icon(IconType::Connecting)
             }
-            // Red circle with X for failed
-            VpnState::Failed { .. } => create_status_icon(IconType::Failed),
-            // Gray circle with dash for disconnected
-            VpnState::Disconnected => create_status_icon(IconType::Disconnected),
+            VpnState::Failed { .. } => get_status_icon(IconType::Failed),
+            VpnState::Disconnected => get_status_icon(IconType::Disconnected),
         }
     }
 
@@ -1867,8 +1758,9 @@ async fn main() {
         }
     };
     
-    // Register cleanup on exit
+    // Register cleanup on exit (Ctrl-C and SIGTERM)
     ctrlc::set_handler(move || {
+        info!("Shutdown signal received, cleaning up...");
         release_instance_lock();
         std::process::exit(0);
     }).expect("Error setting Ctrl-C handler");
@@ -1878,8 +1770,8 @@ async fn main() {
     // Create shared state
     let state = Arc::new(RwLock::new(SharedState::default()));
 
-    // Create command channel
-    let (tx, rx) = mpsc::channel(32);
+    // Create command channel (smaller buffer is fine for this use case)
+    let (tx, rx) = mpsc::channel(16);
 
     // Create tray handle container (using std::sync::Mutex for blocking context compatibility)
     let tray_handle = Arc::new(std::sync::Mutex::new(None));
@@ -1898,7 +1790,6 @@ async fn main() {
         use ksni::blocking::TrayMethods;
         match tray_service.spawn() {
             Ok(handle) => {
-                // Store handle using std::sync::Mutex (no async needed)
                 if let Ok(mut guard) = tray_handle_clone.lock() {
                     *guard = Some(handle);
                 }
@@ -1910,10 +1801,8 @@ async fn main() {
         }
     });
 
-    // Keep the main task alive
-    loop {
-        sleep(Duration::from_secs(60)).await;
-    }
+    // Keep the main task alive with a more efficient pending future
+    std::future::pending::<()>().await;
 }
 
 #[cfg(test)]
