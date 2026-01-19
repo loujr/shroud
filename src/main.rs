@@ -36,7 +36,7 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::{sleep, Duration};
 
 /// Interval for polling NetworkManager state in seconds
-const NM_POLL_INTERVAL_SECS: u64 = 3;
+const NM_POLL_INTERVAL_SECS: u64 = 5;
 
 /// Path to the OpenVPN configuration directory
 const OVPN_CONFIG_DIR: &str = "/etc/openvpn";
@@ -512,66 +512,76 @@ impl VpnActor {
         // Query NM for active VPN connections
         let nm_vpn = query_nm_active_vpn().await;
 
-        let mut state = self.state.write().await;
+        let needs_tray_update = {
+            let mut state = self.state.write().await;
 
-        match (&state.state, &nm_vpn) {
-            // Case 1: NM shows VPN connected, but we show disconnected
-            // -> Update to Connected (External)
-            (VpnState::Disconnected, Some((conn_name, server_name))) => {
-                // Only update if we didn't intentionally disconnect
-                if !state.intentional_disconnect {
-                    state.state = VpnState::Connected {
-                        server: server_name.clone(),
-                        source: VpnSource::External,
-                    };
-                    state.nm_connection_name = Some(conn_name.clone());
-                    drop(state);
-                    self.update_tray().await;
+            match (&state.state.clone(), &nm_vpn) {
+                // Case 1: NM shows VPN connected, but we show disconnected
+                // -> Update to Connected (External)
+                (VpnState::Disconnected, Some((conn_name, server_name))) => {
+                    // Only update if we didn't intentionally disconnect
+                    if !state.intentional_disconnect {
+                        state.state = VpnState::Connected {
+                            server: server_name.clone(),
+                            source: VpnSource::External,
+                        };
+                        state.nm_connection_name = Some(conn_name.clone());
+                        true
+                    } else {
+                        false
+                    }
                 }
-            }
 
-            // Case 2: NM shows no VPN, but we show connected (external)
-            // -> Update to Disconnected
-            (VpnState::Connected { source: VpnSource::External, .. }, None) => {
-                state.state = VpnState::Disconnected;
-                state.nm_connection_name = None;
-                drop(state);
-                self.update_tray().await;
-            }
-
-            // Case 3: NM shows VPN connected, we show connected (app-initiated)
-            // -> App process may have been picked up by NM, keep as App
-            (VpnState::Connected { source: VpnSource::App, .. }, Some(_)) => {
-                // No action needed, app-initiated connection still valid
-            }
-
-            // Case 4: NM shows different VPN than external state
-            (VpnState::Connected { source: VpnSource::External, server: current }, Some((conn_name, new_server))) => {
-                if current != new_server {
-                    state.state = VpnState::Connected {
-                        server: new_server.clone(),
-                        source: VpnSource::External,
-                    };
-                    state.nm_connection_name = Some(conn_name.clone());
-                    drop(state);
-                    self.update_tray().await;
+                // Case 2: NM shows no VPN, but we show connected (external)
+                // -> Update to Disconnected
+                (VpnState::Connected { source: VpnSource::External, .. }, None) => {
+                    state.state = VpnState::Disconnected;
+                    state.nm_connection_name = None;
+                    true
                 }
-            }
 
-            // Case 5: NM shows VPN during connecting/retrying state
-            // -> Trust the internal state as we're actively managing it
-            (VpnState::Connecting(_) | VpnState::Retrying { .. }, _) => {
-                // No action during transitional states
-            }
+                // Case 3: NM shows VPN connected, we show connected (app-initiated)
+                // -> App process may have been picked up by NM, keep as App
+                (VpnState::Connected { source: VpnSource::App, .. }, Some(_)) => {
+                    // No action needed, app-initiated connection still valid
+                    false
+                }
 
-            // Case 6: NM shows no VPN, app shows connected (app-initiated)
-            // -> The process exit handler will deal with this
-            (VpnState::Connected { source: VpnSource::App, .. }, None) => {
-                // Let the process monitor handle this
-            }
+                // Case 4: NM shows different VPN than external state
+                (VpnState::Connected { source: VpnSource::External, server: current }, Some((conn_name, new_server))) => {
+                    if current != new_server {
+                        state.state = VpnState::Connected {
+                            server: new_server.clone(),
+                            source: VpnSource::External,
+                        };
+                        state.nm_connection_name = Some(conn_name.clone());
+                        true
+                    } else {
+                        false
+                    }
+                }
 
-            // Default: No state change needed
-            _ => {}
+                // Case 5: NM shows VPN during connecting/retrying state
+                // -> Trust the internal state as we're actively managing it
+                (VpnState::Connecting(_) | VpnState::Retrying { .. }, _) => {
+                    // No action during transitional states
+                    false
+                }
+
+                // Case 6: NM shows no VPN, app shows connected (app-initiated)
+                // -> The process exit handler will deal with this
+                (VpnState::Connected { source: VpnSource::App, .. }, None) => {
+                    // Let the process monitor handle this
+                    false
+                }
+
+                // Default: No state change needed
+                _ => false,
+            }
+        }; // state lock is released here
+
+        if needs_tray_update {
+            self.update_tray().await;
         }
     }
 
@@ -618,6 +628,8 @@ async fn scan_ovpn_files() -> Vec<String> {
 /// None otherwise.
 ///
 /// Uses `nmcli -t -f NAME,TYPE,STATE con show --active` to find active VPNs.
+/// Note: nmcli output format is "NAME:TYPE:STATE" but connection names can
+/// contain colons, so we parse from the end to get TYPE and STATE reliably.
 async fn query_nm_active_vpn() -> Option<(String, String)> {
     let output = Command::new("nmcli")
         .args(["-t", "-f", "NAME,TYPE,STATE", "con", "show", "--active"])
@@ -634,17 +646,23 @@ async fn query_nm_active_vpn() -> Option<(String, String)> {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Parse output: each line is "NAME:TYPE:STATE"
-    // Look for lines where TYPE is "vpn" and STATE is "activated"
+    // Connection names can contain colons, so we parse from the right
+    // to reliably get TYPE and STATE, then the rest is the NAME
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.split(':').collect();
-        if parts.len() >= 3 {
-            let name = parts[0];
-            let conn_type = parts[1];
-            let state = parts[2];
+        // Split into at most 3 parts from the right
+        // Format: NAME:TYPE:STATE where NAME may contain colons
+        if let Some(last_colon) = line.rfind(':') {
+            let state = &line[last_colon + 1..];
+            let rest = &line[..last_colon];
+            
+            if let Some(second_last_colon) = rest.rfind(':') {
+                let conn_type = &rest[second_last_colon + 1..];
+                let name = &rest[..second_last_colon];
 
-            if conn_type == "vpn" && state == "activated" {
-                // Use connection name as both the connection identifier and display name
-                return Some((name.to_string(), name.to_string()));
+                if conn_type == "vpn" && state == "activated" {
+                    // Use connection name as both the connection identifier and display name
+                    return Some((name.to_string(), name.to_string()));
+                }
             }
         }
     }

@@ -10,9 +10,9 @@ ExecStart=%h/.local/bin/openvpn-tray
 Restart=on-failure
 RestartSec=5
 
-# Environment for X11/Wayland display access
-Environment=DISPLAY=:0
-Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
+# Pass through session environment for display and D-Bus access
+# This allows the service to inherit DISPLAY, WAYLAND_DISPLAY, etc.
+PassEnvironment=DISPLAY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS
 
 [Install]
 WantedBy=graphical-session.target

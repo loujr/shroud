@@ -105,7 +105,7 @@ The tray app now integrates with NetworkManager to provide a unified VPN status 
 - **Detects external VPNs**: If a VPN is connected via NetworkManager (e.g., using `nmcli` or KDE's network applet), the tray will show "Connected (NM)"
 - **Disconnect NM VPNs**: The "Disconnect" button works for both app-initiated and NM-initiated connections
 - **No auto-reconnect for external VPNs**: Auto-reconnect only triggers for connections started by this app
-- **State polling**: NetworkManager state is polled every 3 seconds to detect changes
+- **State polling**: NetworkManager state is polled every 5 seconds to detect changes
 
 ### How it works
 
