@@ -267,7 +267,7 @@ impl VpnSupervisor {
                     server: connection_name.to_string(),
                 };
             }
-            self.update_tray().await;
+            self.update_tray();
 
             // Disconnect and wait for it to complete
             debug!("Calling nm_disconnect for: {}", current);
@@ -337,7 +337,7 @@ impl VpnSupervisor {
                 server: connection_name.to_string(),
             };
         }
-        self.update_tray().await;
+        self.update_tray();
         self.show_notification("VPN", &format!("Connecting to {}...", connection_name));
 
         // Step 5: Attempt connection with retries
@@ -399,7 +399,7 @@ impl VpnSupervisor {
                         
                         // Update tray periodically during connection
                         if monitor_attempt % 5 == 0 {
-                            self.update_tray().await;
+                            self.update_tray();
                         }
                     }
                     
@@ -412,7 +412,7 @@ impl VpnSupervisor {
                         }
                         // Force immediate sync with NetworkManager after successful connection
                         self.sync_with_nm().await;
-                        self.update_tray().await;
+                        self.update_tray();
                         self.show_notification(
                             "VPN Connected",
                             &format!("Connected to {}", connection_name),
@@ -449,7 +449,7 @@ impl VpnSupervisor {
                 reason: "Connection verification failed".to_string(),
             };
         }
-        self.update_tray().await;
+        self.update_tray();
         self.show_notification(
             "VPN Failed",
             &format!("Could not connect to {}", connection_name),
@@ -480,7 +480,7 @@ impl VpnSupervisor {
                     }
                     // Force immediate sync after disconnect to ensure state is accurate
                     self.sync_with_nm().await;
-                    self.update_tray().await;
+                    self.update_tray();
                     self.show_notification("VPN Disconnected", "VPN connection closed");
                 }
                 Err(e) => {
@@ -550,7 +550,7 @@ impl VpnSupervisor {
                 }
                 
                 if needs_tray_update {
-                    self.update_tray().await;
+                    self.update_tray();
                 }
                 return;
             }
@@ -662,7 +662,7 @@ impl VpnSupervisor {
         }
 
         if needs_tray_update {
-            self.update_tray().await;
+            self.update_tray();
         }
     }
 
@@ -720,7 +720,7 @@ impl VpnSupervisor {
             }
         }
 
-        self.update_tray().await;
+        self.update_tray();
     }
 
     /// Attempt to reconnect with exponential backoff
@@ -743,7 +743,7 @@ impl VpnSupervisor {
                         ),
                     };
                 }
-                self.update_tray().await;
+                self.update_tray();
                 self.show_notification(
                     "VPN Reconnection Failed",
                     &format!(
@@ -768,7 +768,7 @@ impl VpnSupervisor {
                     max_attempts: MAX_RECONNECT_ATTEMPTS,
                 };
             }
-            self.update_tray().await;
+            self.update_tray();
 
             // Calculate backoff delay
             let delay = std::cmp::min(
@@ -795,7 +795,7 @@ impl VpnSupervisor {
                                     server: connection_name.to_string(),
                                 };
                             }
-                            self.update_tray().await;
+                            self.update_tray();
                             self.show_notification(
                                 "VPN Reconnected",
                                 &format!("Reconnected to {}", connection_name),
@@ -824,7 +824,7 @@ impl VpnSupervisor {
             state.auto_reconnect
         };
         info!("Auto-reconnect toggled to: {}", new_value);
-        self.update_tray().await;
+        self.update_tray();
         self.show_notification(
             "Auto-Reconnect",
             if new_value {
@@ -843,22 +843,24 @@ impl VpnSupervisor {
             let mut state = self.state.write().await;
             state.connections = connections;
         }
-        self.update_tray().await;
+        self.update_tray();
     }
 
     /// Update the tray icon with current state
     /// This ensures the cached state is synchronized before triggering the UI refresh
-    async fn update_tray(&self) {
-        // Get the current state before entering blocking context
-        let current_state = self.state.read().await.clone();
+    fn update_tray(&self) {
+        // Get the current state synchronously using try_read to avoid blocking
+        let current_state = match self.state.try_read() {
+            Ok(guard) => guard.clone(),
+            Err(_) => return, // Skip update if state is locked
+        };
         
-        // Clone the handle for use in the blocking task
+        // Clone the handle for use in the thread
         let tray_handle = self.tray_handle.clone();
         
-        // Use spawn_blocking because ksni's handle.update() internally uses block_on
-        // which cannot be called from within an async context
-        let _ = tokio::task::spawn_blocking(move || {
-            // Use std::sync::Mutex which works in blocking context
+        // Spawn a regular thread (not tokio) to avoid runtime conflicts
+        // ksni's handle.update() internally uses block_on which conflicts with tokio
+        std::thread::spawn(move || {
             if let Ok(handle_guard) = tray_handle.lock() {
                 if let Some(handle) = handle_guard.as_ref() {
                     handle.update(move |tray: &mut VpnTray| {
@@ -869,16 +871,21 @@ impl VpnSupervisor {
                     });
                 }
             }
-        }).await;
+        });
     }
 
     /// Show a desktop notification
+    /// Uses std::thread::spawn because notify-rust uses block_on internally
     fn show_notification(&self, title: &str, body: &str) {
-        let _ = Notification::new()
-            .summary(title)
-            .body(body)
-            .timeout(5000)
-            .show();
+        let title = title.to_string();
+        let body = body.to_string();
+        std::thread::spawn(move || {
+            let _ = Notification::new()
+                .summary(&title)
+                .body(&body)
+                .timeout(5000)
+                .show();
+        });
     }
 }
 
@@ -1410,57 +1417,69 @@ enum IconType {
     Failed,
 }
 
-/// Create a status icon with recognizable symbol in ARGB32 format
+/// Create a status icon with a shield shape in ARGB32 format
 ///
-/// Returns icons in common sizes (16x16, 24x24, 32x32) for different DPI scales.
+/// Returns icons in common sizes (16x16, 24x24, 32x32, 48x48) for different DPI scales.
 /// The data is in ARGB32 format with network byte order (big endian).
-/// Each icon type has a distinctive symbol:
-/// - Connected: Green circle with white checkmark
-/// - Connecting: Yellow circle with dots
-/// - Disconnected: Gray circle with white dash
-/// - Failed: Red circle with white X
+/// Each icon type has a distinctive symbol inside a shield:
+/// - Connected: Green shield with white checkmark (locked/secure)
+/// - Connecting: Amber shield with animated dots
+/// - Disconnected: Gray shield outline (unlocked/insecure)
+/// - Failed: Red shield with white X
 fn create_status_icon(icon_type: IconType) -> Vec<ksni::Icon> {
-    let sizes = [16, 24, 32];
+    let sizes = [16, 24, 32, 48];
     
     sizes
         .iter()
         .map(|&size| {
             let mut data = Vec::with_capacity((size * size * 4) as usize);
             
-            // Choose colors based on icon type
-            let (bg_r, bg_g, bg_b, fg_r, fg_g, fg_b) = match icon_type {
-                IconType::Connected => (0, 200, 0, 255, 255, 255),      // Green bg, white fg
-                IconType::Connecting => (255, 191, 0, 80, 80, 80),      // Yellow bg, dark fg
-                IconType::Disconnected => (128, 128, 128, 255, 255, 255), // Gray bg, white fg
-                IconType::Failed => (220, 0, 0, 255, 255, 255),         // Red bg, white fg
+            // Modern color palette with softer tones
+            let (primary_r, primary_g, primary_b, accent_r, accent_g, accent_b) = match icon_type {
+                IconType::Connected => (46, 160, 67, 255, 255, 255),     // GitHub green, white accent
+                IconType::Connecting => (245, 158, 11, 255, 255, 255),   // Amber, white accent
+                IconType::Disconnected => (100, 116, 139, 255, 255, 255), // Slate gray, white accent
+                IconType::Failed => (239, 68, 68, 255, 255, 255),        // Tailwind red, white accent
             };
             
-            let bg_pixel = [255u8, bg_r, bg_g, bg_b]; // ARGB32
-            let fg_pixel = [255u8, fg_r, fg_g, fg_b]; // ARGB32
+            let primary = [255u8, primary_r, primary_g, primary_b];
+            let accent = [255u8, accent_r, accent_g, accent_b];
             let transparent = [0u8, 0, 0, 0];
             
-            let center = size / 2;
-            let radius = (size as f32 * 0.4) as i32;
+            // Darker shade for outline/depth effect
+            let dark_shade = [255u8, 
+                (primary_r as f32 * 0.7) as u8, 
+                (primary_g as f32 * 0.7) as u8, 
+                (primary_b as f32 * 0.7) as u8
+            ];
+            
+            let scale = size as f32;
             
             for y in 0..size {
                 for x in 0..size {
-                    let dx = x - center;
-                    let dy = y - center;
-                    let dist_sq = dx * dx + dy * dy;
-                    let radius_sq = radius * radius;
+                    // Normalize coordinates to 0.0-1.0 range
+                    let nx = x as f32 / scale;
+                    let ny = y as f32 / scale;
                     
-                    // Draw circle background
-                    if dist_sq <= radius_sq {
-                        // Inside circle - draw the symbol
-                        let pixel = match icon_type {
-                            IconType::Connected => draw_checkmark(x, y, size, center, &fg_pixel, &bg_pixel),
-                            IconType::Connecting => draw_dots(x, y, size, center, &fg_pixel, &bg_pixel),
-                            IconType::Disconnected => draw_dash(x, y, size, center, &fg_pixel, &bg_pixel),
-                            IconType::Failed => draw_x(x, y, size, center, &fg_pixel, &bg_pixel),
+                    // Shield shape: rounded top, pointed bottom
+                    let in_shield = is_in_shield(nx, ny);
+                    let on_edge = is_on_shield_edge(nx, ny, scale);
+                    
+                    if in_shield {
+                        let pixel = if on_edge {
+                            // Draw edge with darker shade for depth
+                            dark_shade
+                        } else {
+                            // Draw the inner symbol
+                            match icon_type {
+                                IconType::Connected => draw_shield_check(nx, ny, &accent, &primary),
+                                IconType::Connecting => draw_shield_pulse(nx, ny, &accent, &primary),
+                                IconType::Disconnected => draw_shield_open(nx, ny, &accent, &primary, &transparent),
+                                IconType::Failed => draw_shield_x(nx, ny, &accent, &primary),
+                            }
                         };
                         data.extend_from_slice(&pixel);
                     } else {
-                        // Outside circle - transparent
                         data.extend_from_slice(&transparent);
                     }
                 }
@@ -1475,49 +1494,107 @@ fn create_status_icon(icon_type: IconType) -> Vec<ksni::Icon> {
         .collect()
 }
 
-/// Draw a checkmark symbol
-fn draw_checkmark(x: i32, y: i32, size: i32, center: i32, fg: &[u8; 4], bg: &[u8; 4]) -> [u8; 4] {
-    let rel_x = x - center;
-    let rel_y = y - center;
-    let scale = size as f32 / 32.0;
+/// Check if normalized coordinates are inside the shield shape
+fn is_in_shield(nx: f32, ny: f32) -> bool {
+    // Shield parameters (centered at 0.5, 0.5)
+    let cx = 0.5;
+    let top = 0.08;
+    let bottom = 0.92;
+    let max_width = 0.42;
     
-    // Checkmark is composed of two diagonal strokes that meet at the bottom
-    // Left stroke: descends from upper-left to bottom-center with slope ~1.2
-    // Right stroke: ascends from bottom-center to upper-right with slope ~-0.8
-    // The magic numbers (1.2, 0.8) define the slopes, and 2.0 defines stroke thickness
-    let on_left_stroke = rel_x >= (-5.0 * scale) as i32 && rel_x <= (-3.0 * scale) as i32
-        && rel_y >= -scale as i32 && rel_y <= (5.0 * scale) as i32
-        && (rel_y as f32 + rel_x as f32 * 1.2).abs() < 2.0 * scale;
+    // Top section: rounded rectangle (upper 40% of shield)
+    if ny >= top && ny < 0.45 {
+        let width_at_y = max_width;
+        let dx = (nx - cx).abs();
+        // Add slight rounding at top corners
+        let corner_radius = 0.08;
+        if ny < top + corner_radius && dx > width_at_y - corner_radius {
+            let corner_x = cx + (width_at_y - corner_radius) * (nx - cx).signum();
+            let corner_y = top + corner_radius;
+            let dist = ((nx - corner_x).powi(2) + (ny - corner_y).powi(2)).sqrt();
+            return dist <= corner_radius;
+        }
+        return dx <= width_at_y;
+    }
     
-    let on_right_stroke = rel_x >= (-3.0 * scale) as i32 && rel_x <= (7.0 * scale) as i32
-        && rel_y >= (-7.0 * scale) as i32 && rel_y <= (5.0 * scale) as i32
-        && (rel_y as f32 - rel_x as f32 * 0.8 + 3.0 * scale).abs() < 2.0 * scale;
+    // Bottom section: tapers to point (lower 60% of shield)
+    if ny >= 0.45 && ny <= bottom {
+        let progress = (ny - 0.45) / (bottom - 0.45);
+        let width_at_y = max_width * (1.0 - progress.powf(1.5));
+        let dx = (nx - cx).abs();
+        return dx <= width_at_y;
+    }
     
-    if on_left_stroke || on_right_stroke {
+    false
+}
+
+/// Check if on shield edge (for outline effect)
+fn is_on_shield_edge(nx: f32, ny: f32, scale: f32) -> bool {
+    let edge_thickness = 2.5 / scale; // Thinner edge at higher resolutions
+    
+    // Check if just inside the edge
+    let inside = is_in_shield(nx, ny);
+    if !inside {
+        return false;
+    }
+    
+    // Check if any neighbor is outside
+    let offsets = [
+        (-edge_thickness, 0.0),
+        (edge_thickness, 0.0),
+        (0.0, -edge_thickness),
+        (0.0, edge_thickness),
+    ];
+    
+    for (dx, dy) in offsets {
+        if !is_in_shield(nx + dx, ny + dy) {
+            return true;
+        }
+    }
+    
+    false
+}
+
+/// Draw checkmark inside shield (Connected state)
+fn draw_shield_check(nx: f32, ny: f32, fg: &[u8; 4], bg: &[u8; 4]) -> [u8; 4] {
+    // Checkmark centered in shield, slightly above center
+    let cx = 0.5;
+    let cy = 0.42;
+    let rx = nx - cx;
+    let ry = ny - cy;
+    
+    // Two-stroke checkmark
+    // Short stroke going down-right
+    let on_short = rx >= -0.18 && rx <= -0.02
+        && ry >= -0.02 && ry <= 0.14
+        && (ry - (rx + 0.10) * 1.2).abs() < 0.055;
+    
+    // Long stroke going up-right  
+    let on_long = rx >= -0.06 && rx <= 0.22
+        && ry >= -0.16 && ry <= 0.14
+        && (ry - (rx - 0.02) * -0.9 + 0.02).abs() < 0.055;
+    
+    if on_short || on_long {
         *fg
     } else {
         *bg
     }
 }
 
-/// Draw three dots in a row
-fn draw_dots(x: i32, y: i32, size: i32, center: i32, fg: &[u8; 4], bg: &[u8; 4]) -> [u8; 4] {
-    let rel_x = x - center;
-    let rel_y = y - center;
-    let scale = size as f32 / 32.0;
-    // Dot radius of 2.0 creates visible but not overwhelming dots
-    let dot_radius = (2.0 * scale) as i32;
+/// Draw pulsing dots inside shield (Connecting state)
+fn draw_shield_pulse(nx: f32, ny: f32, fg: &[u8; 4], bg: &[u8; 4]) -> [u8; 4] {
+    let cx = 0.5;
+    let cy = 0.42;
+    let rx = nx - cx;
+    let ry = ny - cy;
     
-    // Three dots spaced evenly: left (-6), center (0), right (+6)
-    let dots = [
-        (-6.0 * scale) as i32,
-        0,
-        (6.0 * scale) as i32,
-    ];
+    // Three horizontal dots
+    let dot_radius = 0.055;
+    let dot_positions = [-0.14, 0.0, 0.14];
     
-    for dot_x in &dots {
-        let dx = rel_x - dot_x;
-        let dy = rel_y;
+    for &dot_x in &dot_positions {
+        let dx = rx - dot_x;
+        let dy = ry;
         if dx * dx + dy * dy <= dot_radius * dot_radius {
             return *fg;
         }
@@ -1526,40 +1603,45 @@ fn draw_dots(x: i32, y: i32, size: i32, center: i32, fg: &[u8; 4], bg: &[u8; 4])
     *bg
 }
 
-/// Draw a horizontal dash
-fn draw_dash(x: i32, y: i32, size: i32, center: i32, fg: &[u8; 4], bg: &[u8; 4]) -> [u8; 4] {
-    let rel_x = x - center;
-    let rel_y = y - center;
-    let scale = size as f32 / 32.0;
+/// Draw open/unlocked shield (Disconnected state) - outline only
+fn draw_shield_open(nx: f32, ny: f32, fg: &[u8; 4], bg: &[u8; 4], _trans: &[u8; 4]) -> [u8; 4] {
+    // For disconnected, make the inside mostly transparent with just a dash
+    let cx = 0.5;
+    let cy = 0.42;
+    let rx = nx - cx;
+    let ry = ny - cy;
     
-    // Dash is a horizontal bar: width 8.0 for visibility, height 2.0 for clean line
-    let dash_width = (8.0 * scale) as i32;
-    let dash_height = (2.0 * scale) as i32;
+    // Draw a horizontal line/dash to indicate "off" state
+    let dash_half_width = 0.12;
+    let dash_half_height = 0.035;
     
-    if rel_x.abs() <= dash_width && rel_y.abs() <= dash_height {
-        *fg
-    } else {
-        *bg
+    if rx.abs() <= dash_half_width && ry.abs() <= dash_half_height {
+        return *fg;
     }
+    
+    // Make interior semi-transparent for "empty/off" look
+    // Return a dimmed version of bg
+    [180u8, bg[1], bg[2], bg[3]]
 }
 
-/// Draw an X symbol
-fn draw_x(x: i32, y: i32, size: i32, center: i32, fg: &[u8; 4], bg: &[u8; 4]) -> [u8; 4] {
-    let rel_x = x - center;
-    let rel_y = y - center;
-    let scale = size as f32 / 32.0;
-    // Thickness 2.0 provides clear X strokes without being too bold
-    let thickness = (2.0 * scale) as i32;
+/// Draw X inside shield (Failed state)
+fn draw_shield_x(nx: f32, ny: f32, fg: &[u8; 4], bg: &[u8; 4]) -> [u8; 4] {
+    let cx = 0.5;
+    let cy = 0.42;
+    let rx = nx - cx;
+    let ry = ny - cy;
     
-    // Diagonal from top-left to bottom-right
-    let on_diag1 = (rel_x - rel_y).abs() <= thickness
-        && rel_x.abs() <= (6.0 * scale) as i32
-        && rel_y.abs() <= (6.0 * scale) as i32;
+    let thickness = 0.05;
+    let arm_length = 0.13;
     
-    // Diagonal from top-right to bottom-left
-    let on_diag2 = (rel_x + rel_y).abs() <= thickness
-        && rel_x.abs() <= (6.0 * scale) as i32
-        && rel_y.abs() <= (6.0 * scale) as i32;
+    // Two diagonal strokes forming X
+    let on_diag1 = (rx - ry).abs() <= thickness
+        && rx.abs() <= arm_length
+        && ry.abs() <= arm_length;
+    
+    let on_diag2 = (rx + ry).abs() <= thickness
+        && rx.abs() <= arm_length
+        && ry.abs() <= arm_length;
     
     if on_diag1 || on_diag2 {
         *fg
