@@ -275,10 +275,11 @@ impl VpnSupervisor {
                     disconnected = true;
                     break;
                 }
-                
-                if attempt == DISCONNECT_VERIFY_MAX_ATTEMPTS {
-                    warn!("Disconnect verification timed out for '{}' after {} attempts", current, DISCONNECT_VERIFY_MAX_ATTEMPTS);
-                }
+            }
+            
+            // Log timeout if disconnect wasn't verified
+            if !disconnected {
+                warn!("Disconnect verification timed out for '{}' after {} attempts", current, DISCONNECT_VERIFY_MAX_ATTEMPTS);
             }
 
             // Clean up any orphan OpenVPN processes before connecting
