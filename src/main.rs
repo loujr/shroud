@@ -242,21 +242,51 @@ impl VpnActor {
     async fn handle_connect(&mut self, server: &str) {
         info!("Connecting to server: {}", server);
         
-        // If already connected to a different server, disconnect first
-        {
+        // Check current state and disconnect if needed (switching servers or NM-managed)
+        let (needs_disconnect, is_external, nm_conn_name) = {
             let state = self.state.read().await;
-            if let Some(current) = state.state.server_name() {
-                if current != server {
-                    debug!("Switching from {} to {}", current, server);
-                    drop(state);
-                    self.handle_disconnect(false).await;
-                    // Wait for the process to fully exit
-                    if let Some(ref mut child) = self.child {
-                        let _ = child.wait().await;
-                    }
-                    self.child = None;
+            let current_server = state.state.server_name();
+            let switching = current_server.is_some() && current_server != Some(server);
+            let is_external = state.state.is_external();
+            let nm_conn = state.nm_connection_name.clone();
+            (switching || is_external, is_external, nm_conn)
+        };
+
+        if needs_disconnect {
+            // Set intentional_disconnect flag BEFORE disconnecting to prevent
+            // auto-reconnect logic from firing for the old server during switch
+            {
+                let mut state = self.state.write().await;
+                state.intentional_disconnect = true;
+            }
+
+            // Handle NM-managed (external) connections
+            if is_external {
+                if let Some(conn_name) = nm_conn_name {
+                    debug!("Disconnecting NM connection {} before switching", conn_name);
+                    let _ = Command::new("nmcli")
+                        .arg("con")
+                        .arg("down")
+                        .arg(&conn_name)
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .status()
+                        .await;
                 }
             }
+
+            // Handle app-managed connections: send SIGTERM and wait for exit
+            if let Some(ref mut child) = self.child {
+                if let Some(pid) = child.id() {
+                    debug!("Sending SIGTERM to OpenVPN process (PID: {}) for server switch", pid);
+                    let _ = signal::kill(Pid::from_raw(pid as i32), Signal::SIGTERM);
+                }
+                debug!("Waiting for old VPN process to exit");
+                let _ = child.wait().await;
+            }
+            self.child = None;
+
+            debug!("Old VPN connection terminated, proceeding with new connection");
         }
 
         // Update state to connecting
