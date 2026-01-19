@@ -1001,10 +1001,173 @@ fn extract_short_name(full_name: &str) -> &str {
     full_name.split('-').next().unwrap_or(full_name)
 }
 
-/// Create a solid color icon in ARGB32 format
+/// Icon type for status indication
+#[derive(Debug, Clone, Copy)]
+enum IconType {
+    Connected,
+    Connecting,
+    Disconnected,
+    Failed,
+}
+
+/// Create a status icon with recognizable symbol in ARGB32 format
 ///
 /// Returns icons in common sizes (16x16, 24x24, 32x32) for different DPI scales.
 /// The data is in ARGB32 format with network byte order (big endian).
+/// Each icon type has a distinctive symbol:
+/// - Connected: Green circle with white checkmark
+/// - Connecting: Yellow circle with dots
+/// - Disconnected: Gray circle with white dash
+/// - Failed: Red circle with white X
+fn create_status_icon(icon_type: IconType) -> Vec<ksni::Icon> {
+    let sizes = [16, 24, 32];
+    
+    sizes
+        .iter()
+        .map(|&size| {
+            let mut data = Vec::with_capacity((size * size * 4) as usize);
+            
+            // Choose colors based on icon type
+            let (bg_r, bg_g, bg_b, fg_r, fg_g, fg_b) = match icon_type {
+                IconType::Connected => (0, 200, 0, 255, 255, 255),      // Green bg, white fg
+                IconType::Connecting => (255, 191, 0, 80, 80, 80),      // Yellow bg, dark fg
+                IconType::Disconnected => (128, 128, 128, 255, 255, 255), // Gray bg, white fg
+                IconType::Failed => (220, 0, 0, 255, 255, 255),         // Red bg, white fg
+            };
+            
+            let bg_pixel = [255u8, bg_r, bg_g, bg_b]; // ARGB32
+            let fg_pixel = [255u8, fg_r, fg_g, fg_b]; // ARGB32
+            let transparent = [0u8, 0, 0, 0];
+            
+            let center = size as i32 / 2;
+            let radius = (size as f32 * 0.4) as i32;
+            
+            for y in 0..size {
+                for x in 0..size {
+                    let dx = x as i32 - center;
+                    let dy = y as i32 - center;
+                    let dist_sq = dx * dx + dy * dy;
+                    let radius_sq = radius * radius;
+                    
+                    // Draw circle background
+                    if dist_sq <= radius_sq {
+                        // Inside circle - draw the symbol
+                        let pixel = match icon_type {
+                            IconType::Connected => draw_checkmark(x, y, size, center, &fg_pixel, &bg_pixel),
+                            IconType::Connecting => draw_dots(x, y, size, center, &fg_pixel, &bg_pixel),
+                            IconType::Disconnected => draw_dash(x, y, size, center, &fg_pixel, &bg_pixel),
+                            IconType::Failed => draw_x(x, y, size, center, &fg_pixel, &bg_pixel),
+                        };
+                        data.extend_from_slice(&pixel);
+                    } else {
+                        // Outside circle - transparent
+                        data.extend_from_slice(&transparent);
+                    }
+                }
+            }
+            
+            ksni::Icon {
+                width: size,
+                height: size,
+                data,
+            }
+        })
+        .collect()
+}
+
+/// Draw a checkmark symbol
+fn draw_checkmark(x: i32, y: i32, size: i32, center: i32, fg: &[u8; 4], bg: &[u8; 4]) -> [u8; 4] {
+    let rel_x = x - center;
+    let rel_y = y - center;
+    let scale = size as f32 / 32.0;
+    
+    // Checkmark path: down-right then up-right
+    // Bottom of checkmark at (0, 4*scale), left at (-4*scale, 0), top-right at (6*scale, -6*scale)
+    let on_left_stroke = rel_x >= (-5.0 * scale) as i32 && rel_x <= (-3.0 * scale) as i32
+        && rel_y >= (-1.0 * scale) as i32 && rel_y <= (5.0 * scale) as i32
+        && (rel_y as f32 + rel_x as f32 * 1.2).abs() < 2.0 * scale;
+    
+    let on_right_stroke = rel_x >= (-3.0 * scale) as i32 && rel_x <= (7.0 * scale) as i32
+        && rel_y >= (-7.0 * scale) as i32 && rel_y <= (5.0 * scale) as i32
+        && (rel_y as f32 - rel_x as f32 * 0.8 + 3.0 * scale).abs() < 2.0 * scale;
+    
+    if on_left_stroke || on_right_stroke {
+        *fg
+    } else {
+        *bg
+    }
+}
+
+/// Draw three dots in a row
+fn draw_dots(x: i32, y: i32, size: i32, center: i32, fg: &[u8; 4], bg: &[u8; 4]) -> [u8; 4] {
+    let rel_x = x - center;
+    let rel_y = y - center;
+    let scale = size as f32 / 32.0;
+    let dot_radius = (2.0 * scale) as i32;
+    
+    // Three dots: left, center, right
+    let dots = [
+        (-6.0 * scale) as i32,
+        0,
+        (6.0 * scale) as i32,
+    ];
+    
+    for dot_x in &dots {
+        let dx = rel_x - dot_x;
+        let dy = rel_y;
+        if dx * dx + dy * dy <= dot_radius * dot_radius {
+            return *fg;
+        }
+    }
+    
+    *bg
+}
+
+/// Draw a horizontal dash
+fn draw_dash(x: i32, y: i32, size: i32, center: i32, fg: &[u8; 4], bg: &[u8; 4]) -> [u8; 4] {
+    let rel_x = x - center;
+    let rel_y = y - center;
+    let scale = size as f32 / 32.0;
+    
+    let dash_width = (8.0 * scale) as i32;
+    let dash_height = (2.0 * scale) as i32;
+    
+    if rel_x.abs() <= dash_width && rel_y.abs() <= dash_height {
+        *fg
+    } else {
+        *bg
+    }
+}
+
+/// Draw an X symbol
+fn draw_x(x: i32, y: i32, size: i32, center: i32, fg: &[u8; 4], bg: &[u8; 4]) -> [u8; 4] {
+    let rel_x = x - center;
+    let rel_y = y - center;
+    let scale = size as f32 / 32.0;
+    let thickness = (2.0 * scale) as i32;
+    
+    // Diagonal from top-left to bottom-right
+    let on_diag1 = (rel_x - rel_y).abs() <= thickness
+        && rel_x.abs() <= (6.0 * scale) as i32
+        && rel_y.abs() <= (6.0 * scale) as i32;
+    
+    // Diagonal from top-right to bottom-left
+    let on_diag2 = (rel_x + rel_y).abs() <= thickness
+        && rel_x.abs() <= (6.0 * scale) as i32
+        && rel_y.abs() <= (6.0 * scale) as i32;
+    
+    if on_diag1 || on_diag2 {
+        *fg
+    } else {
+        *bg
+    }
+}
+
+/// Create a solid color icon in ARGB32 format (legacy function for compatibility)
+///
+/// Returns icons in common sizes (16x16, 24x24, 32x32) for different DPI scales.
+/// The data is in ARGB32 format with network byte order (big endian).
+#[allow(dead_code)]
 fn create_colored_icon(r: u8, g: u8, b: u8, a: u8) -> Vec<ksni::Icon> {
     let sizes = [16, 24, 32];
     let pixel = [a, r, g, b]; // ARGB32 in network byte order
@@ -1100,19 +1263,19 @@ impl Tray for VpnTray {
     }
 
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        // Return colored icons for glanceable status
+        // Return status icons with recognizable symbols
         let state = self.cached_state.read().unwrap();
         match state.state {
-            // Green for connected
-            VpnState::Connected { .. } => create_colored_icon(0, 200, 0, 255),
-            // Amber/yellow for connecting/reconnecting
+            // Green circle with checkmark for connected
+            VpnState::Connected { .. } => create_status_icon(IconType::Connected),
+            // Yellow circle with dots for connecting/reconnecting
             VpnState::Connecting { .. } | VpnState::Reconnecting { .. } => {
-                create_colored_icon(255, 191, 0, 255)
+                create_status_icon(IconType::Connecting)
             }
-            // Red for disconnected/failed
-            VpnState::Failed { .. } | VpnState::Disconnected => {
-                create_colored_icon(220, 0, 0, 255)
-            }
+            // Red circle with X for failed
+            VpnState::Failed { .. } => create_status_icon(IconType::Failed),
+            // Gray circle with dash for disconnected
+            VpnState::Disconnected => create_status_icon(IconType::Disconnected),
         }
     }
 
