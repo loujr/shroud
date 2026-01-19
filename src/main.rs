@@ -275,16 +275,12 @@ impl VpnActor {
                 }
             }
 
-            // Handle app-managed connections
-            if let Some(ref child) = self.child {
+            // Handle app-managed connections: send SIGTERM and wait for exit
+            if let Some(ref mut child) = self.child {
                 if let Some(pid) = child.id() {
                     debug!("Sending SIGTERM to OpenVPN process (PID: {}) for server switch", pid);
                     let _ = signal::kill(Pid::from_raw(pid as i32), Signal::SIGTERM);
                 }
-            }
-
-            // Wait for the process to fully exit
-            if let Some(ref mut child) = self.child {
                 debug!("Waiting for old VPN process to exit");
                 let _ = child.wait().await;
             }
