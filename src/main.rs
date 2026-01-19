@@ -70,6 +70,19 @@ const _: () = assert!(
     "KILL_TIMEOUT_SECS must be evenly divisible by KILL_POLL_INTERVAL_MS"
 );
 
+/// Additional wait time after process termination for kernel resource cleanup (milliseconds)
+/// Covers: tun interface release, socket unbinding, route table cleanup
+const POST_KILL_RESOURCE_CLEANUP_MS: u64 = 500;
+
+/// Maximum time to wait for tun interface to be released (seconds)
+const TUN_RELEASE_TIMEOUT_SECS: u64 = 10;
+
+/// Poll interval when checking for tun interface release (milliseconds)
+const TUN_POLL_INTERVAL_MS: u64 = 250;
+
+/// Maximum attempts to check tun interface release
+const TUN_POLL_MAX_ATTEMPTS: u64 = (TUN_RELEASE_TIMEOUT_SECS * 1000) / TUN_POLL_INTERVAL_MS;
+
 /// Pre-compiled regex for extracting server identifiers from filenames
 /// Matches patterns like "us8399", "uk1234", "de5678" (2 letters + digits)
 static SERVER_NAME_REGEX: LazyLock<Regex> =
@@ -570,8 +583,29 @@ impl VpnActor {
         );
     }
 
-    /// Start the OpenVPN process using pkexec
+    /// Start the OpenVPN process using pkexec.
+    ///
+    /// Performs a pre-flight check to ensure no tun interface exists before starting.
     async fn start_openvpn(&self, server: &str) -> Result<Child, std::io::Error> {
+        // Pre-flight check: verify no tun interface exists
+        let preflight = Command::new("ip")
+            .args(["link", "show", "type", "tun"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .await;
+
+        if let Ok(output) = preflight {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if !stdout.trim().is_empty() {
+                warn!(
+                    "tun interface still exists before starting OpenVPN: {}",
+                    stdout.trim().lines().next().unwrap_or("")
+                );
+                // Don't fail - let OpenVPN try anyway, but log the warning
+            }
+        }
+
         let config_path = format!("{}/{}", OVPN_CONFIG_DIR, server);
 
         Command::new("pkexec")
@@ -585,7 +619,7 @@ impl VpnActor {
             .spawn()
     }
 
-    /// Kill any running OpenVPN process using pkexec pkill
+    /// Kill any running OpenVPN process and wait for full network resource cleanup.
     ///
     /// This is necessary because pkexec does not forward signals to its children.
     /// When we kill the pkexec process, the openvpn process running as root becomes
@@ -597,10 +631,14 @@ impl VpnActor {
     /// designed to be the sole manager of OpenVPN connections, and any other
     /// openvpn processes would conflict with new connections anyway.
     ///
-    /// This method implements robust termination with:
-    /// 1. Send SIGTERM via pkill
-    /// 2. Poll for up to KILL_TIMEOUT_SECS to verify process termination
-    /// 3. If still running, send SIGKILL as a last resort
+    /// This method implements a three-phase termination:
+    /// 1. Send SIGTERM via pkill and poll for process exit
+    /// 2. Send SIGKILL if SIGTERM didn't work within timeout
+    /// 3. Wait for kernel to release network resources (tun interface, sockets)
+    ///
+    /// The third phase is CRITICAL - even after the process PID is gone,
+    /// the kernel needs 500ms-2000ms to clean up the tun0 interface and routes.
+    /// Starting a new OpenVPN before cleanup completes causes "Address in use" errors.
     async fn kill_openvpn_process(&self) {
         debug!("Killing any running OpenVPN processes with pkexec pkill");
         
@@ -620,14 +658,18 @@ impl VpnActor {
                     debug!("Sent SIGTERM to OpenVPN process(es)");
                 } else {
                     // pkill exit codes: 0 = matched, 1 = no match, 2 = syntax error, 3 = fatal
-                    // Exit code 1 (no processes matched) means no process to kill, we're done
+                    // Exit code 1 (no processes matched) means no process to kill
+                    // But still check for lingering tun interface (could be orphaned from previous crash)
                     debug!("pkill returned non-zero (exit code {}), likely no openvpn processes running",
                            status.code().unwrap_or(-1));
+                    let _ = self.wait_for_network_resource_release().await;
                     return;
                 }
             }
             Err(e) => {
                 warn!("Failed to execute pkexec pkill: {}", e);
+                // Still check for lingering tun interface
+                let _ = self.wait_for_network_resource_release().await;
                 return;
             }
         }
@@ -648,8 +690,15 @@ impl VpnActor {
             match check_result {
                 Ok(status) => {
                     if !status.success() {
-                        // Exit code 1 means no matching process found - success!
+                        // Exit code 1 means no matching process found - process is dead
                         debug!("OpenVPN process terminated after {} poll attempts", attempt);
+                        // Wait for kernel to release network resources
+                        let resources_released = self.wait_for_network_resource_release().await;
+                        if !resources_released {
+                            warn!("Proceeding despite uncertain resource cleanup state");
+                        } else {
+                            debug!("Network resources confirmed released, safe to start new connection");
+                        }
                         return;
                     }
                     // Process still exists, continue polling
@@ -695,7 +744,82 @@ impl VpnActor {
         }
 
         // Brief delay after SIGKILL to ensure cleanup
-        sleep(Duration::from_millis(KILL_POLL_INTERVAL_MS)).await;
+        sleep(Duration::from_millis(KILL_POLL_INTERVAL_MS * 2)).await;
+
+        // Wait for kernel to release network resources
+        let resources_released = self.wait_for_network_resource_release().await;
+
+        if !resources_released {
+            warn!("Proceeding despite uncertain resource cleanup state");
+        } else {
+            debug!("Network resources confirmed released, safe to start new connection");
+        }
+    }
+
+    /// Wait for network resources (tun interface) to be fully released by the kernel.
+    ///
+    /// After OpenVPN terminates, the kernel needs time to:
+    /// - Destroy the tun0 virtual network interface
+    /// - Remove routing table entries pointing to tun0
+    /// - Release bound UDP/TCP sockets
+    /// - Clean up netfilter/iptables rules (if any)
+    ///
+    /// This method polls for tun interface absence to ensure resources are free
+    /// before allowing a new connection attempt.
+    ///
+    /// # Returns
+    /// - `true` if resources were confirmed released
+    /// - `false` if timeout was reached (connection may still work, but not guaranteed)
+    async fn wait_for_network_resource_release(&self) -> bool {
+        debug!("Waiting for network resources to be released...");
+
+        for attempt in 1..=TUN_POLL_MAX_ATTEMPTS {
+            // Check if any tun/tap interface exists using `ip link show type tun`
+            // This doesn't require root privileges to read
+            let check_result = Command::new("ip")
+                .args(["link", "show", "type", "tun"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .output()
+                .await;
+
+            match check_result {
+                Ok(output) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    // If output is empty (no lines or just whitespace), no tun interface exists
+                    if stdout.trim().is_empty() {
+                        debug!("tun interface released after {} poll attempts", attempt);
+                        // Add buffer delay for any final kernel cleanup
+                        sleep(Duration::from_millis(POST_KILL_RESOURCE_CLEANUP_MS)).await;
+                        return true;
+                    }
+                    debug!(
+                        "tun interface still present (poll attempt {}/{}): {}",
+                        attempt,
+                        TUN_POLL_MAX_ATTEMPTS,
+                        stdout.trim().lines().next().unwrap_or("")
+                    );
+                }
+                Err(e) => {
+                    // If `ip` command fails, log warning but continue polling
+                    // Could be transient issue
+                    warn!("Failed to check tun interface status: {}", e);
+                }
+            }
+
+            sleep(Duration::from_millis(TUN_POLL_INTERVAL_MS)).await;
+        }
+
+        // Timeout reached - log warning but don't fail
+        // The new connection might still work if timing is lucky
+        warn!(
+            "tun interface not released within {} seconds, proceeding with caution",
+            TUN_RELEASE_TIMEOUT_SECS
+        );
+
+        // Still add cleanup delay as fallback
+        sleep(Duration::from_millis(POST_KILL_RESOURCE_CLEANUP_MS)).await;
+        false
     }
 
     /// Toggle auto-reconnect feature
