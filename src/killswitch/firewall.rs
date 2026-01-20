@@ -102,7 +102,7 @@ impl KillSwitch {
     /// Creates nftables rules that:
     /// 1. Allow loopback traffic
     /// 2. Allow established/related connections
-    /// 3. Allow traffic to VPN server IP
+    /// 3. Allow traffic to VPN server IPs (to establish connection)
     /// 4. Allow traffic through VPN tunnel interface
     /// 5. Drop everything else
     pub async fn enable(&mut self) -> Result<(), String> {
@@ -113,11 +113,17 @@ impl KillSwitch {
 
         info!("Enabling VPN kill switch");
 
+        // Auto-detect VPN server IPs from NetworkManager configs
+        let vpn_server_ips = Self::detect_all_vpn_server_ips().await;
+        if !vpn_server_ips.is_empty() {
+            info!("Detected {} VPN server IPs to whitelist", vpn_server_ips.len());
+        }
+
         // First, ensure any old rules are cleaned up
         let _ = self.cleanup_table().await;
 
         // Create the kill switch table and chains
-        self.create_table().await?;
+        self.create_table_with_servers(&vpn_server_ips).await?;
 
         self.enabled = true;
         info!("VPN kill switch enabled");
@@ -145,14 +151,15 @@ impl KillSwitch {
         }
 
         debug!("Updating kill switch rules");
-        // Recreate the table with updated rules
+        let vpn_server_ips = Self::detect_all_vpn_server_ips().await;
         let _ = self.cleanup_table().await;
-        self.create_table().await
+        self.create_table_with_servers(&vpn_server_ips).await
     }
 
-    /// Create the nftables table and rules
-    async fn create_table(&self) -> Result<(), String> {
-        let vpn_iface = self.vpn_interface.as_deref().unwrap_or("tun+");
+    /// Create the nftables table and rules with allowed VPN server IPs
+    async fn create_table_with_servers(&self, vpn_server_ips: &[IpAddr]) -> Result<(), String> {
+        // Use wildcard for tun interfaces - nftables uses * for wildcard
+        let vpn_iface = self.vpn_interface.as_deref().unwrap_or("tun*");
         
         // Build the nftables ruleset
         let mut rules = format!(
@@ -175,25 +182,44 @@ table inet {table} {{
         ip daddr 127.0.0.0/8 accept
         ip6 daddr ::1 accept
         
-        # Allow traffic through VPN tunnel
+        # Allow traffic through VPN tunnel (tun/tap interfaces)
         oifname "{vpn_iface}" accept
+        oifname "tap*" accept
 "#,
             table = NFT_TABLE,
             vpn_iface = vpn_iface
         );
 
-        // Add rule for VPN server IP if known
+        // Add rules for all known VPN server IPs (so VPN can establish connection)
+        for ip in vpn_server_ips {
+            match ip {
+                IpAddr::V4(v4) => {
+                    rules.push_str(&format!(
+                        "        # Allow traffic to VPN server {}\n        ip daddr {} accept\n",
+                        v4, v4
+                    ));
+                }
+                IpAddr::V6(v6) => {
+                    rules.push_str(&format!(
+                        "        # Allow traffic to VPN server {}\n        ip6 daddr {} accept\n",
+                        v6, v6
+                    ));
+                }
+            }
+        }
+
+        // Also add the currently configured VPN server if set
         if let Some(ip) = self.vpn_server_ip {
             match ip {
                 IpAddr::V4(v4) => {
                     rules.push_str(&format!(
-                        "        \n        # Allow traffic to VPN server\n        ip daddr {} accept\n",
+                        "        # Allow traffic to current VPN server\n        ip daddr {} accept\n",
                         v4
                     ));
                 }
                 IpAddr::V6(v6) => {
                     rules.push_str(&format!(
-                        "        \n        # Allow traffic to VPN server\n        ip6 daddr {} accept\n",
+                        "        # Allow traffic to current VPN server\n        ip6 daddr {} accept\n",
                         v6
                     ));
                 }
@@ -216,8 +242,9 @@ table inet {table} {{
         # Allow established/related connections
         ct state established,related accept
         
-        # Allow traffic from VPN tunnel
+        # Allow traffic from VPN tunnel (tun/tap interfaces)
         iifname "{vpn_iface}" accept
+        iifname "tap*" accept
         
         # Allow DHCP responses
         udp sport 67 accept
@@ -247,9 +274,11 @@ table inet {table} {{
         }
     }
 
-    /// Run an nft command
+    /// Run an nft command (via pkexec for GUI privilege escalation)
     async fn run_nft(&self, args: &[&str], stdin_data: Option<&str>) -> Result<(), String> {
-        let mut cmd = Command::new("nft");
+        // Use pkexec for GUI password prompt instead of sudo (which blocks on TTY)
+        let mut cmd = Command::new("pkexec");
+        cmd.arg("nft");
         cmd.args(args);
         
         if stdin_data.is_some() {
@@ -258,7 +287,7 @@ table inet {table} {{
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 
-        let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn nft: {}", e))?;
+        let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn pkexec nft: {}", e))?;
 
         if let Some(data) = stdin_data {
             use tokio::io::AsyncWriteExt;
@@ -328,6 +357,122 @@ table inet {table} {{
             }
         }
 
+        None
+    }
+
+    /// Detect all VPN server IPs from NetworkManager connection configs
+    /// This allows the kill switch to permit traffic to VPN servers for connection establishment
+    pub async fn detect_all_vpn_server_ips() -> Vec<IpAddr> {
+        let mut ips = Vec::new();
+        
+        // Get VPN connection details from nmcli
+        let output = Command::new("nmcli")
+            .args(["-t", "-f", "NAME,TYPE", "connection", "show"])
+            .output()
+            .await;
+            
+        let connections = match output {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+            _ => return ips,
+        };
+        
+        // Find VPN connections and get their remote IPs
+        for line in connections.lines() {
+            let parts: Vec<&str> = line.split(':').collect();
+            if parts.len() >= 2 && parts[1] == "vpn" {
+                let conn_name = parts[0];
+                
+                // Get the remote IP for this VPN connection
+                if let Some(ip) = Self::get_vpn_remote_ip(conn_name).await {
+                    if !ips.contains(&ip) {
+                        info!("Found VPN server IP for '{}': {}", conn_name, ip);
+                        ips.push(ip);
+                    }
+                }
+            }
+        }
+        
+        ips
+    }
+    
+    /// Get the remote IP address for a specific VPN connection
+    async fn get_vpn_remote_ip(conn_name: &str) -> Option<IpAddr> {
+        // Get VPN connection details
+        let output = Command::new("nmcli")
+            .args(["-t", "-f", "vpn.data", "connection", "show", conn_name])
+            .output()
+            .await
+            .ok()?;
+            
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        
+        // Parse vpn.data which contains key=value pairs separated by commas
+        // Format is: "remote = IP:PORT" or "remote = hostname:PORT"
+        for line in stdout.lines() {
+            if line.starts_with("vpn.data:") {
+                let data = line.trim_start_matches("vpn.data:");
+                for item in data.split(',') {
+                    let item = item.trim();
+                    // Handle both "remote=X" and "remote = X" formats
+                    if item.starts_with("remote") {
+                        // Split on '=' and get the value part
+                        if let Some(value) = item.split('=').nth(1) {
+                            let remote = value.trim();
+                            // Remove port if present (format: "IP:PORT" or "hostname:PORT")
+                            let host = if let Some(colon_pos) = remote.rfind(':') {
+                                // Check if what's after colon is a port number
+                                if remote[colon_pos + 1..].parse::<u16>().is_ok() {
+                                    &remote[..colon_pos]
+                                } else {
+                                    remote
+                                }
+                            } else {
+                                remote
+                            };
+                            
+                            // Try to parse as IP directly
+                            if let Ok(ip) = host.parse::<IpAddr>() {
+                                return Some(ip);
+                            }
+                            // If it's a hostname, try to resolve it
+                            if let Some(ip) = Self::resolve_hostname(host).await {
+                                return Some(ip);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        None
+    }
+    
+    /// Resolve a hostname to an IP address
+    async fn resolve_hostname(hostname: &str) -> Option<IpAddr> {
+        let output = Command::new("getent")
+            .args(["ahosts", hostname])
+            .output()
+            .await
+            .ok()?;
+            
+        if !output.status.success() {
+            return None;
+        }
+        
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // getent ahosts returns lines like: "1.2.3.4      STREAM hostname"
+        // Take the first IPv4 address
+        for line in stdout.lines() {
+            if let Some(ip_str) = line.split_whitespace().next() {
+                if let Ok(ip) = ip_str.parse::<IpAddr>() {
+                    // Prefer IPv4
+                    if ip.is_ipv4() {
+                        return Some(ip);
+                    }
+                }
+            }
+        }
+        
         None
     }
 }

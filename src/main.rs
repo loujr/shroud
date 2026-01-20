@@ -191,22 +191,29 @@ impl VpnSupervisor {
 
     /// Update kill switch based on current VPN state (call after state transitions)
     async fn update_kill_switch_for_state(&mut self) {
-        // Only update if kill switch is enabled in config
+        // Only act if kill switch is enabled in config
         if !self.app_config.kill_switch_enabled {
             return;
         }
         
         match &self.machine.state {
             VpnState::Connected { .. } | VpnState::Degraded { .. } => {
-                // Update kill switch rules when connected (ensures VPN interface is allowed)
-                if let Err(e) = self.kill_switch.update().await {
+                // Enable/update kill switch when connected
+                if !self.kill_switch.is_enabled() {
+                    info!("VPN connected - enabling kill switch");
+                    if let Err(e) = self.kill_switch.enable().await {
+                        warn!("Failed to enable kill switch: {}", e);
+                    }
+                } else if let Err(e) = self.kill_switch.update().await {
                     warn!("Failed to update kill switch: {}", e);
                 }
             }
             VpnState::Disconnected => {
                 // Keep kill switch enabled when disconnected (blocks all traffic)
                 // This is the core kill switch behavior - prevent leaks when VPN drops
-                debug!("Kill switch active: blocking non-VPN traffic");
+                if self.kill_switch.is_enabled() {
+                    debug!("Kill switch active: blocking non-VPN traffic until VPN reconnects");
+                }
             }
             _ => {
                 // Connecting/Reconnecting/Failed - keep current rules
@@ -231,18 +238,22 @@ impl VpnSupervisor {
             state.kill_switch = self.app_config.kill_switch_enabled;
         }
 
-        // If kill switch was enabled in config and we're starting up, enable it
-        if self.app_config.kill_switch_enabled {
-            info!("Restoring kill switch from config");
-            if let Err(e) = self.kill_switch.enable().await {
-                warn!("Failed to enable kill switch on startup: {}", e);
-            }
-        }
-
-        // Initial connection refresh and state sync
+        // Initial connection refresh and state sync - do this BEFORE enabling kill switch
         self.refresh_connections().await;
         self.initial_nm_sync().await;
         self.last_poll_time = Instant::now();
+
+        // Only restore kill switch if VPN is already connected (avoid blocking VPN connection on startup)
+        if self.app_config.kill_switch_enabled {
+            if matches!(self.machine.state, VpnState::Connected { .. }) {
+                info!("Restoring kill switch from config (VPN already connected)");
+                if let Err(e) = self.kill_switch.enable().await {
+                    warn!("Failed to enable kill switch on startup: {}", e);
+                }
+            } else {
+                info!("Kill switch enabled in config but VPN not connected - will enable when VPN connects");
+            }
+        }
 
         // Use health check interval from config
         let health_interval = if self.app_config.health_check_interval_secs > 0 {
