@@ -714,6 +714,7 @@ dependencies = [
  "ctrlc",
  "env_logger",
  "ksni",
+ "libc",
  "log",
  "notify-rust",
  "once_cell",
