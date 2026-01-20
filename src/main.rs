@@ -23,6 +23,7 @@
 mod config;
 mod dbus;
 mod health;
+mod killswitch;
 mod nm;
 mod state;
 mod tray;
@@ -41,6 +42,7 @@ use tokio::time::{sleep, Duration};
 use crate::config::{Config, ConfigManager};
 use crate::dbus::{NmEvent, NmMonitor};
 use crate::health::{HealthChecker, HealthResult};
+use crate::killswitch::KillSwitch;
 use crate::nm::{
     connect as nm_connect, disconnect as nm_disconnect, get_active_vpn as nm_get_active_vpn,
     get_active_vpn_with_state as nm_get_active_vpn_with_state, get_vpn_state as nm_get_vpn_state,
@@ -123,6 +125,8 @@ pub struct VpnSupervisor {
     config_manager: ConfigManager,
     /// Current configuration
     app_config: Config,
+    /// Kill switch for blocking non-VPN traffic
+    kill_switch: KillSwitch,
 }
 
 impl VpnSupervisor {
@@ -156,6 +160,7 @@ impl VpnSupervisor {
             health_checker: HealthChecker::new(),
             config_manager,
             app_config,
+            kill_switch: KillSwitch::new(),
         }
     }
 
@@ -184,6 +189,31 @@ impl VpnSupervisor {
         reason
     }
 
+    /// Update kill switch based on current VPN state (call after state transitions)
+    async fn update_kill_switch_for_state(&mut self) {
+        // Only update if kill switch is enabled in config
+        if !self.app_config.kill_switch_enabled {
+            return;
+        }
+        
+        match &self.machine.state {
+            VpnState::Connected { .. } | VpnState::Degraded { .. } => {
+                // Update kill switch rules when connected (ensures VPN interface is allowed)
+                if let Err(e) = self.kill_switch.update().await {
+                    warn!("Failed to update kill switch: {}", e);
+                }
+            }
+            VpnState::Disconnected => {
+                // Keep kill switch enabled when disconnected (blocks all traffic)
+                // This is the core kill switch behavior - prevent leaks when VPN drops
+                debug!("Kill switch active: blocking non-VPN traffic");
+            }
+            _ => {
+                // Connecting/Reconnecting/Failed - keep current rules
+            }
+        }
+    }
+
     /// Sync the shared state with current machine state (for async contexts)
     async fn sync_shared_state(&self) {
         let mut state = self.shared_state.write().await;
@@ -198,6 +228,15 @@ impl VpnSupervisor {
         {
             let mut state = self.shared_state.write().await;
             state.auto_reconnect = self.app_config.auto_reconnect;
+            state.kill_switch = self.app_config.kill_switch_enabled;
+        }
+
+        // If kill switch was enabled in config and we're starting up, enable it
+        if self.app_config.kill_switch_enabled {
+            info!("Restoring kill switch from config");
+            if let Err(e) = self.kill_switch.enable().await {
+                warn!("Failed to enable kill switch on startup: {}", e);
+            }
         }
 
         // Initial connection refresh and state sync
@@ -232,6 +271,9 @@ impl VpnSupervisor {
                         }
                         VpnCommand::ToggleAutoReconnect => {
                             self.toggle_auto_reconnect().await;
+                        }
+                        VpnCommand::ToggleKillSwitch => {
+                            self.toggle_kill_switch().await;
                         }
                         VpnCommand::RefreshConnections => {
                             self.refresh_connections().await;
@@ -288,6 +330,7 @@ impl VpnSupervisor {
             NmEvent::VpnActivated { name } => {
                 info!("D-Bus: VPN '{}' activated", name);
                 self.dispatch(Event::NmVpnUp { server: name });
+                self.update_kill_switch_for_state().await;
                 self.sync_shared_state().await;
                 self.update_tray();
             }
@@ -765,6 +808,45 @@ impl VpnSupervisor {
         info!("Auto-reconnect toggled to: {}", new_value);
         self.update_tray();
         self.show_notification("Auto-Reconnect", if new_value { "Enabled" } else { "Disabled" });
+    }
+
+    /// Toggle kill switch (nftables firewall rules that block non-VPN traffic)
+    async fn toggle_kill_switch(&mut self) {
+        let current_enabled = self.app_config.kill_switch_enabled;
+        let new_enabled = !current_enabled;
+        
+        let result = if new_enabled {
+            self.kill_switch.enable().await
+        } else {
+            self.kill_switch.disable().await
+        };
+        
+        match result {
+            Ok(()) => {
+                // Update shared state for tray
+                {
+                    let mut state = self.shared_state.write().await;
+                    state.kill_switch = new_enabled;
+                }
+                
+                // Save to persistent config
+                self.app_config.kill_switch_enabled = new_enabled;
+                if let Err(e) = self.config_manager.save(&self.app_config) {
+                    warn!("Failed to save config: {}", e);
+                }
+                
+                info!("Kill switch toggled to: {}", new_enabled);
+                self.update_tray();
+                self.show_notification(
+                    "Kill Switch",
+                    if new_enabled { "Enabled - Non-VPN traffic blocked" } else { "Disabled" }
+                );
+            }
+            Err(e) => {
+                error!("Failed to toggle kill switch: {}", e);
+                self.show_notification("Kill Switch Error", &format!("Failed: {}", e));
+            }
+        }
     }
 
     /// Refresh the list of available VPN connections

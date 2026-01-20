@@ -22,6 +22,8 @@ pub struct Config {
     pub health_degraded_threshold_ms: u64,
     /// Maximum reconnection attempts before giving up
     pub max_reconnect_attempts: u32,
+    /// Kill switch enabled (blocks non-VPN traffic)
+    pub kill_switch_enabled: bool,
 }
 
 impl Default for Config {
@@ -32,6 +34,7 @@ impl Default for Config {
             health_check_interval_secs: 30,
             health_degraded_threshold_ms: 2000,
             max_reconnect_attempts: 10,
+            kill_switch_enabled: false,
         }
     }
 }
@@ -165,6 +168,7 @@ mod tests {
             health_check_interval_secs: 60,
             health_degraded_threshold_ms: 3000,
             max_reconnect_attempts: 5,
+            kill_switch_enabled: true,
         };
 
         let toml_str = toml::to_string(&config).unwrap();
@@ -174,6 +178,7 @@ mod tests {
         assert_eq!(parsed.last_server, config.last_server);
         assert_eq!(parsed.health_check_interval_secs, config.health_check_interval_secs);
         assert_eq!(parsed.max_reconnect_attempts, config.max_reconnect_attempts);
+        assert_eq!(parsed.kill_switch_enabled, config.kill_switch_enabled);
     }
 
     #[test]

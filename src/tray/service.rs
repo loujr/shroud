@@ -18,6 +18,8 @@ pub enum VpnCommand {
     Disconnect,
     /// Toggle auto-reconnect feature
     ToggleAutoReconnect,
+    /// Toggle kill switch (blocks non-VPN traffic)
+    ToggleKillSwitch,
     /// Refresh the list of available VPN connections
     RefreshConnections,
 }
@@ -29,6 +31,8 @@ pub struct SharedState {
     pub state: VpnState,
     /// Whether auto-reconnect is enabled
     pub auto_reconnect: bool,
+    /// Whether kill switch is enabled
+    pub kill_switch: bool,
     /// List of available VPN connections from NetworkManager
     pub connections: Vec<String>,
 }
@@ -38,6 +42,7 @@ impl Default for SharedState {
         Self {
             state: VpnState::Disconnected,
             auto_reconnect: true,
+            kill_switch: false,
             connections: Vec::new(),
         }
     }
@@ -259,6 +264,20 @@ impl Tray for VpnTray {
             ..Default::default()
         }));
 
+        // Kill switch toggle with checkbox
+        items.push(MenuItem::Checkmark(CheckmarkItem {
+            label: "Kill Switch".to_string(),
+            enabled: true,
+            checked: state.kill_switch,
+            activate: Box::new(|tray: &mut Self| {
+                let tx = tray.tx.clone();
+                tokio::spawn(async move {
+                    let _ = tx.send(VpnCommand::ToggleKillSwitch).await;
+                });
+            }),
+            ..Default::default()
+        }));
+
         // Refresh connections
         items.push(MenuItem::Standard(StandardItem {
             label: "Refresh Connections".to_string(),
@@ -307,6 +326,7 @@ mod tests {
         let state = SharedState::default();
         assert_eq!(state.state, VpnState::Disconnected);
         assert!(state.auto_reconnect);
+        assert!(!state.kill_switch);
         assert!(state.connections.is_empty());
     }
 }
