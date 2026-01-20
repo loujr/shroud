@@ -43,6 +43,10 @@ ctrlc = "3.4"
 # Lazy static for one-time icon generation
 once_cell = "1.19"
 
+# Serialization for config file
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
 # Low-level system calls (flock for instance lock)
 libc = "0.2"
 

@@ -20,6 +20,7 @@
 //! All state transitions go through StateMachine::handle_event() which logs
 //! every transition with its reason.
 
+mod config;
 mod dbus;
 mod health;
 mod nm;
@@ -37,6 +38,7 @@ use std::time::Instant;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{sleep, Duration};
 
+use crate::config::{Config, ConfigManager};
 use crate::dbus::{NmEvent, NmMonitor};
 use crate::health::{HealthChecker, HealthResult};
 use crate::nm::{
@@ -117,6 +119,10 @@ pub struct VpnSupervisor {
     last_poll_time: Instant,
     /// Health checker for VPN connectivity verification
     health_checker: HealthChecker,
+    /// Configuration manager for persistent settings
+    config_manager: ConfigManager,
+    /// Current configuration
+    app_config: Config,
 }
 
 impl VpnSupervisor {
@@ -127,14 +133,20 @@ impl VpnSupervisor {
         dbus_rx: mpsc::Receiver<NmEvent>,
         tray_handle: Arc<std::sync::Mutex<Option<ksni::blocking::Handle<VpnTray>>>>,
     ) -> Self {
-        let config = StateMachineConfig {
-            max_retries: MAX_RECONNECT_ATTEMPTS,
+        // Load persistent configuration
+        let config_manager = ConfigManager::new();
+        let app_config = config_manager.load();
+        info!("Loaded config: auto_reconnect={}, last_server={:?}", 
+              app_config.auto_reconnect, app_config.last_server);
+
+        let sm_config = StateMachineConfig {
+            max_retries: app_config.max_reconnect_attempts,
             base_delay_secs: RECONNECT_BASE_DELAY_SECS,
             max_delay_secs: RECONNECT_MAX_DELAY_SECS,
         };
         
         Self {
-            machine: StateMachine::with_config(config),
+            machine: StateMachine::with_config(sm_config),
             shared_state,
             rx,
             dbus_rx,
@@ -142,6 +154,8 @@ impl VpnSupervisor {
             last_disconnect_time: None,
             last_poll_time: Instant::now(),
             health_checker: HealthChecker::new(),
+            config_manager,
+            app_config,
         }
     }
 
@@ -150,8 +164,16 @@ impl VpnSupervisor {
         let reason = self.machine.handle_event(event);
         
         // Reset health checker when we successfully connect
-        if matches!(self.machine.state, VpnState::Connected { .. }) {
+        if let VpnState::Connected { ref server } = self.machine.state {
             self.health_checker.reset();
+            
+            // Save last connected server to config
+            if self.app_config.last_server.as_ref() != Some(server) {
+                self.app_config.last_server = Some(server.clone());
+                if let Err(e) = self.config_manager.save(&self.app_config) {
+                    warn!("Failed to save last_server to config: {}", e);
+                }
+            }
         }
         
         // Always sync shared state after event processing
@@ -172,16 +194,29 @@ impl VpnSupervisor {
     pub async fn run(mut self) {
         info!("VPN supervisor starting with formal state machine");
 
+        // Sync config to shared state on startup
+        {
+            let mut state = self.shared_state.write().await;
+            state.auto_reconnect = self.app_config.auto_reconnect;
+        }
+
         // Initial connection refresh and state sync
         self.refresh_connections().await;
         self.initial_nm_sync().await;
         self.last_poll_time = Instant::now();
 
+        // Use health check interval from config
+        let health_interval = if self.app_config.health_check_interval_secs > 0 {
+            self.app_config.health_check_interval_secs
+        } else {
+            HEALTH_CHECK_INTERVAL_SECS
+        };
+
         // Create an interval for NM polling
         let mut nm_poll_interval = tokio::time::interval(Duration::from_secs(NM_POLL_INTERVAL_SECS));
         
         // Create an interval for health checks (only runs when connected)
-        let mut health_check_interval = tokio::time::interval(Duration::from_secs(HEALTH_CHECK_INTERVAL_SECS));
+        let mut health_check_interval = tokio::time::interval(Duration::from_secs(health_interval));
 
         loop {
             tokio::select! {
@@ -720,6 +755,13 @@ impl VpnSupervisor {
             state.auto_reconnect = !state.auto_reconnect;
             state.auto_reconnect
         };
+        
+        // Save to persistent config
+        self.app_config.auto_reconnect = new_value;
+        if let Err(e) = self.config_manager.save(&self.app_config) {
+            warn!("Failed to save config: {}", e);
+        }
+        
         info!("Auto-reconnect toggled to: {}", new_value);
         self.update_tray();
         self.show_notification("Auto-Reconnect", if new_value { "Enabled" } else { "Disabled" });
