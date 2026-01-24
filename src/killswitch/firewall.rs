@@ -178,13 +178,24 @@ table inet {table} {{
         udp dport 67 accept
         udp sport 68 accept
         
-        # Allow DNS to localhost (for local resolvers)
+        # Allow DNS to localhost (for local resolvers like systemd-resolved)
         ip daddr 127.0.0.0/8 accept
         ip6 daddr ::1 accept
         
-        # Allow traffic through VPN tunnel (tun/tap interfaces)
+        # Allow local network access (prevents lockout)
+        ip daddr 192.168.0.0/16 accept
+        ip daddr 10.0.0.0/8 accept
+        ip daddr 172.16.0.0/12 accept
+        ip6 daddr fe80::/10 accept
+        
+        # Allow DNS to VPN DNS servers (commonly in 10.x.x.x range)
+        udp dport 53 accept
+        tcp dport 53 accept
+        
+        # Allow traffic through VPN tunnel (tun/tap/wg interfaces)
         oifname "{vpn_iface}" accept
         oifname "tap*" accept
+        oifname "wg*" accept
 "#,
             table = NFT_TABLE,
             vpn_iface = vpn_iface
@@ -226,36 +237,24 @@ table inet {table} {{
             }
         }
 
-        // Add input chain for incoming traffic
-        rules.push_str(&format!(
+        // Add input chain for incoming traffic (closing output chain first)
+        rules.push_str(
             r#"
         # Log dropped packets (rate limited)
-        limit rate 1/second log prefix "[VPN-KS DROP] " drop
-    }}
+        limit rate 1/second log prefix "[VPN-KS DROP OUT] " drop
+    }
     
-    chain input {{
-        type filter hook input priority 0; policy drop;
+    # Input chain: more permissive to avoid lockouts
+    # We're primarily concerned with OUTPUT (preventing leaks)
+    chain input {
+        type filter hook input priority 0; policy accept;
         
-        # Allow loopback
-        iifname "lo" accept
-        
-        # Allow established/related connections
-        ct state established,related accept
-        
-        # Allow traffic from VPN tunnel (tun/tap interfaces)
-        iifname "{vpn_iface}" accept
-        iifname "tap*" accept
-        
-        # Allow DHCP responses
-        udp sport 67 accept
-        
-        # Log dropped packets (rate limited)
-        limit rate 1/second log prefix "[VPN-KS DROP] " drop
-    }}
-}}
-"#,
-            vpn_iface = vpn_iface
-        ));
+        # Accept everything on input - kill switch is about preventing
+        # outbound traffic leaks, not blocking incoming
+    }
+}
+"#
+        );
 
         // Apply the rules
         self.run_nft(&["-f", "-"], Some(&rules)).await

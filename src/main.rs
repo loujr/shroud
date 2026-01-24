@@ -45,8 +45,8 @@ use crate::health::{HealthChecker, HealthResult};
 use crate::killswitch::KillSwitch;
 use crate::nm::{
     connect as nm_connect, disconnect as nm_disconnect, get_active_vpn as nm_get_active_vpn,
-    get_active_vpn_with_state as nm_get_active_vpn_with_state, get_vpn_state as nm_get_vpn_state,
-    kill_orphan_openvpn_processes, list_vpn_connections as nm_list_vpn_connections,
+    get_active_vpn_with_state as nm_get_active_vpn_with_state, get_all_active_vpns as nm_get_all_active_vpns,
+    get_vpn_state as nm_get_vpn_state, kill_orphan_openvpn_processes, list_vpn_connections as nm_list_vpn_connections,
 };
 use crate::state::{Event, NmVpnState, StateMachine, StateMachineConfig, TransitionReason, VpnState};
 use crate::tray::{SharedState, VpnCommand, VpnTray};
@@ -402,6 +402,18 @@ impl VpnSupervisor {
 
     /// Initial sync with NetworkManager on startup
     async fn initial_nm_sync(&mut self) {
+        // First, check for and clean up multiple simultaneous VPNs
+        let all_vpns = nm_get_all_active_vpns().await;
+        if all_vpns.len() > 1 {
+            warn!("Found {} VPNs active on startup, cleaning up extras", all_vpns.len());
+            for extra_vpn in &all_vpns[1..] {
+                warn!("Disconnecting extra VPN: {}", extra_vpn.name);
+                let _ = nm_disconnect(&extra_vpn.name).await;
+            }
+            // Wait a moment for disconnect to complete
+            sleep(Duration::from_secs(1)).await;
+        }
+
         let active_vpn_info = nm_get_active_vpn_with_state().await;
         
         if let Some(info) = active_vpn_info {
@@ -431,6 +443,17 @@ impl VpnSupervisor {
                 return;
             } else {
                 self.last_disconnect_time = None;
+            }
+        }
+
+        // CRITICAL: Detect multiple simultaneous VPNs and clean up extras
+        let all_vpns = nm_get_all_active_vpns().await;
+        if all_vpns.len() > 1 {
+            warn!("Multiple VPNs detected: {:?}", all_vpns.iter().map(|v| &v.name).collect::<Vec<_>>());
+            // Keep the first (most recently activated) and disconnect others
+            for extra_vpn in &all_vpns[1..] {
+                warn!("Disconnecting extra VPN: {}", extra_vpn.name);
+                let _ = nm_disconnect(&extra_vpn.name).await;
             }
         }
 
@@ -609,50 +632,49 @@ impl VpnSupervisor {
     async fn handle_connect(&mut self, connection_name: &str) {
         info!("Connect requested: {}", connection_name);
 
-        // Check if already connected to this server
-        if let Some(current) = self.machine.state.server_name() {
-            if current == connection_name {
-                info!("Already connected to {}", connection_name);
-                return;
-            }
+        // CRITICAL: Check for and clean up multiple active VPNs first
+        let all_active = nm_get_all_active_vpns().await;
+        if all_active.len() > 1 {
+            warn!("Multiple VPNs detected simultaneously: {:?}", all_active.iter().map(|v| &v.name).collect::<Vec<_>>());
+        }
+        
+        // Disconnect ALL active VPNs (not just the one we think we're connected to)
+        if !all_active.is_empty() {
+            info!("Found {} active VPN(s), disconnecting all before connecting", all_active.len());
             
-            // Need to disconnect first
-            info!("Disconnecting from {} before connecting to {}", current, connection_name);
-            let current_owned = current.to_string();
-            
-            // Dispatch connecting event for new server
+            // Dispatch connecting event for new server first
             self.dispatch(Event::UserEnable { server: connection_name.to_string() });
             self.sync_shared_state().await;
             self.update_tray();
             
-            // Perform disconnect
-            if let Err(e) = nm_disconnect(&current_owned).await {
-                warn!("Disconnect command failed (continuing anyway): {}", e);
-            }
-            
-            // Wait for disconnect to complete
-            let mut disconnected = false;
-            for attempt in 1..=DISCONNECT_VERIFY_MAX_ATTEMPTS {
-                sleep(Duration::from_millis(DISCONNECT_VERIFY_INTERVAL_MS)).await;
-                match nm_get_vpn_state(&current_owned).await {
-                    Some(NmVpnState::Activated | NmVpnState::Deactivating | NmVpnState::Activating) => {
-                        debug!("VPN '{}' still active (attempt {})", current_owned, attempt);
-                    }
-                    _ => {
-                        info!("Previous VPN '{}' disconnected", current_owned);
-                        disconnected = true;
-                        break;
-                    }
+            for vpn in &all_active {
+                info!("Disconnecting VPN: {}", vpn.name);
+                if let Err(e) = nm_disconnect(&vpn.name).await {
+                    warn!("Failed to disconnect {}: {}", vpn.name, e);
                 }
             }
             
-            if !disconnected {
-                warn!("Disconnect verification timed out");
+            // Wait for all disconnects to complete
+            let mut all_disconnected = false;
+            for attempt in 1..=DISCONNECT_VERIFY_MAX_ATTEMPTS {
+                sleep(Duration::from_millis(DISCONNECT_VERIFY_INTERVAL_MS)).await;
+                let remaining = nm_get_all_active_vpns().await;
+                if remaining.is_empty() {
+                    info!("All previous VPNs disconnected");
+                    all_disconnected = true;
+                    break;
+                }
+                debug!("Still have {} active VPN(s), attempt {}", remaining.len(), attempt);
             }
+            
+            if !all_disconnected {
+                warn!("Disconnect verification timed out - proceeding anyway");
+            }
+            
             kill_orphan_openvpn_processes().await;
             sleep(Duration::from_secs(POST_DISCONNECT_SETTLE_SECS)).await;
         } else {
-            // Not connected, just dispatch the enable event
+            // No active VPNs, just dispatch the enable event
             self.dispatch(Event::UserEnable { server: connection_name.to_string() });
             self.sync_shared_state().await;
             self.update_tray();

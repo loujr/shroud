@@ -6,6 +6,6 @@
 pub mod client;
 
 pub use client::{
-    connect, disconnect, get_active_vpn, get_active_vpn_with_state, get_vpn_state,
-    get_vpn_uuid, kill_orphan_openvpn_processes, list_vpn_connections,
+    connect, disconnect, get_active_vpn, get_active_vpn_with_state, get_all_active_vpns,
+    get_vpn_state, get_vpn_uuid, kill_orphan_openvpn_processes, list_vpn_connections,
 };

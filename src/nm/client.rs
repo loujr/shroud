@@ -99,6 +99,16 @@ pub async fn get_active_vpn_with_state() -> Option<ActiveVpnInfo> {
         .cloned()
 }
 
+/// Get ALL active VPN connections from NetworkManager (to detect multiple simultaneous VPNs)
+pub async fn get_all_active_vpns() -> Vec<ActiveVpnInfo> {
+    let output = match run_nmcli(&["-t", "-f", "NAME,TYPE,STATE", "con", "show", "--active"]).await {
+        Some(o) => o,
+        None => return Vec::new(),
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_active_vpns(&stdout)
+}
+
 /// Get the precise state of a specific VPN connection
 #[inline]
 pub async fn get_vpn_state(connection_name: &str) -> Option<NmVpnState> {
