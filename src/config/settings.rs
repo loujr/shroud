@@ -225,7 +225,8 @@ impl ConfigManager {
 
     /// Save configuration to disk
     /// 
-    /// Creates the config directory if it doesn't exist
+    /// Creates the config directory if it doesn't exist.
+    /// Uses atomic write (temp file + rename) to prevent corruption on crash.
     pub fn save(&self, config: &Config) -> Result<(), String> {
         // Ensure config directory exists
         if let Some(parent) = self.config_path.parent() {
@@ -249,15 +250,37 @@ impl ConfigManager {
         let contents = toml::to_string_pretty(&config_to_save)
             .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
-        fs::write(&self.config_path, &contents)
-            .map_err(|e| format!("Failed to write config file: {}", e))?;
-
-        // Set file permissions to 600
+        // Atomic write: write to temp file, then rename
+        // This prevents corruption if we crash mid-write
+        let temp_path = self.config_path.with_extension("toml.tmp");
+        
+        // Write to temp file with correct permissions from the start
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&self.config_path, fs::Permissions::from_mode(0o600));
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&temp_path)
+                .map_err(|e| format!("Failed to create temp config file: {}", e))?;
+            file.write_all(contents.as_bytes())
+                .map_err(|e| format!("Failed to write temp config file: {}", e))?;
+            file.sync_all()
+                .map_err(|e| format!("Failed to sync temp config file: {}", e))?;
         }
+        
+        #[cfg(not(unix))]
+        {
+            fs::write(&temp_path, &contents)
+                .map_err(|e| format!("Failed to write temp config file: {}", e))?;
+        }
+
+        // Atomic rename
+        fs::rename(&temp_path, &self.config_path)
+            .map_err(|e| format!("Failed to rename temp config file: {}", e))?;
 
         debug!("Saved config to {:?}", self.config_path);
         Ok(())

@@ -395,7 +395,7 @@ impl VpnSupervisor {
                 // CRITICAL: If we already have a different VPN connected, disconnect the OLD one
                 // Policy: newest VPN wins (the one that just activated)
                 if let Some(current) = self.machine.state.server_name() {
-                    if current != &name {
+                    if current != name {
                         info!("External VPN '{}' activated while connected to '{}' - disconnecting old VPN", name, current);
                         let old_vpn = current.to_string();
                         // Update our state to the new VPN first

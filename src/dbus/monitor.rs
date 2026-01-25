@@ -115,13 +115,11 @@ impl NmMonitor {
             .await?;
 
         let body = reply.body();
-        if let Ok(variant) = body.deserialize::<zbus::zvariant::Value>() {
-            if let zbus::zvariant::Value::Array(arr) = variant {
-                for path_val in arr.iter() {
-                    if let zbus::zvariant::Value::ObjectPath(path) = path_val {
-                        if let Ok(name) = self.get_connection_name(connection, path.as_str()).await {
-                            cache.insert(path.to_string(), name);
-                        }
+        if let Ok(zbus::zvariant::Value::Array(arr)) = body.deserialize::<zbus::zvariant::Value>() {
+            for path_val in arr.iter() {
+                if let zbus::zvariant::Value::ObjectPath(path) = path_val {
+                    if let Ok(name) = self.get_connection_name(connection, path.as_str()).await {
+                        cache.insert(path.to_string(), name);
                     }
                 }
             }
@@ -148,10 +146,8 @@ impl NmMonitor {
             .await?;
 
         let body = reply.body();
-        if let Ok(variant) = body.deserialize::<zbus::zvariant::Value>() {
-            if let zbus::zvariant::Value::Str(s) = variant {
-                return Ok(s.to_string());
-            }
+        if let Ok(zbus::zvariant::Value::Str(s)) = body.deserialize::<zbus::zvariant::Value>() {
+            return Ok(s.to_string());
         }
         
         Err(zbus::Error::Failure("Failed to get connection name".into()))
@@ -174,10 +170,8 @@ impl NmMonitor {
             .await?;
 
         let body = reply.body();
-        if let Ok(variant) = body.deserialize::<zbus::zvariant::Value>() {
-            if let zbus::zvariant::Value::Str(s) = variant {
-                return Ok(s.as_str() == "vpn");
-            }
+        if let Ok(zbus::zvariant::Value::Str(s)) = body.deserialize::<zbus::zvariant::Value>() {
+            return Ok(s.as_str() == "vpn");
         }
         
         Ok(false)
@@ -236,7 +230,7 @@ impl NmMonitor {
         // 0 = Unknown, 1 = Prepare, 2 = NeedAuth, 3 = Connect, 4 = IPConfigGet
         // 5 = Activated, 6 = Failed, 7 = Disconnected
         let event = match state {
-            1 | 2 | 3 | 4 => {
+            1..=4 => {
                 info!("VPN '{}' is activating (state={})", name, state);
                 Some(NmEvent::VpnActivating { name })
             }

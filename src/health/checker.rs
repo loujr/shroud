@@ -77,7 +77,7 @@ impl HealthChecker {
     ///
     /// Returns the health status of the VPN tunnel.
     pub async fn check(&mut self) -> HealthResult {
-        for endpoint in &self.config.endpoints.clone() {
+        for endpoint in &self.config.endpoints {
             match self.check_endpoint(endpoint).await {
                 Ok(latency_ms) => {
                     self.consecutive_failures = 0;
