@@ -1,24 +1,32 @@
-//! NetworkManager VPN Supervisor with System Tray
+//! # Shroud
 //!
-//! A production-ready system tray application for managing VPN connections via NetworkManager
-//! with auto-reconnect capabilities for Arch Linux / KDE Plasma.
+//! A provider-agnostic VPN connection manager for Linux.
 //!
-//! # Architecture
+//! Shroud wraps around NetworkManager and OpenVPN like a protective shroud
+//! around a lock mechanism — hardening security without replacing the tools
+//! you already have.
 //!
-//! - `state/` - State machine types and transitions (formal state machine)
-//! - `nm/` - NetworkManager interface (nmcli, future: D-Bus)
-//! - `tray/` - System tray UI (ksni)
+//! ## Architecture
 //!
-//! # State Machine
+//! - `state/` - Formal state machine types and transitions
+//! - `nm/` - NetworkManager interface (nmcli + D-Bus events)
+//! - `tray/` - System tray UI (ksni/StatusNotifierItem)
+//! - `killswitch/` - nftables-based traffic blocking
+//! - `health/` - VPN tunnel connectivity verification
+//! - `config/` - Persistent user settings
+//!
+//! ## State Machine
 //!
 //! The supervisor uses a formal state machine that processes events:
 //! - User events: UserEnable, UserDisable
 //! - NM events: NmVpnUp, NmVpnDown, NmVpnChanged
+//! - Health events: HealthOk, HealthDegraded, HealthDead
 //! - System events: Wake (from sleep)
 //! - Internal events: Timeout
 //!
 //! All state transitions go through StateMachine::handle_event() which logs
-//! every transition with its reason.
+//! every transition with its reason. State is sacred — if the state says
+//! Disconnected, we are disconnected.
 
 mod config;
 mod dbus;
@@ -1246,7 +1254,7 @@ impl VpnSupervisor {
 fn get_lock_file_path() -> PathBuf {
     let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
         .expect("XDG_RUNTIME_DIR not set - cannot safely create lock file");
-    PathBuf::from(runtime_dir).join("openvpn-tray.lock")
+    PathBuf::from(runtime_dir).join("shroud.lock")
 }
 
 fn acquire_instance_lock() -> Result<File, String> {
@@ -1333,7 +1341,7 @@ async fn main() {
     })
     .expect("Error setting Ctrl-C handler");
 
-    info!("Starting NetworkManager VPN Supervisor (Phase 4: D-Bus Events)");
+    info!("Starting Shroud VPN Manager");
 
     let shared_state = Arc::new(RwLock::new(SharedState::default()));
     let (tx, rx) = mpsc::channel(16);

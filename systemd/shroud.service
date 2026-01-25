@@ -1,6 +1,6 @@
 # Shroud VPN Manager - Systemd User Service
 #
-# This service file runs the Shroud VPN tray application as a user service.
+# This service runs the Shroud VPN tray application as a user service.
 # It requires a graphical session with D-Bus access.
 #
 # Installation:
@@ -24,9 +24,9 @@
 
 [Unit]
 Description=Shroud VPN Manager
-Documentation=https://github.com/loujr/archtools
-After=graphical-session.target
-Wants=graphical-session.target
+Documentation=https://github.com/loujr/shroud
+After=graphical-session.target network-online.target
+Wants=network-online.target
 # Ensure D-Bus session is available
 After=dbus.socket
 Requires=dbus.socket
@@ -34,27 +34,22 @@ Requires=dbus.socket
 [Service]
 Type=simple
 # Path to the binary - adjust if installed elsewhere
-ExecStart=%h/.local/bin/openvpn-tray
-# Restart on failure, but not on clean exit (e.g., user quit)
+ExecStart=%h/.local/bin/shroud
+# Restart on failure, but not on clean exit
 Restart=on-failure
 RestartSec=5
 # Maximum restart attempts (5 within 60 seconds)
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
-# Environment for graphical session
-# Most DEs export these automatically, but we can be explicit
-# Uncomment if the tray icon doesn't appear:
-# Environment=DISPLAY=:0
-# Environment=WAYLAND_DISPLAY=wayland-0
-
-# XDG runtime directory (usually set by login manager)
-# Environment=XDG_RUNTIME_DIR=/run/user/%U
-
-# Logging (optional - logs go to journald by default)
+# Logging
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=shroud
+
+# Uncomment if tray icon doesn't appear:
+# Environment=DISPLAY=:0
+# Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
 
 [Install]
 WantedBy=graphical-session.target

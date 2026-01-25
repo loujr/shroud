@@ -6,7 +6,7 @@
 //! - Local loopback traffic
 //! - Established/related connections
 //!
-//! The kill switch uses a separate table "vpn_killswitch" to avoid
+//! The kill switch uses a separate table "shroud_killswitch" to avoid
 //! interfering with other firewall rules.
 //!
 //! ## DNS Leak Protection
@@ -33,7 +33,7 @@ use tokio::process::Command;
 use crate::config::{DnsMode, Ipv6Mode};
 
 /// Name of the nftables table for the kill switch
-const NFT_TABLE: &str = "vpn_killswitch";
+const NFT_TABLE: &str = "shroud_killswitch";
 
 /// Kill switch status
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

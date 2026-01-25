@@ -1,7 +1,7 @@
 //! Configuration settings
 //!
 //! Persistent storage for user preferences using TOML format.
-//! Config file is stored in XDG_CONFIG_HOME/openvpn-tray/config.toml
+//! Config file is stored in XDG_CONFIG_HOME/shroud/config.toml
 //!
 //! ## Config Schema (version 1)
 //!
@@ -116,7 +116,7 @@ pub struct ConfigManager {
 impl ConfigManager {
     /// Create a new config manager
     /// 
-    /// Uses XDG_CONFIG_HOME/openvpn-tray/config.toml or ~/.config/openvpn-tray/config.toml
+    /// Uses XDG_CONFIG_HOME/shroud/config.toml or ~/.config/shroud/config.toml
     pub fn new() -> Self {
         let config_dir = std::env::var("XDG_CONFIG_HOME")
             .map(PathBuf::from)
@@ -124,7 +124,7 @@ impl ConfigManager {
                 let home = std::env::var("HOME").expect("HOME not set");
                 PathBuf::from(home).join(".config")
             })
-            .join("openvpn-tray");
+            .join("shroud");
 
         Self {
             config_path: config_dir.join("config.toml"),
@@ -141,7 +141,11 @@ impl ConfigManager {
     /// 
     /// Returns default config if file doesn't exist or can't be parsed.
     /// Performs migration if config version is outdated.
+    /// Also migrates config from old openvpn-tray location if present.
     pub fn load(&self) -> Config {
+        // Check for migration from old openvpn-tray config location
+        self.migrate_from_old_location();
+        
         if !self.config_path.exists() {
             debug!("Config file not found, using defaults");
             return Config::default();
@@ -153,6 +157,57 @@ impl ConfigManager {
                 warn!("Failed to read config file: {}. Using defaults.", e);
                 Config::default()
             }
+        }
+    }
+
+    /// Migrate config from old openvpn-tray location if present
+    fn migrate_from_old_location(&self) {
+        let old_config_dir = std::env::var("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                let home = std::env::var("HOME").unwrap_or_default();
+                PathBuf::from(home).join(".config")
+            })
+            .join("openvpn-tray");
+        
+        let old_config_path = old_config_dir.join("config.toml");
+        let migration_marker = old_config_dir.join("MIGRATED_TO_SHROUD.txt");
+        
+        // Only migrate if old config exists, new config doesn't, and not already migrated
+        if old_config_path.exists() && !self.config_path.exists() && !migration_marker.exists() {
+            info!("Found old config at {:?}, migrating to {:?}", old_config_path, self.config_path);
+            
+            // Create new config directory
+            if let Some(parent) = self.config_path.parent() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    warn!("Failed to create config directory: {}", e);
+                    return;
+                }
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+                }
+            }
+            
+            // Copy old config to new location
+            if let Err(e) = fs::copy(&old_config_path, &self.config_path) {
+                warn!("Failed to copy config: {}", e);
+                return;
+            }
+            
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&self.config_path, fs::Permissions::from_mode(0o600));
+            }
+            
+            // Leave a marker in the old location
+            let marker_content = "This configuration has been migrated to ~/.config/shroud/\n\
+                                  You may safely delete this directory.\n";
+            let _ = fs::write(&migration_marker, marker_content);
+            
+            info!("Configuration migrated from ~/.config/openvpn-tray/ to ~/.config/shroud/");
         }
     }
 

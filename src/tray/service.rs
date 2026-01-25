@@ -81,7 +81,7 @@ impl Tray for VpnTray {
     const MENU_ON_ACTIVATE: bool = true;
 
     fn id(&self) -> String {
-        "openvpn-tray".to_string()
+        "shroud".to_string()
     }
 
     fn icon_name(&self) -> String {

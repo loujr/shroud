@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Shroud
+GenericName=VPN Manager
+Comment=Provider-agnostic VPN connection manager with kill switch
+Exec=shroud
+Icon=network-vpn
+Terminal=false
+Categories=Network;System;Security;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=panel
+Keywords=vpn;openvpn;network;security;privacy;
