@@ -22,6 +22,8 @@ pub enum VpnCommand {
     ToggleKillSwitch,
     /// Refresh the list of available VPN connections
     RefreshConnections,
+    /// Restart the application
+    Restart,
 }
 
 /// Shared state between the tray and the VPN supervisor
@@ -292,6 +294,20 @@ impl Tray for VpnTray {
         }));
 
         items.push(MenuItem::Separator);
+
+        // Restart application
+        items.push(MenuItem::Standard(StandardItem {
+            label: "Restart".to_string(),
+            icon_name: "view-refresh".to_string(),
+            enabled: true,
+            activate: Box::new(|tray: &mut Self| {
+                let tx = tray.tx.clone();
+                tokio::spawn(async move {
+                    let _ = tx.send(VpnCommand::Restart).await;
+                });
+            }),
+            ..Default::default()
+        }));
 
         // Quit
         items.push(MenuItem::Standard(StandardItem {

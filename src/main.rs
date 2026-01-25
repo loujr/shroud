@@ -301,6 +301,9 @@ impl VpnSupervisor {
                         VpnCommand::RefreshConnections => {
                             self.refresh_connections().await;
                         }
+                        VpnCommand::Restart => {
+                            self.handle_restart().await;
+                        }
                     }
                 }
 
@@ -909,6 +912,43 @@ impl VpnSupervisor {
             }
             Err(e) => {
                 error!("Failed to disconnect: {}", e);
+            }
+        }
+    }
+
+    /// Restart the application by re-executing the binary
+    async fn handle_restart(&mut self) {
+        info!("Restart requested");
+        self.show_notification("VPN Manager", "Restarting...");
+        
+        // Give the notification time to show
+        sleep(Duration::from_millis(500)).await;
+        
+        // Get the path to our own executable
+        let exe_path = match std::env::current_exe() {
+            Ok(path) => path,
+            Err(e) => {
+                error!("Failed to get executable path: {}", e);
+                return;
+            }
+        };
+        
+        info!("Restarting from: {:?}", exe_path);
+        
+        // Spawn the new process
+        match std::process::Command::new(&exe_path)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(_) => {
+                info!("New instance spawned, exiting current instance");
+                std::process::exit(0);
+            }
+            Err(e) => {
+                error!("Failed to spawn new instance: {}", e);
+                self.show_notification("Restart Failed", &format!("Error: {}", e));
             }
         }
     }

@@ -7,7 +7,8 @@ Requires=graphical-session.target
 [Service]
 Type=simple
 ExecStart=%h/.local/bin/openvpn-tray
-Restart=on-failure
+# Always restart to ensure persistence - will come back after crashes or manual quit
+Restart=always
 RestartSec=2
 
 # Default log level (override with RUST_LOG env var before starting service)

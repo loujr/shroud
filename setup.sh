@@ -16,6 +16,7 @@ BINARY_NAME="openvpn-tray"
 INSTALL_DIR="$HOME/.local/bin"
 SERVICE_DIR="$HOME/.config/systemd/user"
 SERVICE_NAME="openvpn-tray.service"
+AUTOSTART_DIR="$HOME/.config/autostart"
 
 # Flags
 SKIP_GIT_PULL=false
@@ -186,6 +187,14 @@ info "Installing systemd user service..."
 mkdir -p "$SERVICE_DIR"
 cp "systemd/$SERVICE_NAME" "$SERVICE_DIR/"
 success "Service file installed to $SERVICE_DIR/$SERVICE_NAME"
+echo ""
+
+# Step 6b: Install XDG autostart entry (for desktop environments that don't use systemd user services)
+info "Installing autostart entry..."
+mkdir -p "$AUTOSTART_DIR"
+# Replace %h with actual home directory in the desktop file
+sed "s|%h|$HOME|g" "autostart/openvpn-tray.desktop" > "$AUTOSTART_DIR/openvpn-tray.desktop"
+success "Autostart entry installed to $AUTOSTART_DIR/openvpn-tray.desktop"
 echo ""
 
 # Step 7: Reload systemd and enable service
