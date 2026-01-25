@@ -136,6 +136,8 @@ pub struct VpnSupervisor {
     switching_from: Option<String>,
     /// Timestamp when switch completed (to ignore late D-Bus events)
     switch_completed_time: Option<Instant>,
+    /// Flag to cancel ongoing reconnection attempts
+    reconnect_cancelled: bool,
 }
 
 impl VpnSupervisor {
@@ -174,6 +176,7 @@ impl VpnSupervisor {
             switching_target: None,
             switching_from: None,
             switch_completed_time: None,
+            reconnect_cancelled: false,
         }
     }
 
@@ -436,7 +439,7 @@ impl VpnSupervisor {
                 // Check if this was our connected VPN
                 if let Some(current) = self.machine.state.server_name() {
                     if current == name {
-                        if auto_reconnect && matches!(self.machine.state, VpnState::Connected { .. }) {
+                        if auto_reconnect && matches!(self.machine.state, VpnState::Connected { .. } | VpnState::Degraded { .. }) {
                             let server = name.clone();
                             self.dispatch(Event::NmVpnDown);
                             self.sync_shared_state().await;
@@ -444,9 +447,11 @@ impl VpnSupervisor {
                             self.show_notification("VPN Disconnected", "Connection dropped, reconnecting...");
                             self.attempt_reconnect(&server).await;
                         } else {
-                            self.dispatch(Event::NmVpnDown);
+                            // Auto-reconnect disabled: go directly to Disconnected, not Reconnecting
+                            self.machine.set_state(VpnState::Disconnected, TransitionReason::VpnLost);
                             self.sync_shared_state().await;
                             self.update_tray();
+                            self.show_notification("VPN Disconnected", &format!("Disconnected from {}", name));
                         }
                     }
                 }
@@ -583,10 +588,11 @@ impl VpnSupervisor {
                     self.show_notification("VPN Disconnected", "Connection dropped, reconnecting...");
                     self.attempt_reconnect(&server_clone).await;
                 } else {
-                    self.dispatch(Event::NmVpnDown);
+                    // Auto-reconnect disabled: go directly to Disconnected, not Reconnecting
+                    self.machine.set_state(VpnState::Disconnected, TransitionReason::VpnLost);
                     self.sync_shared_state().await;
                     self.update_tray();
-                    self.show_notification("VPN Disconnected", "Connection dropped");
+                    self.show_notification("VPN Disconnected", &format!("Disconnected from {}", server));
                 }
             }
 
@@ -727,7 +733,8 @@ impl VpnSupervisor {
                     self.show_notification("VPN Dead", "Connection lost, reconnecting...");
                     self.attempt_reconnect(&server).await;
                 } else {
-                    self.dispatch(Event::HealthDead);
+                    // Auto-reconnect disabled: go directly to Disconnected, not Reconnecting
+                    self.machine.set_state(VpnState::Disconnected, TransitionReason::HealthCheckDead);
                     self.sync_shared_state().await;
                     self.update_tray();
                     self.show_notification("VPN Dead", &reason);
@@ -894,6 +901,9 @@ impl VpnSupervisor {
     async fn handle_disconnect(&mut self) {
         info!("Disconnect requested");
 
+        // Cancel any ongoing reconnection attempts
+        self.reconnect_cancelled = true;
+
         let connection_name = match self.machine.state.server_name() {
             Some(name) => name.to_string(),
             None => {
@@ -957,6 +967,9 @@ impl VpnSupervisor {
 
     /// Attempt to reconnect with exponential backoff (triggered by connection drop)
     async fn attempt_reconnect(&mut self, connection_name: &str) {
+        // Clear any previous cancellation flag
+        self.reconnect_cancelled = false;
+
         // First, verify the connection still exists in NetworkManager
         let available_connections = nm_list_vpn_connections().await;
         if !available_connections.iter().any(|c| c == connection_name) {
@@ -978,6 +991,15 @@ impl VpnSupervisor {
         let mut reconnect_succeeded = false;
         
         for attempt in 1..=max_attempts {
+            // Check for cancellation before each attempt
+            if self.reconnect_cancelled {
+                info!("Reconnection cancelled by user");
+                self.machine.set_state(VpnState::Disconnected, TransitionReason::UserRequested);
+                self.sync_shared_state().await;
+                self.update_tray();
+                return;
+            }
+
             info!("Reconnection attempt {}/{} for {}", attempt, max_attempts, connection_name);
 
             // Update state to Reconnecting
@@ -992,17 +1014,64 @@ impl VpnSupervisor {
             self.sync_shared_state().await;
             self.update_tray();
 
-            // Calculate backoff delay
+            // Calculate backoff delay - but check for cancellation during the wait
             let delay = std::cmp::min(
                 RECONNECT_BASE_DELAY_SECS * (attempt as u64),
                 RECONNECT_MAX_DELAY_SECS,
             );
-            sleep(Duration::from_secs(delay)).await;
+            
+            // Wait with periodic checks for user commands
+            let check_interval = Duration::from_millis(500);
+            let total_delay = Duration::from_secs(delay);
+            let start = Instant::now();
+            
+            while start.elapsed() < total_delay {
+                // Check for pending commands (especially Disconnect)
+                match self.rx.try_recv() {
+                    Ok(VpnCommand::Disconnect) => {
+                        info!("Disconnect command received during reconnect - cancelling");
+                        // Disconnect any partial connection
+                        let _ = nm_disconnect(connection_name).await;
+                        self.last_disconnect_time = Some(Instant::now());
+                        self.machine.set_state(VpnState::Disconnected, TransitionReason::UserRequested);
+                        self.sync_shared_state().await;
+                        self.update_tray();
+                        self.show_notification("VPN Disconnected", "Reconnection cancelled");
+                        return;
+                    }
+                    Ok(other_cmd) => {
+                        // Queue other commands to be processed later? For now, log and ignore
+                        debug!("Ignoring command during reconnect: {:?}", other_cmd);
+                    }
+                    Err(_) => {
+                        // No pending command, continue waiting
+                    }
+                }
+                
+                // Sleep for check interval or remaining time, whichever is shorter
+                let remaining = total_delay.saturating_sub(start.elapsed());
+                sleep(std::cmp::min(check_interval, remaining)).await;
+            }
 
             // Attempt connection
             match nm_connect(connection_name).await {
                 Ok(_) => {
-                    sleep(Duration::from_secs(CONNECTION_VERIFY_DELAY_SECS)).await;
+                    // Check for disconnect command during verify delay
+                    let verify_start = Instant::now();
+                    let verify_delay = Duration::from_secs(CONNECTION_VERIFY_DELAY_SECS);
+                    while verify_start.elapsed() < verify_delay {
+                        if let Ok(VpnCommand::Disconnect) = self.rx.try_recv() {
+                            info!("Disconnect command received during connection verify - cancelling");
+                            let _ = nm_disconnect(connection_name).await;
+                            self.last_disconnect_time = Some(Instant::now());
+                            self.machine.set_state(VpnState::Disconnected, TransitionReason::UserRequested);
+                            self.sync_shared_state().await;
+                            self.update_tray();
+                            self.show_notification("VPN Disconnected", "Connection cancelled");
+                            return;
+                        }
+                        sleep(Duration::from_millis(200)).await;
+                    }
                     
                     if let Some(active) = nm_get_active_vpn().await {
                         if active == connection_name {
@@ -1048,9 +1117,11 @@ impl VpnSupervisor {
 
     /// Toggle auto-reconnect setting
     async fn toggle_auto_reconnect(&mut self) {
+        info!("toggle_auto_reconnect called");
         let new_value = {
             let mut state = self.shared_state.write().await;
             state.auto_reconnect = !state.auto_reconnect;
+            info!("Auto-reconnect toggled in shared_state to: {}", state.auto_reconnect);
             state.auto_reconnect
         };
         
@@ -1118,20 +1189,35 @@ impl VpnSupervisor {
     /// Update the tray icon with current state
     fn update_tray(&self) {
         let current_state = match self.shared_state.try_read() {
-            Ok(guard) => guard.clone(),
-            Err(_) => return,
+            Ok(guard) => {
+                debug!("update_tray: state={:?}, auto_reconnect={}, kill_switch={}", 
+                       guard.state, guard.auto_reconnect, guard.kill_switch);
+                guard.clone()
+            },
+            Err(_) => {
+                warn!("update_tray: Failed to read shared_state");
+                return;
+            }
         };
 
         let tray_handle = self.tray_handle.clone();
         std::thread::spawn(move || {
             if let Ok(handle_guard) = tray_handle.lock() {
                 if let Some(handle) = handle_guard.as_ref() {
-                    handle.update(move |tray: &mut VpnTray| {
+                    let result = handle.update(move |tray: &mut VpnTray| {
                         if let Ok(mut cached) = tray.cached_state.write() {
+                            debug!("Tray cached_state updated to: {:?}", current_state.state);
                             *cached = current_state.clone();
                         }
                     });
+                    if result.is_none() {
+                        warn!("Tray handle.update() returned None - service may be shutdown");
+                    }
+                } else {
+                    warn!("Tray handle is None");
                 }
+            } else {
+                warn!("Failed to lock tray_handle");
             }
         });
     }
