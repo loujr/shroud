@@ -160,6 +160,9 @@ impl VpnSupervisor {
             max_delay_secs: RECONNECT_MAX_DELAY_SECS,
         };
         
+        // Create kill switch with config-based DNS and IPv6 modes
+        let kill_switch = KillSwitch::with_config(app_config.dns_mode, app_config.ipv6_mode);
+        
         Self {
             machine: StateMachine::with_config(sm_config),
             shared_state,
@@ -171,7 +174,7 @@ impl VpnSupervisor {
             health_checker: HealthChecker::new(),
             config_manager,
             app_config,
-            kill_switch: KillSwitch::new(),
+            kill_switch,
             switching_in_progress: false,
             switching_target: None,
             switching_from: None,

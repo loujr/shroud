@@ -1,13 +1,27 @@
 //! nftables-based VPN kill switch
 //!
 //! Uses a dedicated nftables table to block all traffic except:
-//! - Traffic through VPN tunnel interfaces (tun*)
+//! - Traffic through VPN tunnel interfaces (tun*, wg*)
 //! - Traffic to the VPN server IP (to establish connection)
 //! - Local loopback traffic
 //! - Established/related connections
 //!
 //! The kill switch uses a separate table "vpn_killswitch" to avoid
 //! interfering with other firewall rules.
+//!
+//! ## DNS Leak Protection
+//!
+//! Controlled by `dns_mode` config:
+//! - `tunnel`: DNS only via VPN tunnel interfaces (most secure)
+//! - `localhost`: DNS only to 127.0.0.0/8, ::1, 127.0.0.53
+//! - `any`: DNS to any destination (legacy, least secure)
+//!
+//! ## IPv6 Leak Protection
+//!
+//! Controlled by `ipv6_mode` config:
+//! - `block`: Drop all IPv6 except loopback (most secure)
+//! - `tunnel`: Allow IPv6 only via VPN tunnel interfaces
+//! - `off`: No special IPv6 handling (legacy)
 
 #![allow(dead_code)]
 
@@ -15,6 +29,8 @@ use log::{debug, info, warn};
 use std::net::IpAddr;
 use std::process::Stdio;
 use tokio::process::Command;
+
+use crate::config::{DnsMode, Ipv6Mode};
 
 /// Name of the nftables table for the kill switch
 const NFT_TABLE: &str = "vpn_killswitch";
@@ -38,16 +54,39 @@ pub struct KillSwitch {
     vpn_server_ip: Option<IpAddr>,
     /// VPN tunnel interface name (e.g., "tun0")
     vpn_interface: Option<String>,
+    /// DNS leak protection mode
+    dns_mode: DnsMode,
+    /// IPv6 leak protection mode
+    ipv6_mode: Ipv6Mode,
 }
 
 impl KillSwitch {
-    /// Create a new kill switch instance
+    /// Create a new kill switch instance with default (secure) settings
     pub fn new() -> Self {
         Self {
             enabled: false,
             vpn_server_ip: None,
             vpn_interface: None,
+            dns_mode: DnsMode::default(),
+            ipv6_mode: Ipv6Mode::default(),
         }
+    }
+
+    /// Create a kill switch with specific DNS and IPv6 modes
+    pub fn with_config(dns_mode: DnsMode, ipv6_mode: Ipv6Mode) -> Self {
+        Self {
+            enabled: false,
+            vpn_server_ip: None,
+            vpn_interface: None,
+            dns_mode,
+            ipv6_mode,
+        }
+    }
+
+    /// Update configuration (DNS and IPv6 modes)
+    pub fn set_config(&mut self, dns_mode: DnsMode, ipv6_mode: Ipv6Mode) {
+        self.dns_mode = dns_mode;
+        self.ipv6_mode = ipv6_mode;
     }
 
     /// Check if nftables is available
@@ -170,53 +209,137 @@ table inet {table} {{
     chain output {{
         type filter hook output priority 0; policy drop;
         
-        # Allow loopback
+        # === LOOPBACK ===
+        # Always allow loopback (both IPv4 and IPv6)
         oifname "lo" accept
         
-        # Allow established/related connections
+        # === ESTABLISHED/RELATED ===
+        # Allow responses to existing connections
         ct state established,related accept
-        
-        # Allow DHCP
+"#,
+            table = NFT_TABLE
+        );
+
+        // === IPv6 HANDLING ===
+        // Must come early, before other rules that might inadvertently allow IPv6
+        match self.ipv6_mode {
+            Ipv6Mode::Block => {
+                rules.push_str(r#"
+        # === IPv6 LEAK PROTECTION (block mode) ===
+        # Drop all IPv6 traffic except loopback (already accepted above)
+        # This prevents IPv6 leaks when VPN doesn't tunnel IPv6
+        meta nfproto ipv6 drop
+"#);
+            }
+            Ipv6Mode::Tunnel => {
+                rules.push_str(r#"
+        # === IPv6 LEAK PROTECTION (tunnel mode) ===
+        # IPv6 only allowed via VPN tunnel interfaces
+        # Link-local for neighbor discovery is allowed
+        ip6 daddr fe80::/10 accept
+"#);
+                // Note: IPv6 tunnel traffic is allowed by the interface rules below
+            }
+            Ipv6Mode::Off => {
+                rules.push_str(r#"
+        # === IPv6 (off - no special handling) ===
+        # WARNING: IPv6 may leak outside VPN tunnel
+        # Allow IPv6 link-local for basic functionality
+        ip6 daddr fe80::/10 accept
+"#);
+            }
+        }
+
+        // === DHCP ===
+        rules.push_str(r#"
+        # === DHCP ===
+        # Allow DHCP for network configuration
         udp dport 67 accept
         udp sport 68 accept
-        
-        # Allow DNS to localhost (for local resolvers like systemd-resolved)
-        ip daddr 127.0.0.0/8 accept
-        ip6 daddr ::1 accept
-        
-        # Allow local network access (prevents lockout)
+"#);
+
+        // === DNS HANDLING ===
+        match self.dns_mode {
+            DnsMode::Tunnel => {
+                rules.push_str(r#"
+        # === DNS LEAK PROTECTION (tunnel mode) ===
+        # DNS is ONLY allowed via VPN tunnel interfaces
+        # No explicit DNS rules here - tunnel interface accept rules below handle it
+        # This is the most secure option
+"#);
+            }
+            DnsMode::Localhost => {
+                rules.push_str(r#"
+        # === DNS LEAK PROTECTION (localhost mode) ===
+        # DNS only to local resolver (systemd-resolved, dnsmasq, etc.)
+        ip daddr 127.0.0.0/8 udp dport 53 accept
+        ip daddr 127.0.0.0/8 tcp dport 53 accept
+        # systemd-resolved stub listener
+        ip daddr 127.0.0.53 udp dport 53 accept
+        ip daddr 127.0.0.53 tcp dport 53 accept
+"#);
+                // Only add IPv6 localhost DNS if not blocking IPv6
+                if self.ipv6_mode != Ipv6Mode::Block {
+                    rules.push_str(r#"
+        ip6 daddr ::1 udp dport 53 accept
+        ip6 daddr ::1 tcp dport 53 accept
+"#);
+                }
+            }
+            DnsMode::Any => {
+                rules.push_str(r#"
+        # === DNS (any mode - LEGACY/INSECURE) ===
+        # WARNING: DNS can leak to any destination outside VPN!
+        # This mode is provided for compatibility only
+        udp dport 53 accept
+        tcp dport 53 accept
+"#);
+            }
+        }
+
+        // === LOCAL NETWORK ===
+        rules.push_str(r#"
+        # === LOCAL NETWORK ===
+        # Allow local network access (prevents lockout, printers, etc.)
         ip daddr 192.168.0.0/16 accept
         ip daddr 10.0.0.0/8 accept
         ip daddr 172.16.0.0/12 accept
-        ip6 daddr fe80::/10 accept
-        
-        # Allow DNS to VPN DNS servers (commonly in 10.x.x.x range)
-        udp dport 53 accept
-        tcp dport 53 accept
-        
-        # Allow traffic through VPN tunnel (tun/tap/wg interfaces)
+"#);
+
+        // === VPN TUNNEL INTERFACES ===
+        rules.push_str(&format!(
+            r#"
+        # === VPN TUNNEL INTERFACES ===
+        # Allow all traffic through VPN tunnels
         oifname "{vpn_iface}" accept
         oifname "tap*" accept
         oifname "wg*" accept
 "#,
-            table = NFT_TABLE,
             vpn_iface = vpn_iface
-        );
+        ));
 
+        // === VPN SERVER IPs ===
         // Add rules for all known VPN server IPs (so VPN can establish connection)
+        if !vpn_server_ips.is_empty() {
+            rules.push_str("\n        # === VPN SERVER ALLOWLIST ===\n");
+            rules.push_str("        # Allow traffic to VPN servers for connection establishment\n");
+        }
         for ip in vpn_server_ips {
             match ip {
                 IpAddr::V4(v4) => {
                     rules.push_str(&format!(
-                        "        # Allow traffic to VPN server {}\n        ip daddr {} accept\n",
-                        v4, v4
+                        "        ip daddr {} accept  # VPN server\n",
+                        v4
                     ));
                 }
                 IpAddr::V6(v6) => {
-                    rules.push_str(&format!(
-                        "        # Allow traffic to VPN server {}\n        ip6 daddr {} accept\n",
-                        v6, v6
-                    ));
+                    // Only add IPv6 server rules if not blocking IPv6
+                    if self.ipv6_mode != Ipv6Mode::Block {
+                        rules.push_str(&format!(
+                            "        ip6 daddr {} accept  # VPN server\n",
+                            v6
+                        ));
+                    }
                 }
             }
         }
@@ -226,33 +349,34 @@ table inet {table} {{
             match ip {
                 IpAddr::V4(v4) => {
                     rules.push_str(&format!(
-                        "        # Allow traffic to current VPN server\n        ip daddr {} accept\n",
+                        "        ip daddr {} accept  # Current VPN server\n",
                         v4
                     ));
                 }
                 IpAddr::V6(v6) => {
-                    rules.push_str(&format!(
-                        "        # Allow traffic to current VPN server\n        ip6 daddr {} accept\n",
-                        v6
-                    ));
+                    if self.ipv6_mode != Ipv6Mode::Block {
+                        rules.push_str(&format!(
+                            "        ip6 daddr {} accept  # Current VPN server\n",
+                            v6
+                        ));
+                    }
                 }
             }
         }
 
-        // Add input chain for incoming traffic (closing output chain first)
+        // === DROP AND LOG ===
         rules.push_str(
             r#"
-        # Log dropped packets (rate limited)
-        limit rate 1/second log prefix "[VPN-KS DROP OUT] " drop
+        # === DEFAULT DROP ===
+        # Log and drop everything else (rate limited to prevent log spam)
+        limit rate 1/second log prefix "[VPN-KS DROP] " drop
     }
     
-    # Input chain: more permissive to avoid lockouts
-    # We're primarily concerned with OUTPUT (preventing leaks)
+    # === INPUT CHAIN ===
+    # More permissive - kill switch is primarily about preventing outbound leaks
     chain input {
         type filter hook input priority 0; policy accept;
-        
-        # Accept everything on input - kill switch is about preventing
-        # outbound traffic leaks, not blocking incoming
+        # Accept all input - we're focused on OUTPUT leak prevention
     }
 }
 "#
@@ -517,5 +641,23 @@ mod tests {
         let mut ks = KillSwitch::new();
         ks.set_vpn_interface(Some("tun0".to_string()));
         assert_eq!(ks.vpn_interface, Some("tun0".to_string()));
+    }
+
+    #[test]
+    fn test_kill_switch_with_config() {
+        let ks = KillSwitch::with_config(DnsMode::Localhost, Ipv6Mode::Tunnel);
+        assert_eq!(ks.dns_mode, DnsMode::Localhost);
+        assert_eq!(ks.ipv6_mode, Ipv6Mode::Tunnel);
+    }
+
+    #[test]
+    fn test_kill_switch_set_config() {
+        let mut ks = KillSwitch::new();
+        assert_eq!(ks.dns_mode, DnsMode::Tunnel); // default
+        assert_eq!(ks.ipv6_mode, Ipv6Mode::Block); // default
+        
+        ks.set_config(DnsMode::Any, Ipv6Mode::Off);
+        assert_eq!(ks.dns_mode, DnsMode::Any);
+        assert_eq!(ks.ipv6_mode, Ipv6Mode::Off);
     }
 }

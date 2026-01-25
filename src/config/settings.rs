@@ -2,16 +2,77 @@
 //!
 //! Persistent storage for user preferences using TOML format.
 //! Config file is stored in XDG_CONFIG_HOME/openvpn-tray/config.toml
+//!
+//! ## Config Schema (version 1)
+//!
+//! ```toml
+//! version = 1
+//! auto_reconnect = true
+//! last_server = "us-east-1"  # optional
+//! health_check_interval_secs = 30
+//! health_degraded_threshold_ms = 2000
+//! max_reconnect_attempts = 10
+//! kill_switch_enabled = false
+//!
+//! # DNS leak protection mode: "tunnel" | "localhost" | "any"
+//! # - tunnel: DNS only via VPN tunnel interfaces (most secure, default)
+//! # - localhost: DNS only to 127.0.0.0/8, ::1, 127.0.0.53 (for local resolvers)
+//! # - any: DNS to any destination (legacy, least secure)
+//! dns_mode = "tunnel"
+//!
+//! # IPv6 leak protection: "block" | "tunnel" | "off"
+//! # - block: Drop all IPv6 except loopback (most secure, default)
+//! # - tunnel: Allow IPv6 only via VPN tunnel interfaces
+//! # - off: No special IPv6 handling (legacy)
+//! ipv6_mode = "block"
+//! ```
 
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+/// Current config version
+const CONFIG_VERSION: u32 = 1;
+
+/// DNS leak protection mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DnsMode {
+    /// DNS only via VPN tunnel interfaces (tun*, wg*)
+    /// Most secure - prevents DNS leaks entirely
+    #[default]
+    Tunnel,
+    /// DNS only to localhost (127.0.0.0/8, ::1, 127.0.0.53)
+    /// For systems using systemd-resolved or local caching resolver
+    Localhost,
+    /// DNS to any destination (legacy behavior, least secure)
+    /// Only use if you have specific requirements
+    Any,
+}
+
+/// IPv6 leak protection mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Ipv6Mode {
+    /// Block all IPv6 except loopback (most secure)
+    /// Recommended since most VPNs don't tunnel IPv6
+    #[default]
+    Block,
+    /// Allow IPv6 only via VPN tunnel interfaces
+    /// Use if your VPN properly tunnels IPv6
+    Tunnel,
+    /// No special IPv6 handling (legacy behavior)
+    /// Warning: May cause IPv6 leaks
+    Off,
+}
+
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    /// Config file version for migration support
+    pub version: u32,
     /// Whether auto-reconnect is enabled
     pub auto_reconnect: bool,
     /// Last successfully connected server (for quick reconnect)
@@ -24,17 +85,24 @@ pub struct Config {
     pub max_reconnect_attempts: u32,
     /// Kill switch enabled (blocks non-VPN traffic)
     pub kill_switch_enabled: bool,
+    /// DNS leak protection mode
+    pub dns_mode: DnsMode,
+    /// IPv6 leak protection mode
+    pub ipv6_mode: Ipv6Mode,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
+            version: CONFIG_VERSION,
             auto_reconnect: true,
             last_server: None,
             health_check_interval_secs: 30,
             health_degraded_threshold_ms: 2000,
             max_reconnect_attempts: 10,
             kill_switch_enabled: false,
+            dns_mode: DnsMode::default(),
+            ipv6_mode: Ipv6Mode::default(),
         }
     }
 }
@@ -71,7 +139,8 @@ impl ConfigManager {
 
     /// Load configuration from disk
     /// 
-    /// Returns default config if file doesn't exist or can't be parsed
+    /// Returns default config if file doesn't exist or can't be parsed.
+    /// Performs migration if config version is outdated.
     pub fn load(&self) -> Config {
         if !self.config_path.exists() {
             debug!("Config file not found, using defaults");
@@ -79,19 +148,77 @@ impl ConfigManager {
         }
 
         match fs::read_to_string(&self.config_path) {
-            Ok(contents) => match toml::from_str(&contents) {
-                Ok(config) => {
-                    info!("Loaded config from {:?}", self.config_path);
-                    config
-                }
-                Err(e) => {
-                    warn!("Failed to parse config file: {}. Using defaults.", e);
-                    Config::default()
-                }
-            },
+            Ok(contents) => self.parse_and_migrate(&contents),
             Err(e) => {
                 warn!("Failed to read config file: {}. Using defaults.", e);
                 Config::default()
+            }
+        }
+    }
+
+    /// Parse config string and migrate if necessary
+    fn parse_and_migrate(&self, contents: &str) -> Config {
+        // First, try to parse as raw TOML to check version
+        let raw: Result<toml::Value, _> = toml::from_str(contents);
+        
+        match raw {
+            Ok(mut value) => {
+                let version = value
+                    .get("version")
+                    .and_then(|v| v.as_integer())
+                    .unwrap_or(0) as u32;
+
+                if version < CONFIG_VERSION {
+                    info!("Migrating config from version {} to {}", version, CONFIG_VERSION);
+                    self.migrate(&mut value, version);
+                }
+
+                // Now parse the (possibly migrated) value into Config
+                match value.try_into() {
+                    Ok(config) => {
+                        info!("Loaded config from {:?}", self.config_path);
+                        config
+                    }
+                    Err(e) => {
+                        warn!("Failed to parse migrated config: {}. Using defaults.", e);
+                        Config::default()
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to parse config file: {}. Using defaults.", e);
+                Config::default()
+            }
+        }
+    }
+
+    /// Migrate config from old version to current version
+    fn migrate(&self, value: &mut toml::Value, from_version: u32) {
+        let table = match value.as_table_mut() {
+            Some(t) => t,
+            None => return,
+        };
+
+        // Migration from version 0 (no version field) to version 1
+        if from_version < 1 {
+            // Add new fields with defaults if they don't exist
+            if !table.contains_key("dns_mode") {
+                table.insert("dns_mode".to_string(), toml::Value::String("tunnel".to_string()));
+            }
+            if !table.contains_key("ipv6_mode") {
+                table.insert("ipv6_mode".to_string(), toml::Value::String("block".to_string()));
+            }
+        }
+
+        // Always update version to current
+        table.insert("version".to_string(), toml::Value::Integer(CONFIG_VERSION as i64));
+
+        // Save migrated config
+        if let Ok(migrated_str) = toml::to_string_pretty(value) {
+            if let Err(e) = fs::write(&self.config_path, &migrated_str) {
+                warn!("Failed to save migrated config: {}", e);
+            } else {
+                info!("Saved migrated config to {:?}", self.config_path);
             }
         }
     }
@@ -115,7 +242,11 @@ impl ConfigManager {
             }
         }
 
-        let contents = toml::to_string_pretty(config)
+        // Ensure version is set correctly
+        let mut config_to_save = config.clone();
+        config_to_save.version = CONFIG_VERSION;
+
+        let contents = toml::to_string_pretty(&config_to_save)
             .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
         fs::write(&self.config_path, &contents)
@@ -156,21 +287,27 @@ mod tests {
     #[test]
     fn test_config_default() {
         let config = Config::default();
+        assert_eq!(config.version, CONFIG_VERSION);
         assert!(config.auto_reconnect);
         assert!(config.last_server.is_none());
         assert_eq!(config.health_check_interval_secs, 30);
         assert_eq!(config.max_reconnect_attempts, 10);
+        assert_eq!(config.dns_mode, DnsMode::Tunnel);
+        assert_eq!(config.ipv6_mode, Ipv6Mode::Block);
     }
 
     #[test]
     fn test_config_serialize_deserialize() {
         let config = Config {
+            version: 1,
             auto_reconnect: false,
             last_server: Some("us-east-1".to_string()),
             health_check_interval_secs: 60,
             health_degraded_threshold_ms: 3000,
             max_reconnect_attempts: 5,
             kill_switch_enabled: true,
+            dns_mode: DnsMode::Localhost,
+            ipv6_mode: Ipv6Mode::Tunnel,
         };
 
         let toml_str = toml::to_string(&config).unwrap();
@@ -181,11 +318,13 @@ mod tests {
         assert_eq!(parsed.health_check_interval_secs, config.health_check_interval_secs);
         assert_eq!(parsed.max_reconnect_attempts, config.max_reconnect_attempts);
         assert_eq!(parsed.kill_switch_enabled, config.kill_switch_enabled);
+        assert_eq!(parsed.dns_mode, config.dns_mode);
+        assert_eq!(parsed.ipv6_mode, config.ipv6_mode);
     }
 
     #[test]
     fn test_config_partial_parse() {
-        // Test that missing fields use defaults
+        // Test that missing fields use defaults (backward compatibility)
         let partial_toml = r#"
             auto_reconnect = false
         "#;
@@ -194,5 +333,54 @@ mod tests {
         assert!(!config.auto_reconnect);
         assert!(config.last_server.is_none()); // default
         assert_eq!(config.health_check_interval_secs, 30); // default
+        assert_eq!(config.dns_mode, DnsMode::Tunnel); // default
+        assert_eq!(config.ipv6_mode, Ipv6Mode::Block); // default
+    }
+
+    #[test]
+    fn test_dns_mode_serialize() {
+        // Test serialization via a config struct
+        let config = Config { dns_mode: DnsMode::Tunnel, ..Default::default() };
+        let toml_str = toml::to_string(&config).unwrap();
+        assert!(toml_str.contains("dns_mode = \"tunnel\""));
+        
+        let config = Config { dns_mode: DnsMode::Localhost, ..Default::default() };
+        let toml_str = toml::to_string(&config).unwrap();
+        assert!(toml_str.contains("dns_mode = \"localhost\""));
+        
+        let config = Config { dns_mode: DnsMode::Any, ..Default::default() };
+        let toml_str = toml::to_string(&config).unwrap();
+        assert!(toml_str.contains("dns_mode = \"any\""));
+    }
+
+    #[test]
+    fn test_ipv6_mode_serialize() {
+        // Test serialization via a config struct
+        let config = Config { ipv6_mode: Ipv6Mode::Block, ..Default::default() };
+        let toml_str = toml::to_string(&config).unwrap();
+        assert!(toml_str.contains("ipv6_mode = \"block\""));
+        
+        let config = Config { ipv6_mode: Ipv6Mode::Tunnel, ..Default::default() };
+        let toml_str = toml::to_string(&config).unwrap();
+        assert!(toml_str.contains("ipv6_mode = \"tunnel\""));
+        
+        let config = Config { ipv6_mode: Ipv6Mode::Off, ..Default::default() };
+        let toml_str = toml::to_string(&config).unwrap();
+        assert!(toml_str.contains("ipv6_mode = \"off\""));
+    }
+
+    #[test]
+    fn test_unknown_fields_ignored() {
+        // Unknown fields should not cause parse failure
+        let toml_with_unknown = r#"
+            version = 1
+            auto_reconnect = true
+            some_future_field = "value"
+            another_unknown = 42
+        "#;
+
+        let config: Config = toml::from_str(toml_with_unknown).unwrap();
+        assert!(config.auto_reconnect);
+        assert_eq!(config.version, 1);
     }
 }

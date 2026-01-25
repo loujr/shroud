@@ -4,4 +4,4 @@
 
 pub mod settings;
 
-pub use settings::{Config, ConfigManager};
+pub use settings::{Config, ConfigManager, DnsMode, Ipv6Mode};
