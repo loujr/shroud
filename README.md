@@ -51,7 +51,8 @@ The name has layers:
 - **System tray integration** — KDE Plasma, GNOME with AppIndicator extension, etc.
 - **Configurable via TOML** — All settings persisted across restarts
 - **No telemetry** — No phoning home, no analytics (Principle IV)
-- **Single binary** — No daemon, no client-server split (Principle VIII)
+- **Single binary** — One binary for both daemon and CLI (Principle VIII)
+- **CLI control** — Full command-line interface for scripting and automation
 
 ---
 
@@ -170,7 +171,30 @@ RUST_LOG=shroud=trace shroud
 
 ### CLI Commands
 
-Shroud can be controlled from the command line while running:
+Shroud operates in two modes from a single binary:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│   $ shroud                    $ shroud connect ireland-42   │
+│   (daemon mode)               (client mode)                 │
+│                                                             │
+│   ┌─────────────┐             ┌─────────────┐               │
+│   │   Shroud    │◄────────────│   Shroud    │               │
+│   │   Daemon    │   command   │   Client    │               │
+│   │             │─────────────►             │               │
+│   │  (tray app) │   response  │  (one-shot) │               │
+│   └─────────────┘             └─────────────┘               │
+│         ▲                                                   │
+│         │ Unix socket: $XDG_RUNTIME_DIR/shroud.sock         │
+│         │                                                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- **Daemon mode** (`shroud`): Starts the tray application, listens for CLI commands
+- **Client mode** (`shroud <command>`): Sends command to running daemon and exits
+
+#### Available Commands
 
 ```bash
 # Connection management

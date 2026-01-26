@@ -8,16 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **CLI command system** for controlling Shroud from scripts and terminal
+- **CLI command system** with single-binary dual-mode architecture
+  - **Daemon mode** (`shroud`): Runs tray application, listens on Unix socket
+  - **Client mode** (`shroud <command>`): Sends command to daemon and exits
   - Connection management: `connect`, `disconnect`, `reconnect`, `switch`
   - Status commands: `status`, `list` (with `--json` support)
-  - Kill switch control: `killswitch on/off/toggle/status`
-  - Auto-reconnect control: `auto-reconnect on/off/toggle/status`
+  - Kill switch control: `killswitch on/off/toggle/status` (alias: `ks`)
+  - Auto-reconnect control: `auto-reconnect on/off/toggle/status` (alias: `ar`)
   - Debug commands: `debug on/off/log-path/tail/dump`
   - Daemon control: `ping`, `refresh`, `quit`, `restart`
-  - Unix socket IPC at `$XDG_RUNTIME_DIR/shroud.sock`
-  - Proper exit codes: 0 (success), 1 (error), 2 (daemon not running), 3 (timeout)
-  - JSON output support for scripting
+  - Unix socket IPC at `$XDG_RUNTIME_DIR/shroud.sock` with 0600 permissions
+  - Exit codes: 0 (success), 1 (error), 2 (daemon not running), 3 (timeout)
+  - JSON output (`--json` flag) for scripting and automation
+  - Built-in `--help` for all commands and subcommands
   - Command aliases: `ls`, `ks`, `ar`, `stop`, `exit`
 - Debug logging mode with multiple activation methods
   - CLI flags: `-v`, `--verbose`, `--log-level`, `--log-file`
