@@ -54,6 +54,11 @@ The name has layers:
 - **Single binary** — One binary for both daemon and CLI (Principle VIII)
 - **CLI control** — Full command-line interface for scripting and automation
 
+*System tray menu showing connection status and controls*
+
+<img width="313" alt="Shroud system tray menu" src="https://github.com/user-attachments/assets/7b00be8f-d97f-4b27-aabb-d4e56bb42a81" />
+
+
 ---
 
 ## Quick Start
