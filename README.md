@@ -4,6 +4,8 @@
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
+<img height="20" alt="Shroud logo" src="https://github.com/user-attachments/assets/85c62428-7608-4dcf-8e16-434f901d5021" />
+
 
 Shroud wraps around NetworkManager and OpenVPN like a protective shroud around a lock mechanism — hardening security without replacing the tools you already have.
 
