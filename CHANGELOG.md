@@ -58,6 +58,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Socket located in `$XDG_RUNTIME_DIR` which is user-private
 - Kill switch cleanup on SIGTERM/SIGINT prevents network lockout after crash
 
+## [1.1.0] - 2026-01-26
+
+### Added
+- **GitHub Actions CI pipeline** (`ci.yml`)
+  - Automated format checking (`cargo fmt --check`)
+  - Clippy linting with warnings as errors
+  - Full test suite execution
+  - Release build verification
+  - Rust caching via `Swatinem/rust-cache@v2`
+- **Security audit workflow** (`security.yml`)
+  - Weekly `cargo-audit` scans on schedule
+  - Manual trigger via workflow dispatch
+- **Test infrastructure hardening** (103 tests, +78% coverage)
+  - Config module: `with_path()` constructor for test isolation
+  - Config module: 7 new IO tests using tempfile (no env mutation)
+  - NM client: `parse_vpn_connections()` extracted as pure function
+  - NM client: `parse_vpn_uuid()` extracted as pure function
+  - NM client: 15 new parsing tests (edge cases, state priority)
+  - Kill switch: `build_ruleset()` extracted as pure function
+  - Kill switch: 23 new tests (DNS modes, IPv6 modes, VPN allowlists)
+- Added `tempfile` dev dependency for isolated testing
+
+### Changed
+- All tests now run without external commands (nmcli, nft, pkexec)
+- Pure parsing functions extracted from async I/O functions
+- Version graduated from 0.x to stable 1.x series
+
 ## [0.1.0] - 2026-01-25
 
 ### Added
