@@ -345,26 +345,52 @@ async fn try_handle_update_command(
     }
     println!("✓ Installed to ~/.cargo/bin/shroud");
 
+    println!("\n🔄 Restarting daemon...");
+    match send_command(IpcCommand::Restart).await {
+        Ok(IpcResponse::OkMessage { message }) => {
+            println!("✓ {}", message);
+        }
+        Ok(_) | Err(_) => {
+            println!("ℹ Daemon not running or already stopped");
+        }
+    }
+
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
     let local_path = dirs::home_dir()
         .map(|h| h.join(".local/bin/shroud"))
-        .filter(|p| p.exists());
+        .filter(|p| p.exists() || p.parent().map(|p| p.exists()).unwrap_or(false));
 
     if let Some(local_path) = local_path {
         let cargo_bin = dirs::home_dir()
             .ok_or("Failed to resolve home directory")?
             .join(".cargo/bin/shroud");
-        std::fs::copy(&cargo_bin, &local_path)?;
-        println!("✓ Copied to {}", local_path.display());
-    }
 
-    println!("\n🔄 Restarting daemon...");
-    match send_command(IpcCommand::Restart).await {
-        Ok(IpcResponse::OkMessage { message }) => {
-            println!("✓ {}", message);
-            std::thread::sleep(std::time::Duration::from_secs(2));
-        }
-        Ok(_) | Err(_) => {
-            println!("ℹ Daemon not running or already stopped");
+        let mut attempts = 0;
+        loop {
+            match std::fs::copy(&cargo_bin, &local_path) {
+                Ok(_) => {
+                    println!("✓ Copied to {}", local_path.display());
+                    break;
+                }
+                Err(e) if e.raw_os_error() == Some(26) && attempts < 3 => {
+                    attempts += 1;
+                    println!(
+                        "  Waiting for old process to exit (attempt {}/3)...",
+                        attempts
+                    );
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                }
+                Err(e) if e.raw_os_error() == Some(26) => {
+                    println!("⚠ Could not copy to {}: file busy", local_path.display());
+                    println!("  Run manually: cp ~/.cargo/bin/shroud ~/.local/bin/shroud");
+                    break;
+                }
+                Err(e) => {
+                    println!("⚠ Could not copy to {}: {}", local_path.display(), e);
+                    break;
+                }
+            }
         }
     }
 
