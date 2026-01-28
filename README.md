@@ -2,7 +2,7 @@
 
 **A provider-agnostic VPN connection manager for Linux.**
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
 <img height="20" alt="Shroud logo" src="https://github.com/user-attachments/assets/85c62428-7608-4dcf-8e16-434f901d5021" />
 
@@ -450,7 +450,17 @@ Before submitting a PR:
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE).
+This software is dual-licensed under the **GNU General Public License v3.0 (GPLv3)** and a **Commercial License**.
+
+### Open Source Use
+
+For open source use, this program is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License** as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+### Commercial Use
+
+For commercial use, or to use this software in a proprietary product without the restrictions of the GPL, please contact the author for commercial licensing options.
+
+See [LICENSE](LICENSE) for full details.
 
 ---
 

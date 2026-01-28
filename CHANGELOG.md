@@ -46,6 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Installation verification and summary
   - Detailed logging to `/tmp/shroud-setup-*.log`
 
+### Changed
+- **License**: Updated to GPLv3 + Commercial Dual License
+
 ### Fixed
 - Kill switch now automatically disabled on intentional user disconnect to prevent network lockout
 - Restart command properly cleans up resources before spawning new instance
