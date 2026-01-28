@@ -127,13 +127,13 @@ If you prefer manual control:
 
 ```bash
 # Arch Linux
-sudo pacman -S rust networkmanager networkmanager-openvpn openvpn nftables polkit libappindicator-gtk3
+sudo pacman -S rust networkmanager networkmanager-openvpn openvpn iptables polkit libappindicator-gtk3
 
 # Debian/Ubuntu
-sudo apt install rustc cargo network-manager network-manager-openvpn openvpn nftables policykit-1 libayatana-appindicator3-1
+sudo apt install rustc cargo network-manager network-manager-openvpn openvpn iptables policykit-1 libayatana-appindicator3-1
 
 # Fedora
-sudo dnf install rust cargo NetworkManager NetworkManager-openvpn openvpn nftables polkit libappindicator-gtk3
+sudo dnf install rust cargo NetworkManager NetworkManager-openvpn openvpn iptables polkit libappindicator-gtk3
 ```
 
 #### Build and Install
@@ -241,11 +241,32 @@ shroud ping                     # Check if daemon is running
 shroud refresh                  # Refresh VPN connection list
 shroud quit                     # Stop the daemon gracefully
 shroud restart                  # Restart the daemon
+shroud reload                   # Reload configuration without restart
+shroud update                   # Build, install, and restart (dev workflow)
+shroud version --check          # Check if rebuild is needed
 
 # Help
 shroud --help                   # Show main help
 shroud help connect             # Help for specific command
 shroud connect --help           # Alternative help syntax
+```
+
+---
+
+## Development Workflow
+
+### Quick rebuild and restart
+
+```bash
+shroud update
+```
+
+Other commands:
+
+```bash
+shroud restart         # Restart daemon
+shroud reload          # Reload config without restart
+shroud version --check # Check if rebuild needed
 ```
 
 ### Exit Codes
@@ -298,7 +319,7 @@ ipv6_mode = "block"
 
 ### Kill Switch
 
-When enabled, the kill switch creates nftables rules that:
+When enabled, the kill switch creates iptables rules that:
 
 1. **Allow** loopback traffic
 2. **Allow** established/related connections
@@ -328,10 +349,10 @@ When enabled, the kill switch creates nftables rules that:
 
 ```bash
 # View active kill switch rules
-sudo nft list table inet shroud_killswitch
+sudo iptables -S SHROUD_KILLSWITCH
 
-# View all tables
-sudo nft list tables
+# View OUTPUT rules (jump into kill switch chain)
+sudo iptables -S OUTPUT
 ```
 
 ---
@@ -346,7 +367,7 @@ sudo nft list tables
 
 ### Kill Switch Not Working
 
-1. Verify nftables is installed: `nft --version`
+1. Verify iptables is installed: `iptables --version`
 2. Check polkit is running: `systemctl status polkit`
 3. Try enabling manually and check for pkexec prompt
 
@@ -365,7 +386,9 @@ If Shroud crashes with kill switch enabled:
 shroud
 
 # Or manually clean up
-sudo nft delete table inet shroud_killswitch
+sudo iptables -D OUTPUT -j SHROUD_KILLSWITCH
+sudo iptables -F SHROUD_KILLSWITCH
+sudo iptables -X SHROUD_KILLSWITCH
 ```
 
 ### Debug Logging

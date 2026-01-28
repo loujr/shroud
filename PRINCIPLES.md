@@ -48,7 +48,7 @@ Trust is not a feature. It is the foundation.
 
 Every dependency is a liability. Every abstraction is a potential failure point. Every line of code is a maintenance burden.
 
-If it can be done with nmcli, do not write a D-Bus binding. If it can be done with nft, do not shell out to iptables-legacy. If it can be done in one crate, do not import three.
+If it can be done with nmcli, do not write a D-Bus binding. If it can be done with iptables, do not shell out to legacy tooling. If it can be done in one crate, do not import three.
 
 Simplicity is not laziness. It is discipline.
 
@@ -56,7 +56,7 @@ Simplicity is not laziness. It is discipline.
 
 ## VI. Speak the System's Language
 
-We use NetworkManager because it is there. We use D-Bus because it is the lingua franca. We use XDG paths because that is where config belongs. We use nftables because iptables is yesterday.
+We use NetworkManager because it is there. We use D-Bus because it is the lingua franca. We use XDG paths because that is where config belongs. We use iptables because it is the current kill switch engine.
 
 Shroud should feel native on any Linux system — not like a foreign ambassador demanding special accommodations.
 

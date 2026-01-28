@@ -334,7 +334,7 @@ impl Tray for VpnTray {
 
         // Restart application
         items.push(MenuItem::Standard(StandardItem {
-            label: "Restart".to_string(),
+            label: "Restart Daemon".to_string(),
             icon_name: "view-refresh".to_string(),
             enabled: true,
             activate: Box::new(|tray: &mut Self| {

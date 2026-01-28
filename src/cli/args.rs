@@ -67,6 +67,9 @@ pub enum ParsedCommand {
     Refresh,
     Quit,
     Restart,
+    Reload,
+    Update { yes: bool, debug: bool },
+    Version { check: bool },
 
     // Help
     Help { command: Option<String> },
@@ -212,6 +215,9 @@ fn parse_command(argv: &[String]) -> Result<ParsedCommand, String> {
         "refresh" => Ok(ParsedCommand::Refresh),
         "quit" | "stop" | "exit" => Ok(ParsedCommand::Quit),
         "restart" => Ok(ParsedCommand::Restart),
+        "reload" => Ok(ParsedCommand::Reload),
+        "update" => parse_update_flags(&argv[1..]),
+        "version" => parse_version_flags(&argv[1..]),
         "help" => Ok(ParsedCommand::Help {
             command: argv.get(1).cloned(),
         }),
@@ -220,6 +226,39 @@ fn parse_command(argv: &[String]) -> Result<ParsedCommand, String> {
             argv[0]
         )),
     }
+}
+
+fn parse_update_flags(argv: &[String]) -> Result<ParsedCommand, String> {
+    let mut yes = false;
+    let mut debug = false;
+
+    for arg in argv {
+        match arg.as_str() {
+            "-y" | "--yes" => yes = true,
+            "--debug" => debug = true,
+            _ => {
+                return Err(format!(
+                    "Unknown update option: '{}'. Use --yes or --debug",
+                    arg
+                ))
+            }
+        }
+    }
+
+    Ok(ParsedCommand::Update { yes, debug })
+}
+
+fn parse_version_flags(argv: &[String]) -> Result<ParsedCommand, String> {
+    let mut check = false;
+
+    for arg in argv {
+        match arg.as_str() {
+            "--check" => check = true,
+            _ => return Err(format!("Unknown version option: '{}'. Use --check", arg)),
+        }
+    }
+
+    Ok(ParsedCommand::Version { check })
 }
 
 /// Parse a toggle action argument

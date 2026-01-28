@@ -9,7 +9,7 @@
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐              │
 │  │   System     │    │     VPN      │    │    Kill      │              │
 │  │    Tray      │◄──►│  Supervisor  │◄──►│   Switch     │              │
-│  │   (ksni)     │    │              │    │  (nftables)  │              │
+│  │   (ksni)     │    │              │    │ (iptables)   │              │
 │  └──────────────┘    └──────────────┘    └──────────────┘              │
 │         │                   │                   │                        │
 │         │                   │                   │                        │
@@ -23,7 +23,7 @@
           ┌───────────────────┼───────────────────┐
           ▼                   ▼                   ▼
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│ NetworkManager│    │    D-Bus     │    │   nftables   │
+│ NetworkManager│    │    D-Bus     │    │   iptables   │
 │   (nmcli)    │    │   (zbus)     │    │   (pkexec)   │
 └──────────────┘    └──────────────┘    └──────────────┘
 ```
@@ -84,7 +84,7 @@ src/
 │   └── client.rs     # Unix Domain Socket Client
 ├── killswitch/
 │   ├── mod.rs        # Module exports
-│   └── firewall.rs   # KillSwitch, nftables rule generation
+│   └── firewall.rs   # KillSwitch, iptables rule generation
 ├── nm/
 │   ├── mod.rs        # Module exports
 │   └── client.rs     # nmcli wrappers (connect, disconnect, list)
@@ -114,7 +114,7 @@ The application uses specific error types for each domain, leveraging the `thise
 | `config` | `ConfigError` | Configuration loading, parsing, and saving errors |
 | `ipc` | `ClientError` | IPC client connection and communication errors |
 | `ipc` | `ServerError` | IPC server binding and acceptance errors |
-| `killswitch` | `KillSwitchError` | Firewall/nftables operation errors |
+| `killswitch` | `KillSwitchError` | Firewall/iptables operation errors |
 | `nm` | `NmError` | NetworkManager interaction errors |
 
 Errors are propagated up to the `VpnSupervisor` or CLI handlers, where they are logged or displayed to the user.
@@ -218,26 +218,24 @@ Errors are propagated up to the `VpnSupervisor` or CLI handlers, where they are 
 
 ## Kill Switch Architecture
 
-### nftables Table Structure
+### iptables Chain Structure
 
 ```
-table inet shroud_killswitch {
-    chain output {
-        type filter hook output priority 0; policy drop;
-        
-        # 1. Loopback - always allowed
-        oifname "lo" accept
-        
-        # 2. Established connections
-        ct state established,related accept
-        
-        # 3. IPv6 handling (based on ipv6_mode)
-        # block: meta nfproto ipv6 drop
-        # tunnel: ip6 daddr fe80::/10 accept (link-local)
-        
-        # 4. DHCP
-        udp dport 67 accept
-        udp sport 68 accept
+Chain SHROUD_KILLSWITCH (policy DROP)
+       # 1. Loopback - always allowed
+       -o lo -j ACCEPT
+
+       # 2. Established connections
+       -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+       # 3. VPN tunnel interfaces
+       -o tun+ -j ACCEPT
+       -o tap+ -j ACCEPT
+       -o wg+ -j ACCEPT
+
+       # 4. DHCP
+       -p udp --dport 67 -j ACCEPT
+       -p udp --sport 68 -j ACCEPT
         
         # 5. DNS (based on dns_mode)
         # tunnel: (no rules - only via VPN interface)

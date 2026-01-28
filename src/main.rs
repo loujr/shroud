@@ -11,7 +11,7 @@
 //! - `state/` - Formal state machine types and transitions
 //! - `nm/` - NetworkManager interface (nmcli + D-Bus events)
 //! - `tray/` - System tray UI (ksni/StatusNotifierItem)
-//! - `killswitch/` - nftables-based traffic blocking
+//! - `killswitch/` - iptables-based traffic blocking
 //! - `health/` - VPN tunnel connectivity verification
 //! - `config/` - Persistent user settings
 //!

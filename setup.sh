@@ -232,7 +232,7 @@ get_package_name() {
                 networkmanager) echo "networkmanager" ;;
                 networkmanager-openvpn) echo "networkmanager-openvpn" ;;
                 openvpn) echo "openvpn" ;;
-                nftables) echo "nftables" ;;
+                iptables) echo "iptables" ;;
                 polkit) echo "polkit" ;;
                 libappindicator) echo "libappindicator-gtk3" ;;
                 rust) echo "rust" ;;
@@ -244,7 +244,7 @@ get_package_name() {
                 networkmanager) echo "network-manager" ;;
                 networkmanager-openvpn) echo "network-manager-openvpn" ;;
                 openvpn) echo "openvpn" ;;
-                nftables) echo "nftables" ;;
+                iptables) echo "iptables" ;;
                 polkit) echo "policykit-1" ;;
                 libappindicator) echo "libayatana-appindicator3-1" ;;
                 rust) echo "rustc cargo" ;;
@@ -256,7 +256,7 @@ get_package_name() {
                 networkmanager) echo "NetworkManager" ;;
                 networkmanager-openvpn) echo "NetworkManager-openvpn" ;;
                 openvpn) echo "openvpn" ;;
-                nftables) echo "nftables" ;;
+                iptables) echo "iptables" ;;
                 polkit) echo "polkit" ;;
                 libappindicator) echo "libappindicator-gtk3" ;;
                 rust) echo "rust cargo" ;;
@@ -329,7 +329,7 @@ check_all_dependencies() {
     check_dependency "networkmanager" "nmcli" || missing+=("networkmanager")
     check_dependency "networkmanager-openvpn" || missing+=("networkmanager-openvpn")
     check_dependency "openvpn" "openvpn" || missing+=("openvpn")
-    check_dependency "nftables" "nft" || missing+=("nftables")
+    check_dependency "iptables" "iptables" || missing+=("iptables")
     check_dependency "polkit" "pkexec" || missing+=("polkit")
     check_dependency "dbus" "dbus-daemon" || missing+=("dbus")
     
@@ -400,9 +400,9 @@ preflight_checks() {
         success "NetworkManager is running"
     fi
     
-    # Check for nftables kernel support
-    if ! lsmod | grep -q nf_tables; then
-        verbose "nf_tables kernel module not loaded (may be built-in)"
+    # Check for iptables kernel support
+    if ! lsmod | grep -q ip_tables; then
+        verbose "ip_tables kernel module not loaded (may be built-in)"
     fi
     
     # Detect desktop environment
@@ -447,7 +447,7 @@ install_dependencies() {
     info "Installing dependencies..."
     
     local packages=()
-    for dep in rust networkmanager networkmanager-openvpn openvpn nftables polkit dbus libappindicator; do
+    for dep in rust networkmanager networkmanager-openvpn openvpn iptables polkit dbus libappindicator; do
         local pkg
         pkg=$(get_package_name "$dep")
         if [ -n "$pkg" ]; then
@@ -524,10 +524,12 @@ stop_existing() {
     # Clean up stale socket
     rm -f "${XDG_RUNTIME_DIR:-/tmp}/shroud.sock"
     
-    # Clean up stale nftables rules
-    if nft list table inet shroud_killswitch &>/dev/null; then
+    # Clean up stale iptables rules
+    if iptables -S SHROUD_KILLSWITCH &>/dev/null; then
         warn "Found stale kill switch rules, cleaning up..."
-        sudo nft delete table inet shroud_killswitch 2>/dev/null || true
+        sudo iptables -D OUTPUT -j SHROUD_KILLSWITCH 2>/dev/null || true
+        sudo iptables -F SHROUD_KILLSWITCH 2>/dev/null || true
+        sudo iptables -X SHROUD_KILLSWITCH 2>/dev/null || true
     fi
     
     success "Stopped existing instance"
@@ -681,7 +683,7 @@ Environment=DISPLAY=%I
 Environment=WAYLAND_DISPLAY=%I
 
 # Cleanup kill switch on service stop
-ExecStopPost=-/bin/sh -c 'sudo nft delete table inet shroud_killswitch 2>/dev/null || true'
+ExecStopPost=-/bin/sh -c 'sudo iptables -D OUTPUT -j SHROUD_KILLSWITCH 2>/dev/null || true; sudo iptables -F SHROUD_KILLSWITCH 2>/dev/null || true; sudo iptables -X SHROUD_KILLSWITCH 2>/dev/null || true'
 
 [Install]
 WantedBy=graphical-session.target
@@ -966,11 +968,11 @@ install_polkit_policy() {
     info "The kill switch requires elevated privileges to modify firewall rules."
     info "You can install a polkit policy to avoid password prompts."
     echo
-    warn "This will allow your user to run 'nft' commands without a password."
+    warn "This will allow your user to run 'iptables' commands without a password."
     warn "Only do this if you understand the security implications."
     echo
     
-    if ! confirm "Install polkit policy for passwordless nft?"; then
+    if ! confirm "Install polkit policy for passwordless iptables?"; then
         info "Skipping polkit policy installation"
         return 0
     fi
@@ -980,8 +982,8 @@ install_polkit_policy() {
         return 0
     fi
     
-    local policy_file="$POLKIT_ACTIONS_DIR/org.shroud.nft.policy"
-    local rules_file="$POLKIT_RULES_DIR/50-shroud-nft.rules"
+    local policy_file="$POLKIT_ACTIONS_DIR/org.shroud.iptables.policy"
+    local rules_file="$POLKIT_RULES_DIR/50-shroud-iptables.rules"
     
     # Create policy
     sudo tee "$policy_file" > /dev/null << 'EOF'
@@ -993,24 +995,24 @@ install_polkit_policy() {
   <vendor>Shroud VPN Manager</vendor>
   <vendor_url>https://github.com/loujr/shroud</vendor_url>
   
-  <action id="org.shroud.nft">
-    <description>Run nft for Shroud VPN kill switch</description>
+    <action id="org.shroud.iptables">
+        <description>Run iptables for Shroud VPN kill switch</description>
     <message>Authentication is required to modify firewall rules for Shroud VPN Manager</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
       <allow_active>auth_admin_keep</allow_active>
     </defaults>
-    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/nft</annotate>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/iptables</annotate>
   </action>
 </policyconfig>
 EOF
 
     # Create rules for automatic authorization
     sudo tee "$rules_file" > /dev/null << 'EOF'
-// Allow members of wheel group to run nft without password for Shroud
+// Allow members of wheel group to run iptables without password for Shroud
 polkit.addRule(function(action, subject) {
-    if (action.id == "org.shroud.nft" &&
+    if (action.id == "org.shroud.iptables" &&
         subject.isInGroup("wheel")) {
         return polkit.Result.YES;
     }
@@ -1113,8 +1115,8 @@ show_summary() {
 # ============================================================================
 
 remove_polkit_policy() {
-    local policy_file="$POLKIT_ACTIONS_DIR/org.shroud.nft.policy"
-    local rules_file="$POLKIT_RULES_DIR/50-shroud-nft.rules"
+    local policy_file="$POLKIT_ACTIONS_DIR/org.shroud.iptables.policy"
+    local rules_file="$POLKIT_RULES_DIR/50-shroud-iptables.rules"
     
     if [ -f "$policy_file" ] || [ -f "$rules_file" ]; then
         info "Removing polkit policy..."
@@ -1206,9 +1208,11 @@ do_uninstall() {
     # Clean up socket
     rm -f "${XDG_RUNTIME_DIR:-/tmp}/shroud.sock"
     
-    # Clean up any remaining nftables rules
-    if sudo nft list table inet shroud_killswitch &>/dev/null 2>&1; then
-        sudo nft delete table inet shroud_killswitch 2>/dev/null || true
+    # Clean up any remaining iptables rules
+    if sudo iptables -S SHROUD_KILLSWITCH &>/dev/null 2>&1; then
+        sudo iptables -D OUTPUT -j SHROUD_KILLSWITCH 2>/dev/null || true
+        sudo iptables -F SHROUD_KILLSWITCH 2>/dev/null || true
+        sudo iptables -X SHROUD_KILLSWITCH 2>/dev/null || true
     fi
     
     echo
@@ -1350,8 +1354,8 @@ show_status() {
         echo -e "${YELLOW}○${NC} Config: not found"
     fi
     
-    # nftables rules
-    if sudo nft list table inet shroud_killswitch &>/dev/null 2>&1; then
+    # iptables rules
+    if sudo iptables -S SHROUD_KILLSWITCH &>/dev/null 2>&1; then
         echo -e "${YELLOW}○${NC} Kill switch: rules active"
     else
         echo -e "${DIM}○${NC} Kill switch: not active"
@@ -1362,7 +1366,7 @@ show_status() {
     echo -e "${BOLD}Dependencies:${NC}"
     check_dependency "networkmanager" "nmcli"
     check_dependency "openvpn" "openvpn"
-    check_dependency "nftables" "nft"
+    check_dependency "iptables" "iptables"
     check_dependency "polkit" "pkexec"
     
     # Desktop environment

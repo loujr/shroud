@@ -83,6 +83,7 @@ pub enum IpcCommand {
     Refresh,
     Quit,
     Restart,
+    Reload,
 }
 
 /// Responses sent from daemon to CLI client.
@@ -162,6 +163,7 @@ impl IpcCommand {
             IpcCommand::Refresh => "refresh connections",
             IpcCommand::Quit => "shutdown daemon",
             IpcCommand::Restart => "restart daemon",
+            IpcCommand::Reload => "reload configuration",
         }
     }
 }

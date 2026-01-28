@@ -4,7 +4,7 @@
 //! It coordinates:
 //! - VPN connection state management via a formal state machine
 //! - NetworkManager interaction (via nmcli and D-Bus events)
-//! - Kill switch management (nftables firewall rules)
+//! - Kill switch management (iptables firewall rules)
 //! - Health monitoring of VPN connections
 //! - System tray updates
 //! - CLI command handling
@@ -107,6 +107,10 @@ pub struct VpnSupervisor {
     pub(crate) switch_completed_time: Option<Instant>,
     /// Flag to cancel ongoing reconnection attempts
     pub(crate) reconnect_cancelled: bool,
+    /// Flag to indicate daemon should exit after responding
+    pub(crate) should_exit: bool,
+    /// Reason for exit (restart/shutdown)
+    pub(crate) exit_reason: Option<String>,
 }
 
 impl VpnSupervisor {
@@ -161,6 +165,8 @@ impl VpnSupervisor {
             switching_from: None,
             switch_completed_time: None,
             reconnect_cancelled: false,
+            should_exit: false,
+            exit_reason: None,
         }
     }
 }

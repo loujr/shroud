@@ -727,10 +727,13 @@ impl super::VpnSupervisor {
         info!("Restart requested");
         self.show_notification("VPN Manager", "Restarting...");
 
-        // Give the notification time to show
-        sleep(Duration::from_millis(500)).await;
+        if self.kill_switch.is_enabled() {
+            info!("Disabling kill switch before restart");
+            if let Err(e) = self.kill_switch.disable().await {
+                error!("Failed to disable kill switch: {}", e);
+            }
+        }
 
-        // Get the path to our own executable
         let exe_path = match std::env::current_exe() {
             Ok(path) => path,
             Err(e) => {
@@ -739,27 +742,17 @@ impl super::VpnSupervisor {
             }
         };
 
-        info!("Restarting from: {:?}", exe_path);
-
-        // Clean up resources BEFORE spawning new instance
-        // This releases the lock so the new instance can acquire it
-        release_instance_lock();
-        let socket_path = crate::ipc::protocol::socket_path();
-        let _ = std::fs::remove_file(&socket_path);
-
-        // Small delay to ensure cleanup is complete
-        sleep(Duration::from_millis(100)).await;
-
-        // Spawn the new process
-        match std::process::Command::new(&exe_path)
+        info!("Spawning new daemon instance: {:?}", exe_path);
+        let spawn_result = std::process::Command::new(&exe_path)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .spawn()
-        {
+            .spawn();
+
+        match spawn_result {
             Ok(_) => {
-                info!("New instance spawned, exiting current instance");
-                std::process::exit(0);
+                self.should_exit = true;
+                self.exit_reason = Some("restart".to_string());
             }
             Err(e) => {
                 error!("Failed to spawn new instance: {}", e);
@@ -795,6 +788,26 @@ impl super::VpnSupervisor {
         std::process::exit(0);
     }
 
+    pub(crate) async fn graceful_shutdown(&mut self) {
+        info!("Performing graceful shutdown");
+
+        if self.kill_switch.is_enabled() {
+            info!("Disabling kill switch before shutdown");
+            if let Err(e) = self.kill_switch.disable().await {
+                warn!("Failed to disable kill switch during shutdown: {}", e);
+            }
+        }
+
+        release_instance_lock();
+
+        let socket_path = crate::ipc::protocol::socket_path();
+        if socket_path.exists() {
+            let _ = std::fs::remove_file(&socket_path);
+        }
+
+        info!("Graceful shutdown complete");
+    }
+
     /// Toggle auto-reconnect setting
     pub(crate) async fn toggle_auto_reconnect(&mut self) {
         info!("toggle_auto_reconnect called");
@@ -822,7 +835,7 @@ impl super::VpnSupervisor {
         );
     }
 
-    /// Toggle kill switch (nftables firewall rules that block non-VPN traffic)
+    /// Toggle kill switch (iptables firewall rules that block non-VPN traffic)
     pub(crate) async fn toggle_kill_switch(&mut self) {
         let current_enabled = self.app_config.kill_switch_enabled;
         let new_enabled = !current_enabled;
@@ -922,6 +935,27 @@ impl super::VpnSupervisor {
             state.connections = connections;
         }
         self.update_tray();
+    }
+
+    async fn reload_configuration(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        info!("Reloading configuration from disk");
+        let new_config = self.config_manager.load();
+
+        self.app_config = new_config.clone();
+        self.kill_switch
+            .set_config(new_config.dns_mode, new_config.ipv6_mode);
+
+        {
+            let mut state = self.shared_state.write().await;
+            state.auto_reconnect = new_config.auto_reconnect;
+            state.kill_switch = new_config.kill_switch_enabled;
+        }
+
+        self.sync_shared_state().await;
+        self.update_tray();
+
+        info!("Configuration reloaded successfully");
+        Ok(())
     }
 
     /// Handle IPC command
@@ -1113,8 +1147,58 @@ impl super::VpnSupervisor {
                 return;
             }
             IpcCommand::Restart => {
-                self.handle_restart().await;
-                IpcResponse::Ok
+                info!("Restart requested via IPC");
+
+                if self.kill_switch.is_enabled() {
+                    info!("Disabling kill switch before restart");
+                    if let Err(e) = self.kill_switch.disable().await {
+                        error!("Failed to disable kill switch: {}", e);
+                    }
+                }
+
+                let exe = match std::env::current_exe() {
+                    Ok(path) => path,
+                    Err(e) => {
+                        let _ = response_tx
+                            .send(IpcResponse::Error {
+                                message: format!("Failed to get executable path: {}", e),
+                            })
+                            .await;
+                        return;
+                    }
+                };
+
+                info!("Spawning new daemon instance: {:?}", exe);
+
+                let spawn_result = std::process::Command::new(&exe)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn();
+
+                match spawn_result {
+                    Ok(_) => {
+                        self.should_exit = true;
+                        self.exit_reason = Some("restart".to_string());
+                        IpcResponse::OkMessage {
+                            message: "Restarting daemon...".to_string(),
+                        }
+                    }
+                    Err(e) => IpcResponse::Error {
+                        message: format!("Failed to spawn new instance: {}", e),
+                    },
+                }
+            }
+            IpcCommand::Reload => {
+                info!("Configuration reload requested via IPC");
+                match self.reload_configuration().await {
+                    Ok(()) => IpcResponse::OkMessage {
+                        message: "Configuration reloaded successfully".to_string(),
+                    },
+                    Err(e) => IpcResponse::Error {
+                        message: format!("Failed to reload configuration: {}", e),
+                    },
+                }
             }
             _ => IpcResponse::Error {
                 message: "Command not implemented".to_string(),

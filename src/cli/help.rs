@@ -33,6 +33,9 @@ COMMANDS:
     refresh              Refresh VPN connection list
     quit                 Stop the daemon gracefully
     restart              Restart the daemon
+    reload               Reload configuration without restart
+    update               Build, install, and restart (dev workflow)
+    version              Show version information
     help <COMMAND>       Show help for a command
 
 EXAMPLES:
@@ -43,6 +46,9 @@ EXAMPLES:
     shroud killswitch on            Enable the kill switch
     shroud list                     List available VPN connections
     shroud debug tail               Follow the debug log file
+    shroud reload                   Reload configuration from disk
+    shroud update                   Build, install, and restart
+    shroud version --check          Check if rebuild is needed
 
 ALIASES:
     ls                   Alias for 'list'
@@ -165,7 +171,7 @@ ALIASES:
     ks, kill-switch
 
 The kill switch blocks all non-VPN traffic when enabled, preventing
-leaks if the VPN connection drops. It uses nftables rules.
+leaks if the VPN connection drops. It uses iptables rules.
 
 EXAMPLES:
     shroud killswitch on
@@ -257,6 +263,46 @@ USAGE:
 
 Stops the daemon and starts a new instance.
 Equivalent to: shroud quit && shroud"#
+        ),
+
+        "reload" => println!(
+            r#"Reload configuration without restart
+
+USAGE:
+    shroud reload
+
+Reloads config from disk and applies it live without restarting
+the daemon."#
+        ),
+
+        "update" => println!(
+            r#"Build, install, and restart (development workflow)
+
+USAGE:
+    shroud update [OPTIONS]
+
+OPTIONS:
+    -y, --yes     Skip confirmation prompt
+    --debug       Build in debug mode (default: release)
+
+EXAMPLES:
+    shroud update
+    shroud update --yes
+    shroud update --debug"#
+        ),
+
+        "version" => println!(
+            r#"Show version information
+
+USAGE:
+    shroud version [--check]
+
+OPTIONS:
+    --check    Check if source is newer than the installed binary
+
+EXAMPLES:
+    shroud version
+    shroud version --check"#
         ),
 
         _ => println!("No help available for '{}'", command),

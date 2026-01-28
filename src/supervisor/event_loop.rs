@@ -85,6 +85,11 @@ impl super::VpnSupervisor {
                         }
                         VpnCommand::Restart => {
                             self.handle_restart().await;
+                            if self.should_exit {
+                                info!("Exiting due to: {:?}", self.exit_reason);
+                                self.graceful_shutdown().await;
+                                std::process::exit(0);
+                            }
                         }
                     }
                 }
@@ -97,6 +102,11 @@ impl super::VpnSupervisor {
                 // Handle IPC commands
                 Some((cmd, response_tx)) = self.ipc_rx.recv() => {
                     self.handle_ipc_command(cmd, response_tx).await;
+                    if self.should_exit {
+                        info!("Exiting due to: {:?}", self.exit_reason);
+                        self.graceful_shutdown().await;
+                        std::process::exit(0);
+                    }
                 }
 
                 // Poll NetworkManager state periodically (fallback/backup)

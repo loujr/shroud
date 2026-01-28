@@ -1,6 +1,6 @@
 //! Kill switch module
 //!
-//! Provides VPN kill switch functionality using nftables.
+//! Provides VPN kill switch functionality using iptables.
 //! When enabled, blocks all traffic except through the VPN tunnel.
 
 pub mod firewall;

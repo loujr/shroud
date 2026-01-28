@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Documentation**: Enhanced `ARCHITECTURE.md` with CLI architecture diagram and error handling strategy.
 
+## [1.4.0] - 2026-02-12
+
+### Added
+- **Daemon Control**: New `restart` and `reload` IPC commands for daemon lifecycle management.
+- **CLI**: Added `shroud update` (build + install + restart), `shroud reload`, and `shroud version --check`.
+- **Tray**: Added “Restart Daemon” menu option.
+
+### Changed
+- **Shutdown Safety**: Restarts and shutdowns now disable the kill switch before exit to prevent lockout.
+- **Dev Workflow**: Removed `update.sh` in favor of `shroud update`.
+
 ## [1.3.1] - 2026-02-12
 
 ### Fixed
@@ -68,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Systemd user service with automatic kill switch cleanup
   - Desktop entries for application menu and autostart
   - Shell completions for bash, zsh, and fish
-  - Optional polkit policy for passwordless nft (with security warnings)
+  - Optional polkit policy for passwordless iptables (with security warnings)
   - Installation verification and summary
   - Detailed logging to `/tmp/shroud-setup-*.log`
 
@@ -79,7 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Kill switch now automatically disabled on intentional user disconnect to prevent network lockout
 - Restart command properly cleans up resources before spawning new instance
 - Quit command now properly exits the process instead of just returning from event loop
-- **Signal handler now cleans up kill switch rules before exit** — prevents orphaned nftables rules
+- **Signal handler now cleans up kill switch rules before exit** — prevents orphaned iptables rules
 - **Startup now detects and cleans stale kill switch rules** — recovers from previous crashes
 
 ### Security
@@ -110,7 +121,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `tempfile` dev dependency for isolated testing
 
 ### Changed
-- All tests now run without external commands (nmcli, nft, pkexec)
+- All tests now run without external commands (nmcli, iptables, pkexec)
 - Pure parsing functions extracted from async I/O functions
 - Version graduated from 0.x to stable 1.x series
 
@@ -119,7 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release as "Shroud" (rebranded from openvpn-tray)
 - Provider-agnostic VPN connection management via NetworkManager
-- Kill switch implementation using nftables
+- Kill switch implementation using iptables
 - DNS leak protection with three modes: tunnel (default), localhost, any
 - IPv6 leak protection with three modes: block (default), tunnel, off
 - Auto-reconnect with configurable retry attempts and exponential backoff
@@ -139,10 +150,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed from "openvpn-tray" to "Shroud"
 - Config path changed from `~/.config/openvpn-tray/` to `~/.config/shroud/`
 - Lock file changed from `shroud.lock` to `shroud.lock`
-- nftables table changed from `vpn_killswitch` to `shroud_killswitch`
+- iptables chain changed from `vpn_killswitch` to `SHROUD_KILLSWITCH`
 - Binary name changed from `openvpn-tray` to `shroud`
 
 ### Security
 - Atomic config file writes to prevent corruption
 - File permissions set at creation time (0600 for files, 0700 for directories)
-- Kill switch rules auditable via `nft list table inet shroud_killswitch`
+- Kill switch rules auditable via `iptables -S SHROUD_KILLSWITCH`
