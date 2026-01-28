@@ -28,6 +28,35 @@
 //! ```
 
 use log::{debug, info, warn};
+use thiserror::Error;
+
+/// Errors that can occur during configuration operations.
+#[derive(Error, Debug)]
+pub enum ConfigError {
+    /// Failed to read config file
+    #[error("Failed to read config file: {0}")]
+    ReadFailed(#[source] std::io::Error),
+
+    /// Failed to parse config TOML
+    #[error("Failed to parse config: {0}")]
+    ParseFailed(#[from] toml::de::Error),
+
+    /// Failed to serialize config
+    #[error("Failed to serialize config: {0}")]
+    SerializeFailed(#[from] toml::ser::Error),
+
+    /// Failed to write config file
+    #[error("Failed to write config file: {0}")]
+    WriteFailed(#[source] std::io::Error),
+
+    /// Failed to create config directory
+    #[error("Failed to create config directory: {0}")]
+    DirectoryFailed(#[source] std::io::Error),
+
+    /// Atomic rename failed
+    #[error("Failed to save config (atomic rename): {0}")]
+    RenameFailed(#[source] std::io::Error),
+}
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -305,12 +334,12 @@ impl ConfigManager {
     ///
     /// Creates the config directory if it doesn't exist.
     /// Uses atomic write (temp file + rename) to prevent corruption on crash.
-    pub fn save(&self, config: &Config) -> Result<(), String> {
+    pub fn save(&self, config: &Config) -> Result<(), ConfigError> {
         // Ensure config directory exists
         if let Some(parent) = self.config_path.parent() {
             if !parent.exists() {
                 fs::create_dir_all(parent)
-                    .map_err(|e| format!("Failed to create config directory: {}", e))?;
+                    .map_err(ConfigError::DirectoryFailed)?;
 
                 // Set directory permissions to 700
                 #[cfg(unix)]
@@ -325,8 +354,7 @@ impl ConfigManager {
         let mut config_to_save = config.clone();
         config_to_save.version = CONFIG_VERSION;
 
-        let contents = toml::to_string_pretty(&config_to_save)
-            .map_err(|e| format!("Failed to serialize config: {}", e))?;
+        let contents = toml::to_string_pretty(&config_to_save)?;
 
         // Atomic write: write to temp file, then rename
         // This prevents corruption if we crash mid-write
@@ -343,22 +371,22 @@ impl ConfigManager {
                 .truncate(true)
                 .mode(0o600)
                 .open(&temp_path)
-                .map_err(|e| format!("Failed to create temp config file: {}", e))?;
+                .map_err(ConfigError::WriteFailed)?;
             file.write_all(contents.as_bytes())
-                .map_err(|e| format!("Failed to write temp config file: {}", e))?;
+                .map_err(ConfigError::WriteFailed)?;
             file.sync_all()
-                .map_err(|e| format!("Failed to sync temp config file: {}", e))?;
+                .map_err(ConfigError::WriteFailed)?;
         }
 
         #[cfg(not(unix))]
         {
             fs::write(&temp_path, &contents)
-                .map_err(|e| format!("Failed to write temp config file: {}", e))?;
+                .map_err(ConfigError::WriteFailed)?;
         }
 
         // Atomic rename
         fs::rename(&temp_path, &self.config_path)
-            .map_err(|e| format!("Failed to rename temp config file: {}", e))?;
+            .map_err(ConfigError::RenameFailed)?;
 
         debug!("Saved config to {:?}", self.config_path);
         Ok(())
@@ -366,7 +394,7 @@ impl ConfigManager {
 
     /// Update a single setting and save
     #[allow(dead_code)]
-    pub fn update<F>(&self, config: &mut Config, updater: F) -> Result<(), String>
+    pub fn update<F>(&self, config: &mut Config, updater: F) -> Result<(), ConfigError>
     where
         F: FnOnce(&mut Config),
     {
