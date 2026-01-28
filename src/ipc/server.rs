@@ -13,6 +13,31 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 
 use super::protocol::{socket_path, IpcCommand, IpcResponse};
+use thiserror::Error;
+
+/// Errors that can occur in the IPC server.
+#[derive(Error, Debug)]
+pub enum ServerError {
+    /// Failed to bind to socket
+    #[error("Failed to bind to socket at {path}: {source}")]
+    BindFailed {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// Failed to accept connection
+    #[error("Failed to accept connection: {0}")]
+    AcceptFailed(#[source] std::io::Error),
+
+    /// Failed to remove stale socket
+    #[error("Failed to remove stale socket: {0}")]
+    CleanupFailed(#[source] std::io::Error),
+
+    /// Channel closed unexpectedly
+    #[error("Command channel closed unexpectedly")]
+    ChannelClosed,
+}
 
 /// Unix socket server for IPC communication.
 pub struct IpcServer {
@@ -34,28 +59,42 @@ impl IpcServer {
     ///
     /// Binds to the Unix socket and accepts client connections.
     /// This method runs indefinitely until an error occurs.
-    pub async fn run(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn run(self) -> Result<(), ServerError> {
         let path = socket_path();
 
         // Remove stale socket file if it exists
         if path.exists() {
-            std::fs::remove_file(&path)?;
+            std::fs::remove_file(&path).map_err(ServerError::CleanupFailed)?;
         }
 
         // Create parent directory if needed
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+            std::fs::create_dir_all(parent).map_err(|e| ServerError::BindFailed {
+                path: parent.to_string_lossy().to_string(),
+                source: e,
+            })?;
         }
 
-        let listener = UnixListener::bind(&path)?;
+        let listener = UnixListener::bind(&path).map_err(|e| ServerError::BindFailed {
+            path: path.to_string_lossy().to_string(),
+            source: e,
+        })?;
 
         // Set secure permissions (600)
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&path)?.permissions();
+            let mut perms = std::fs::metadata(&path)
+                .map_err(|e| ServerError::BindFailed {
+                    path: path.to_string_lossy().to_string(),
+                    source: e,
+                })?
+                .permissions();
             perms.set_mode(0o600);
-            std::fs::set_permissions(&path, perms)?;
+            std::fs::set_permissions(&path, perms).map_err(|e| ServerError::BindFailed {
+                path: path.to_string_lossy().to_string(),
+                source: e,
+            })?;
         }
 
         info!("IPC server listening on {:?}", path);

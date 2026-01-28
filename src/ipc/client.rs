@@ -19,34 +19,30 @@ use tokio::net::UnixStream;
 
 use super::protocol::{socket_path, IpcCommand, IpcResponse};
 
+use thiserror::Error;
+
 /// Error type for IPC client operations.
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum ClientError {
     /// Failed to connect to daemon socket
-    ConnectionFailed(io::Error),
+    #[error("Failed to connect to daemon: {0}")]
+    ConnectionFailed(#[source] io::Error),
     /// Failed to send command
-    SendFailed(io::Error),
+    #[error("Failed to send command: {0}")]
+    SendFailed(#[source] io::Error),
     /// Failed to receive response
-    ReceiveFailed(io::Error),
+    #[error("Failed to receive response: {0}")]
+    ReceiveFailed(#[source] io::Error),
     /// Failed to parse response
-    ParseError(serde_json::Error),
+    #[error("Failed to parse response: {0}")]
+    ParseError(#[from] serde_json::Error),
     /// Daemon is not running
+    #[error("Daemon is not running. Start it with: shroud --daemon")]
     DaemonNotRunning,
+    /// Unexpected response from daemon
+    #[error("Unexpected response: {0}")]
+    UnexpectedResponse(String),
 }
-
-impl std::fmt::Display for ClientError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ClientError::ConnectionFailed(e) => write!(f, "Failed to connect to daemon: {}", e),
-            ClientError::SendFailed(e) => write!(f, "Failed to send command: {}", e),
-            ClientError::ReceiveFailed(e) => write!(f, "Failed to receive response: {}", e),
-            ClientError::ParseError(e) => write!(f, "Failed to parse response: {}", e),
-            ClientError::DaemonNotRunning => write!(f, "Daemon is not running"),
-        }
-    }
-}
-
-impl std::error::Error for ClientError {}
 
 /// Connect to the Shroud daemon.
 ///

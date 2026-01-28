@@ -22,5 +22,6 @@ pub mod client;
 pub mod protocol;
 pub mod server;
 
+pub use client::ClientError;
 pub use protocol::{IpcCommand, IpcResponse};
-pub use server::IpcServer;
+pub use server::{IpcServer, ServerError};
