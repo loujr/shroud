@@ -203,31 +203,6 @@ shroud --log-file /tmp/shroud.log
 systemctl --user start shroud
 ```
 
-### CLI Architecture
-
-Shroud operates in two modes from a single binary:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│   $ shroud                    $ shroud connect ireland-42   │
-│   (daemon mode)               (client mode)                 │
-│                                                             │
-│   ┌─────────────┐             ┌─────────────┐               │
-│   │   Shroud    │◄────────────│   Shroud    │               │
-│   │   Daemon    │   command   │   Client    │               │
-│   │             │─────────────►             │               │
-│   │  (tray app) │   response  │  (one-shot) │               │
-│   └─────────────┘             └─────────────┘               │
-│         ▲                                                   │
-│         │ Unix socket: $XDG_RUNTIME_DIR/shroud.sock         │
-│         │                                                   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-- **Daemon mode** (`shroud`): Starts the tray application, listens for CLI commands
-- **Client mode** (`shroud <command>`): Sends command to running daemon and exits
-
 ### CLI Commands
 
 ```bash

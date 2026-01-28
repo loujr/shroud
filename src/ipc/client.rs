@@ -23,25 +23,23 @@ use thiserror::Error;
 
 /// Error type for IPC client operations.
 #[derive(Error, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum ClientError {
     /// Failed to connect to daemon socket
     #[error("Failed to connect to daemon: {0}")]
-    ConnectionFailed(#[source] io::Error),
+    Connection(#[source] io::Error),
     /// Failed to send command
     #[error("Failed to send command: {0}")]
-    SendFailed(#[source] io::Error),
+    Send(#[source] io::Error),
     /// Failed to receive response
     #[error("Failed to receive response: {0}")]
-    ReceiveFailed(#[source] io::Error),
+    Receive(#[source] io::Error),
     /// Failed to parse response
     #[error("Failed to parse response: {0}")]
-    ParseError(#[from] serde_json::Error),
+    Parse(#[from] serde_json::Error),
     /// Daemon is not running
     #[error("Daemon is not running. Start it with: shroud --daemon")]
     DaemonNotRunning,
-    /// Unexpected response from daemon
-    #[error("Unexpected response: {0}")]
-    UnexpectedResponse(String),
 }
 
 /// Connect to the Shroud daemon.
@@ -58,7 +56,7 @@ pub async fn connect_to_daemon() -> Result<UnixStream, ClientError> {
         if e.kind() == io::ErrorKind::ConnectionRefused {
             ClientError::DaemonNotRunning
         } else {
-            ClientError::ConnectionFailed(e)
+            ClientError::Connection(e)
         }
     })
 }
@@ -88,38 +86,38 @@ pub async fn send_command_on_stream(
     let mut reader = BufReader::new(reader);
 
     // Serialize and send command
-    let command_json = serde_json::to_string(&command).map_err(ClientError::ParseError)?;
+    let command_json = serde_json::to_string(&command).map_err(ClientError::Parse)?;
 
     debug!("Sending command: {}", command_json);
 
     writer
         .write_all(command_json.as_bytes())
         .await
-        .map_err(ClientError::SendFailed)?;
+        .map_err(ClientError::Send)?;
     writer
         .write_all(b"\n")
         .await
-        .map_err(ClientError::SendFailed)?;
-    writer.flush().await.map_err(ClientError::SendFailed)?;
+        .map_err(ClientError::Send)?;
+    writer.flush().await.map_err(ClientError::Send)?;
 
     // Read response
     let mut response_line = String::new();
     reader
         .read_line(&mut response_line)
         .await
-        .map_err(ClientError::ReceiveFailed)?;
+        .map_err(ClientError::Receive)?;
 
     debug!("Received response: {}", response_line.trim());
 
     if response_line.trim().is_empty() {
-        return Err(ClientError::ReceiveFailed(io::Error::new(
+        return Err(ClientError::Receive(io::Error::new(
             io::ErrorKind::UnexpectedEof,
             "Empty response from daemon",
         )));
     }
 
     // Parse response
-    serde_json::from_str(response_line.trim()).map_err(ClientError::ParseError)
+    serde_json::from_str(response_line.trim()).map_err(ClientError::Parse)
 }
 
 /// Check if the daemon is running.
@@ -143,7 +141,7 @@ mod tests {
     #[test]
     fn test_client_error_connection() {
         let io_err = io::Error::new(io::ErrorKind::ConnectionRefused, "refused");
-        let err = ClientError::ConnectionFailed(io_err);
+        let err = ClientError::Connection(io_err);
         assert!(err.to_string().contains("connect"));
     }
 

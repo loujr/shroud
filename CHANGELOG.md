@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-01-27
+
+### Changed
+- **Architecture**: Moved CLI architecture documentation to `ARCHITECTURE.md`.
+- **Error Handling**: Migrated to structured error handling using `thiserror` (Phase 2 complete).
+  - Replaced `Result<T, String>` with specific error types: `ConfigError`, `ClientError`, `ServerError`, `NmError`, `KillSwitchError`.
+  - Standardized error variants (Short naming convention).
+  - Improved error context and display.
+- **CI/CD**: Fixed GitHub Actions workflow `toolchain` configuration.
+- **Code Quality**: Applied `clippy` suggestions and strict formatting.
+
+### Added
+- **Documentation**: Enhanced `ARCHITECTURE.md` with CLI architecture diagram and error handling strategy.
+
 ## [Unreleased]
 
 ### Added

@@ -17,26 +17,19 @@ use thiserror::Error;
 
 /// Errors that can occur in the IPC server.
 #[derive(Error, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum ServerError {
     /// Failed to bind to socket
     #[error("Failed to bind to socket at {path}: {source}")]
-    BindFailed {
+    Bind {
         path: String,
         #[source]
         source: std::io::Error,
     },
 
-    /// Failed to accept connection
-    #[error("Failed to accept connection: {0}")]
-    AcceptFailed(#[source] std::io::Error),
-
     /// Failed to remove stale socket
     #[error("Failed to remove stale socket: {0}")]
-    CleanupFailed(#[source] std::io::Error),
-
-    /// Channel closed unexpectedly
-    #[error("Command channel closed unexpectedly")]
-    ChannelClosed,
+    Cleanup(#[source] std::io::Error),
 }
 
 /// Unix socket server for IPC communication.
@@ -64,18 +57,18 @@ impl IpcServer {
 
         // Remove stale socket file if it exists
         if path.exists() {
-            std::fs::remove_file(&path).map_err(ServerError::CleanupFailed)?;
+            std::fs::remove_file(&path).map_err(ServerError::Cleanup)?;
         }
 
         // Create parent directory if needed
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| ServerError::BindFailed {
+            std::fs::create_dir_all(parent).map_err(|e| ServerError::Bind {
                 path: parent.to_string_lossy().to_string(),
                 source: e,
             })?;
         }
 
-        let listener = UnixListener::bind(&path).map_err(|e| ServerError::BindFailed {
+        let listener = UnixListener::bind(&path).map_err(|e| ServerError::Bind {
             path: path.to_string_lossy().to_string(),
             source: e,
         })?;
@@ -85,13 +78,13 @@ impl IpcServer {
         {
             use std::os::unix::fs::PermissionsExt;
             let mut perms = std::fs::metadata(&path)
-                .map_err(|e| ServerError::BindFailed {
+                .map_err(|e| ServerError::Bind {
                     path: path.to_string_lossy().to_string(),
                     source: e,
                 })?
                 .permissions();
             perms.set_mode(0o600);
-            std::fs::set_permissions(&path, perms).map_err(|e| ServerError::BindFailed {
+            std::fs::set_permissions(&path, perms).map_err(|e| ServerError::Bind {
                 path: path.to_string_lossy().to_string(),
                 source: e,
             })?;

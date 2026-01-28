@@ -30,11 +30,44 @@
 
 ---
 
+## CLI Architecture
+
+Shroud operates in two modes from a single binary:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│   $ shroud                    $ shroud connect ireland-42   │
+│   (daemon mode)               (client mode)                 │
+│                                                             │
+│   ┌─────────────┐             ┌─────────────┐               │
+│   │   Shroud    │◄────────────│   Shroud    │               │
+│   │   Daemon    │   command   │   Client    │               │
+│   │             │─────────────►             │               │
+│   │  (tray app) │   response  │  (one-shot) │               │
+│   └─────────────┘             └─────────────┘               │
+│         ▲                                                   │
+│         │ Unix socket: $XDG_RUNTIME_DIR/shroud.sock         │
+│         │                                                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- **Daemon mode** (`shroud`): Starts the tray application, listens for CLI commands
+- **Client mode** (`shroud <command>`): Sends command to running daemon and exits
+
+---
+
 ## Module Structure
 
 ```
 src/
 ├── main.rs           # Entry point, VpnSupervisor, main event loop
+├── cli/
+│   ├── mod.rs        # Module exports
+│   ├── args.rs       # Command-line argument parsing (clap)
+│   ├── handlers.rs   # CLI command handlers
+│   └── help.rs       # Custom help generation
+├── logging.rs        # Structured logging setup
 ├── config/
 │   ├── mod.rs        # Module exports
 │   └── settings.rs   # Config struct, ConfigManager, TOML persistence
@@ -44,6 +77,11 @@ src/
 ├── health/
 │   ├── mod.rs        # Module exports
 │   └── checker.rs    # HealthChecker, HTTP/ping connectivity tests
+├── ipc/
+│   ├── mod.rs        # Module exports
+│   ├── protocol.rs   # IPC types (IpcCommand, IpcResponse)
+│   ├── server.rs     # Unix Domain Socket Server
+│   └── client.rs     # Unix Domain Socket Client
 ├── killswitch/
 │   ├── mod.rs        # Module exports
 │   └── firewall.rs   # KillSwitch, nftables rule generation
@@ -54,11 +92,32 @@ src/
 │   ├── mod.rs        # Module exports
 │   ├── machine.rs    # StateMachine, event handling, transitions
 │   └── types.rs      # VpnState, Event, TransitionReason enums
+├── supervisor/       
+│   ├── mod.rs        # Module exports
+│   ├── event_loop.rs # Main event loop logic
+│   ├── handlers.rs   # Supervisor command handlers
+│   └── reconnect.rs  # Reconnection strategy
 └── tray/
     ├── mod.rs        # Module exports
     ├── service.rs    # VpnTray, SharedState, menu construction
     └── icons.rs      # Icon generation (colored status indicators)
 ```
+
+---
+
+## Error Handling Pattern
+
+The application uses specific error types for each domain, leveraging the `thiserror` crate for structured error handling.
+
+| Module | Error Type | Description |
+|--------|------------|-------------|
+| `config` | `ConfigError` | Configuration loading, parsing, and saving errors |
+| `ipc` | `ClientError` | IPC client connection and communication errors |
+| `ipc` | `ServerError` | IPC server binding and acceptance errors |
+| `killswitch` | `KillSwitchError` | Firewall/nftables operation errors |
+| `nm` | `NmError` | NetworkManager interaction errors |
+
+Errors are propagated up to the `VpnSupervisor` or CLI handlers, where they are logged or displayed to the user.
 
 ---
 

@@ -32,30 +32,28 @@ use thiserror::Error;
 
 /// Errors that can occur during configuration operations.
 #[derive(Error, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum ConfigError {
-    /// Failed to read config file
-    #[error("Failed to read config file: {0}")]
-    ReadFailed(#[source] std::io::Error),
-
     /// Failed to parse config TOML
     #[error("Failed to parse config: {0}")]
-    ParseFailed(#[from] toml::de::Error),
+    #[allow(dead_code)]
+    Parse(#[from] toml::de::Error),
 
     /// Failed to serialize config
     #[error("Failed to serialize config: {0}")]
-    SerializeFailed(#[from] toml::ser::Error),
+    Serialize(#[from] toml::ser::Error),
 
     /// Failed to write config file
     #[error("Failed to write config file: {0}")]
-    WriteFailed(#[source] std::io::Error),
+    Write(#[source] std::io::Error),
 
     /// Failed to create config directory
     #[error("Failed to create config directory: {0}")]
-    DirectoryFailed(#[source] std::io::Error),
+    Directory(#[source] std::io::Error),
 
     /// Atomic rename failed
     #[error("Failed to save config (atomic rename): {0}")]
-    RenameFailed(#[source] std::io::Error),
+    Rename(#[source] std::io::Error),
 }
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -338,8 +336,7 @@ impl ConfigManager {
         // Ensure config directory exists
         if let Some(parent) = self.config_path.parent() {
             if !parent.exists() {
-                fs::create_dir_all(parent)
-                    .map_err(ConfigError::DirectoryFailed)?;
+                fs::create_dir_all(parent).map_err(ConfigError::Directory)?;
 
                 // Set directory permissions to 700
                 #[cfg(unix)]
@@ -371,22 +368,19 @@ impl ConfigManager {
                 .truncate(true)
                 .mode(0o600)
                 .open(&temp_path)
-                .map_err(ConfigError::WriteFailed)?;
+                .map_err(ConfigError::Write)?;
             file.write_all(contents.as_bytes())
-                .map_err(ConfigError::WriteFailed)?;
-            file.sync_all()
-                .map_err(ConfigError::WriteFailed)?;
+                .map_err(ConfigError::Write)?;
+            file.sync_all().map_err(ConfigError::Write)?;
         }
 
         #[cfg(not(unix))]
         {
-            fs::write(&temp_path, &contents)
-                .map_err(ConfigError::WriteFailed)?;
+            fs::write(&temp_path, &contents).map_err(ConfigError::Write)?;
         }
 
         // Atomic rename
-        fs::rename(&temp_path, &self.config_path)
-            .map_err(ConfigError::RenameFailed)?;
+        fs::rename(&temp_path, &self.config_path).map_err(ConfigError::Rename)?;
 
         debug!("Saved config to {:?}", self.config_path);
         Ok(())
