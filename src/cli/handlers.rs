@@ -192,7 +192,10 @@ fn handle_response(response: IpcResponse, args: &Args) -> i32 {
             0
         }
         IpcResponse::KillSwitchStatus { enabled } => {
-            println!("Kill Switch: {}", if enabled { "enabled" } else { "disabled" });
+            println!(
+                "Kill Switch: {}",
+                if enabled { "enabled" } else { "disabled" }
+            );
             0
         }
         IpcResponse::AutoReconnectStatus { enabled } => {

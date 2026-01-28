@@ -93,9 +93,7 @@ pub enum IpcResponse {
     Ok,
 
     /// Operation completed with a message
-    OkMessage {
-        message: String,
-    },
+    OkMessage { message: String },
 
     /// Operation failed with an error message.
     Error {
@@ -122,14 +120,10 @@ pub enum IpcResponse {
     },
 
     /// Kill switch status
-    KillSwitchStatus {
-        enabled: bool,
-    },
+    KillSwitchStatus { enabled: bool },
 
     /// Auto-reconnect status
-    AutoReconnectStatus {
-        enabled: bool,
-    },
+    AutoReconnectStatus { enabled: bool },
 
     /// Debug info
     DebugInfo {

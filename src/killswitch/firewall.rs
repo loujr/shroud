@@ -224,41 +224,50 @@ impl KillSwitch {
 
     fn build_complete_script(&self, vpn_ips: &[IpAddr]) -> String {
         let mut s = String::new();
-        
+
         // Cleanup (always runs, errors ignored)
         s.push_str("iptables -D OUTPUT -j SHROUD_KILLSWITCH 2>/dev/null || true\n");
         s.push_str("iptables -F SHROUD_KILLSWITCH 2>/dev/null || true\n");
         s.push_str("iptables -X SHROUD_KILLSWITCH 2>/dev/null || true\n");
         s.push_str("nft delete table inet shroud_killswitch 2>/dev/null || true\n");
-        
+
         // Create chain
         s.push_str("iptables -N SHROUD_KILLSWITCH\n");
         s.push_str("iptables -I OUTPUT 1 -j SHROUD_KILLSWITCH\n");
-        
+
         // Rules
         s.push_str("iptables -A SHROUD_KILLSWITCH -o lo -j ACCEPT\n");
-        s.push_str("iptables -A SHROUD_KILLSWITCH -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n");
+        s.push_str(
+            "iptables -A SHROUD_KILLSWITCH -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n",
+        );
         s.push_str("iptables -A SHROUD_KILLSWITCH -o tun+ -j ACCEPT\n");
         s.push_str("iptables -A SHROUD_KILLSWITCH -o tap+ -j ACCEPT\n");
         s.push_str("iptables -A SHROUD_KILLSWITCH -o wg+ -j ACCEPT\n");
-        
+
         for ip in vpn_ips {
             if let IpAddr::V4(v4) = ip {
-                s.push_str(&format!("iptables -A SHROUD_KILLSWITCH -d {} -j ACCEPT\n", v4));
+                s.push_str(&format!(
+                    "iptables -A SHROUD_KILLSWITCH -d {} -j ACCEPT\n",
+                    v4
+                ));
             }
         }
-        
+
         s.push_str("iptables -A SHROUD_KILLSWITCH -d 192.168.0.0/16 -j ACCEPT\n");
         s.push_str("iptables -A SHROUD_KILLSWITCH -d 10.0.0.0/8 -j ACCEPT\n");
         s.push_str("iptables -A SHROUD_KILLSWITCH -d 172.16.0.0/12 -j ACCEPT\n");
         s.push_str("iptables -A SHROUD_KILLSWITCH -p udp --dport 67 -j ACCEPT\n");
         s.push_str("iptables -A SHROUD_KILLSWITCH -p udp --sport 68 -j ACCEPT\n");
-        
+
         // DNS based on mode
         match self.dns_mode {
             DnsMode::Localhost => {
-                s.push_str("iptables -A SHROUD_KILLSWITCH -d 127.0.0.0/8 -p udp --dport 53 -j ACCEPT\n");
-                s.push_str("iptables -A SHROUD_KILLSWITCH -d 127.0.0.0/8 -p tcp --dport 53 -j ACCEPT\n");
+                s.push_str(
+                    "iptables -A SHROUD_KILLSWITCH -d 127.0.0.0/8 -p udp --dport 53 -j ACCEPT\n",
+                );
+                s.push_str(
+                    "iptables -A SHROUD_KILLSWITCH -d 127.0.0.0/8 -p tcp --dport 53 -j ACCEPT\n",
+                );
             }
             DnsMode::Any => {
                 s.push_str("iptables -A SHROUD_KILLSWITCH -p udp --dport 53 -j ACCEPT\n");
@@ -266,10 +275,10 @@ impl KillSwitch {
             }
             DnsMode::Tunnel => {}
         }
-        
+
         s.push_str("iptables -A SHROUD_KILLSWITCH -m limit --limit 1/sec -j LOG --log-prefix '[SHROUD-KS DROP] ' --log-level 4\n");
         s.push_str("iptables -A SHROUD_KILLSWITCH -j DROP\n");
-        
+
         // IPv6
         match self.ipv6_mode {
             Ipv6Mode::Block => {
@@ -285,14 +294,14 @@ impl KillSwitch {
             }
             Ipv6Mode::Off => {}
         }
-        
+
         s
     }
 
     async fn run_single_script(&self, script: &str) -> Result<(), KillSwitchError> {
-        use tokio::process::Command;
         use std::process::Stdio;
         use tokio::io::AsyncWriteExt;
+        use tokio::process::Command;
 
         let mut child = Command::new("pkexec")
             .arg("sh")
@@ -304,26 +313,30 @@ impl KillSwitch {
 
         // Write script to stdin
         if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(script.as_bytes()).await
+            stdin
+                .write_all(script.as_bytes())
+                .await
                 .map_err(|e| KillSwitchError::Write(e))?;
             // MUST drop stdin to signal EOF
             drop(stdin);
         }
 
-        let output = child.wait_with_output().await
+        let output = child
+            .wait_with_output()
+            .await
             .map_err(|e| KillSwitchError::Wait(e))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let code = output.status.code().unwrap_or(-1);
-            
+
             if code == 126 || code == 127 {
                 return Err(KillSwitchError::Permission);
             }
-            
+
             return Err(KillSwitchError::Command(format!(
-                "Script failed (exit {}): {}", 
-                code, 
+                "Script failed (exit {}): {}",
+                code,
                 stderr.trim()
             )));
         }
@@ -364,7 +377,7 @@ nft delete table inet shroud_killswitch 2>/dev/null || true
 "#;
 
         self.run_single_script(script).await?;
-        
+
         self.enabled = false;
         info!("VPN kill switch disabled");
         Ok(())
