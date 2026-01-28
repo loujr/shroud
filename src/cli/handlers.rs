@@ -187,18 +187,33 @@ fn handle_response(response: IpcResponse, args: &Args) -> i32 {
             }
             0
         }
-        IpcResponse::Value(v) => {
-            // Generic fallback
-            if let Some(obj) = v.as_object() {
-                if let Some(msg) = obj.get("message") {
-                    if let Some(s) = msg.as_str() {
-                        println!("{}", s);
-                        return 0;
-                    }
-                }
+        IpcResponse::OkMessage { message } => {
+            println!("{}", message);
+            0
+        }
+        IpcResponse::KillSwitchStatus { enabled } => {
+            println!("Kill Switch: {}", if enabled { "enabled" } else { "disabled" });
+            0
+        }
+        IpcResponse::AutoReconnectStatus { enabled } => {
+            println!(
+                "Auto-Reconnect: {}",
+                if enabled { "enabled" } else { "disabled" }
+            );
+            0
+        }
+        IpcResponse::DebugInfo {
+            log_path,
+            debug_enabled,
+        } => {
+            println!("Debug Mode: {}", if debug_enabled { "on" } else { "off" });
+            if let Some(path) = log_path {
+                println!("Log Path: {}", path);
             }
-            // Fallback print
-            println!("{}", v);
+            0
+        }
+        IpcResponse::Pong => {
+            println!("Pong");
             0
         }
     }

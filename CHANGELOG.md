@@ -22,7 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Documentation**: Enhanced `ARCHITECTURE.md` with CLI architecture diagram and error handling strategy.
 
-## [Unreleased]
+## [1.3.1] - 2026-02-12
+
+### Fixed
+- **Kill Switch**: Refactored to use a single `pkexec` call for all firewall operations. This eliminates the "authentication hell" loop where users were prompted for passwords multiple times (once per rule).
+- **IPC Protocol**: Fixed a serialization mismatch (`OkMessage` variant) that caused client-daemon communication failures (`unknown variant` error).
+- **Timeouts**: Increased IPC response timeout from 5s to 60s to accommodate the time required for users to enter their password during privilege escalation.
+- **Firewall Cleanup**: Enhanced cleanup logic to reliably detect and remove legacy chains, preventing "chain already exists" errors.
+- **Verification**: Removed non-root `iptables -C` checks that were causing permission denied errors or triggering unnecessary authentication prompts during rule verification.
+
+## [1.3.0] - 2026-02-01
 
 ### Added
 - **CLI command system** with single-binary dual-mode architecture

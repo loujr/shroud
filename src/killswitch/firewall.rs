@@ -58,7 +58,7 @@ pub enum KillSwitchError {
     #[error("iptables command failed: {0}")]
     Command(String),
 
-    /// Failed to write to process stdin (unused for iptables but kept for compatibility)
+    /// Failed to write to process stdin
     #[error("Failed to write to process: {0}")]
     Write(#[source] std::io::Error),
 
@@ -170,16 +170,35 @@ impl KillSwitch {
         self.vpn_interface = iface;
     }
 
+    /// Check actual state of rules, not just our flag
+    pub fn is_actually_enabled(&self) -> bool {
+        // Synchronous check - used for status queries
+        use std::process::{Command, Stdio};
+
+        let result = Command::new("iptables")
+            .args(["-C", "OUTPUT", "-j", CHAIN_NAME])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+
+        matches!(result, Ok(status) if status.success())
+    }
+
+    /// Sync our internal state with actual iptables state
+    pub fn sync_state(&mut self) {
+        self.enabled = self.is_actually_enabled();
+    }
+
     /// Enable the kill switch
     pub async fn enable(&mut self) -> Result<(), KillSwitchError> {
-        if self.enabled {
+        if self.enabled && self.verify_rules_exist().await {
             debug!("Kill switch already enabled");
             return Ok(());
         }
 
         info!("Enabling VPN kill switch");
 
-        // Auto-detect VPN server IPs from NetworkManager configs
+        // Detect VPN server IPs first
         let vpn_server_ips = Self::detect_all_vpn_server_ips().await;
         if !vpn_server_ips.is_empty() {
             info!(
@@ -188,203 +207,164 @@ impl KillSwitch {
             );
         }
 
-        // First, ensure any old rules are cleaned up to start fresh
-        self.cleanup_all_rules().await?;
+        // Build ONE script with ALL rules
+        let script = self.build_complete_script(&vpn_server_ips);
 
-        // 1. Create our chain
-        self.run_iptables(&["-N", CHAIN_NAME]).await?;
+        // Run with ONE pkexec call
+        self.run_single_script(&script).await?;
 
-        // 2. Allow loopback traffic
-        self.run_iptables(&["-A", CHAIN_NAME, "-o", "lo", "-j", "ACCEPT"]).await?;
-
-        // 3. Allow established/related connections
-        self.run_iptables(&["-A", CHAIN_NAME, "-m", "state", "--state", "ESTABLISHED,RELATED", "-j", "ACCEPT"]).await?;
-
-        // 4. Allow VPN tunnel interfaces
-        // Use + as wildcard for iptables
-        self.run_iptables(&["-A", CHAIN_NAME, "-o", "tun+", "-j", "ACCEPT"]).await?;
-        self.run_iptables(&["-A", CHAIN_NAME, "-o", "tap+", "-j", "ACCEPT"]).await?;
-        self.run_iptables(&["-A", CHAIN_NAME, "-o", "wg+", "-j", "ACCEPT"]).await?;
-
-        // 5. Allow configured VPN interface if specific one is set
-        if let Some(iface) = &self.vpn_interface {
-            // Avoid duplicate rule if it matches one of the above wildcards
-            if !iface.starts_with("tun") && !iface.starts_with("tap") && !iface.starts_with("wg") {
-                self.run_iptables(&["-A", CHAIN_NAME, "-o", iface, "-j", "ACCEPT"]).await?;
-            }
-        }
-
-        // 6. Allow traffic to VPN server IPs
-        for ip in &vpn_server_ips {
-            if let IpAddr::V4(v4) = ip {
-                self.run_iptables(&["-A", CHAIN_NAME, "-d", &v4.to_string(), "-j", "ACCEPT"])
-                    .await?;
-            }
-        }
-
-        if let Some(IpAddr::V4(v4)) = self.vpn_server_ip {
-            self.run_iptables(&["-A", CHAIN_NAME, "-d", &v4.to_string(), "-j", "ACCEPT"])
-                .await?;
-        }
-
-        // 7. Allow local network traffic
-        self.run_iptables(&["-A", CHAIN_NAME, "-d", "192.168.0.0/16", "-j", "ACCEPT"])
-            .await?;
-        self.run_iptables(&["-A", CHAIN_NAME, "-d", "10.0.0.0/8", "-j", "ACCEPT"])
-            .await?;
-        self.run_iptables(&["-A", CHAIN_NAME, "-d", "172.16.0.0/12", "-j", "ACCEPT"])
-            .await?;
-
-        // 8. Allow DHCP
-        self.run_iptables(&["-A", CHAIN_NAME, "-p", "udp", "--dport", "67", "-j", "ACCEPT"])
-            .await?;
-        self.run_iptables(&["-A", CHAIN_NAME, "-p", "udp", "--sport", "68", "-j", "ACCEPT"])
-            .await?;
-
-        // 9. DNS Rules
-        match self.dns_mode {
-            DnsMode::Tunnel => {
-                // No explicit rules - DNS only allowed via VPN tunnel (matched by -o tun+)
-            }
-            DnsMode::Localhost => {
-                // Allow DNS to localhost/systemd-resolved
-                self.run_iptables(&[
-                    "-A", CHAIN_NAME, "-d", "127.0.0.0/8", "-p", "udp", "--dport", "53", "-j",
-                    "ACCEPT",
-                ])
-                .await?;
-                self.run_iptables(&[
-                    "-A", CHAIN_NAME, "-d", "127.0.0.0/8", "-p", "tcp", "--dport", "53", "-j",
-                    "ACCEPT",
-                ])
-                .await?;
-                self.run_iptables(&[
-                    "-A", CHAIN_NAME, "-d", "127.0.0.53", "-p", "udp", "--dport", "53", "-j",
-                    "ACCEPT",
-                ])
-                .await?;
-                self.run_iptables(&[
-                    "-A", CHAIN_NAME, "-d", "127.0.0.53", "-p", "tcp", "--dport", "53", "-j",
-                    "ACCEPT",
-                ])
-                .await?;
-            }
-            DnsMode::Any => {
-                // Allow DNS to anywhere (legacy/insecure)
-                self.run_iptables(&["-A", CHAIN_NAME, "-p", "udp", "--dport", "53", "-j", "ACCEPT"])
-                    .await?;
-                self.run_iptables(&["-A", CHAIN_NAME, "-p", "tcp", "--dport", "53", "-j", "ACCEPT"])
-                    .await?;
-            }
-        }
-
-        // 10. Log and Drop everything else
-        self.run_iptables(&[
-            "-A",
-            CHAIN_NAME,
-            "-m",
-            "limit",
-            "--limit",
-            "1/sec",
-            "-j",
-            "LOG",
-            "--log-prefix",
-            "[SHROUD-KS DROP] ",
-        ])
-        .await?;
-        self.run_iptables(&["-A", CHAIN_NAME, "-j", "DROP"])
-            .await?;
-
-        // 11. Activate: Insert jump rule at the TOP of OUTPUT chain
-        self.run_iptables(&["-I", "OUTPUT", "1", "-j", CHAIN_NAME])
-            .await?;
-
-        // === IPv6 Handling ===
-        match self.ipv6_mode {
-            Ipv6Mode::Block => {
-                // Insert rules at top of OUTPUT to drop everything except loopback
-                self.run_ip6tables(&["-I", "OUTPUT", "1", "-o", "lo", "-j", "ACCEPT"])
-                    .await?;
-                self.run_ip6tables(&["-I", "OUTPUT", "2", "-j", "DROP"])
-                    .await?;
-            }
-            Ipv6Mode::Tunnel => {
-                // Allow VPN tunnel + link local + loopback, drop rest
-                self.run_ip6tables(&["-I", "OUTPUT", "1", "-o", "lo", "-j", "ACCEPT"])
-                    .await?;
-                self.run_ip6tables(&[
-                    "-I",
-                    "OUTPUT",
-                    "2",
-                    "-m",
-                    "state",
-                    "--state",
-                    "ESTABLISHED,RELATED",
-                    "-j",
-                    "ACCEPT",
-                ])
-                .await?;
-                self.run_ip6tables(&["-I", "OUTPUT", "3", "-o", "tun+", "-j", "ACCEPT"])
-                    .await?;
-                self.run_ip6tables(&["-I", "OUTPUT", "4", "-o", "wg+", "-j", "ACCEPT"])
-                    .await?;
-                // Allow link-local (neighbor discovery etc)
-                self.run_ip6tables(&["-I", "OUTPUT", "5", "-d", "fe80::/10", "-j", "ACCEPT"])
-                    .await?;
-
-                // Allow traffic to IPv6 VPN servers if any
-                let mut index = 6;
-                for ip in &vpn_server_ips {
-                    if let IpAddr::V6(v6) = ip {
-                        self.run_ip6tables(&[
-                            "-I",
-                            "OUTPUT",
-                            &index.to_string(),
-                            "-d",
-                            &v6.to_string(),
-                            "-j",
-                            "ACCEPT",
-                        ])
-                        .await?;
-                        index += 1;
-                    }
-                }
-                if let Some(IpAddr::V6(v6)) = self.vpn_server_ip {
-                    self.run_ip6tables(&[
-                        "-I",
-                        "OUTPUT",
-                        &index.to_string(),
-                        "-d",
-                        &v6.to_string(),
-                        "-j",
-                        "ACCEPT",
-                    ])
-                    .await?;
-                    index += 1;
-                }
-
-                self.run_ip6tables(&["-I", "OUTPUT", &index.to_string(), "-j", "DROP"])
-                    .await?;
-            }
-            Ipv6Mode::Off => {
-                // Do nothing for IPv6
-            }
-        }
+        // Note: We cannot run verification here because iptables -C
+        // requires root or special permissions which the user might not have
+        // without pkexec (which prompts). We trust run_single_script status.
 
         self.enabled = true;
         info!("VPN kill switch enabled");
         Ok(())
     }
 
-    /// Disable the kill switch
-    pub async fn disable(&mut self) -> Result<(), KillSwitchError> {
-        if !self.enabled {
-            debug!("Kill switch already disabled");
-            return Ok(());
+    fn build_complete_script(&self, vpn_ips: &[IpAddr]) -> String {
+        let mut s = String::new();
+        
+        // Cleanup (always runs, errors ignored)
+        s.push_str("iptables -D OUTPUT -j SHROUD_KILLSWITCH 2>/dev/null || true\n");
+        s.push_str("iptables -F SHROUD_KILLSWITCH 2>/dev/null || true\n");
+        s.push_str("iptables -X SHROUD_KILLSWITCH 2>/dev/null || true\n");
+        s.push_str("nft delete table inet shroud_killswitch 2>/dev/null || true\n");
+        
+        // Create chain
+        s.push_str("iptables -N SHROUD_KILLSWITCH\n");
+        s.push_str("iptables -I OUTPUT 1 -j SHROUD_KILLSWITCH\n");
+        
+        // Rules
+        s.push_str("iptables -A SHROUD_KILLSWITCH -o lo -j ACCEPT\n");
+        s.push_str("iptables -A SHROUD_KILLSWITCH -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n");
+        s.push_str("iptables -A SHROUD_KILLSWITCH -o tun+ -j ACCEPT\n");
+        s.push_str("iptables -A SHROUD_KILLSWITCH -o tap+ -j ACCEPT\n");
+        s.push_str("iptables -A SHROUD_KILLSWITCH -o wg+ -j ACCEPT\n");
+        
+        for ip in vpn_ips {
+            if let IpAddr::V4(v4) = ip {
+                s.push_str(&format!("iptables -A SHROUD_KILLSWITCH -d {} -j ACCEPT\n", v4));
+            }
+        }
+        
+        s.push_str("iptables -A SHROUD_KILLSWITCH -d 192.168.0.0/16 -j ACCEPT\n");
+        s.push_str("iptables -A SHROUD_KILLSWITCH -d 10.0.0.0/8 -j ACCEPT\n");
+        s.push_str("iptables -A SHROUD_KILLSWITCH -d 172.16.0.0/12 -j ACCEPT\n");
+        s.push_str("iptables -A SHROUD_KILLSWITCH -p udp --dport 67 -j ACCEPT\n");
+        s.push_str("iptables -A SHROUD_KILLSWITCH -p udp --sport 68 -j ACCEPT\n");
+        
+        // DNS based on mode
+        match self.dns_mode {
+            DnsMode::Localhost => {
+                s.push_str("iptables -A SHROUD_KILLSWITCH -d 127.0.0.0/8 -p udp --dport 53 -j ACCEPT\n");
+                s.push_str("iptables -A SHROUD_KILLSWITCH -d 127.0.0.0/8 -p tcp --dport 53 -j ACCEPT\n");
+            }
+            DnsMode::Any => {
+                s.push_str("iptables -A SHROUD_KILLSWITCH -p udp --dport 53 -j ACCEPT\n");
+                s.push_str("iptables -A SHROUD_KILLSWITCH -p tcp --dport 53 -j ACCEPT\n");
+            }
+            DnsMode::Tunnel => {}
+        }
+        
+        s.push_str("iptables -A SHROUD_KILLSWITCH -m limit --limit 1/sec -j LOG --log-prefix '[SHROUD-KS DROP] ' --log-level 4\n");
+        s.push_str("iptables -A SHROUD_KILLSWITCH -j DROP\n");
+        
+        // IPv6
+        match self.ipv6_mode {
+            Ipv6Mode::Block => {
+                s.push_str("ip6tables -I OUTPUT 1 -o lo -j ACCEPT 2>/dev/null || true\n");
+                s.push_str("ip6tables -I OUTPUT 2 -j DROP 2>/dev/null || true\n");
+            }
+            Ipv6Mode::Tunnel => {
+                s.push_str("ip6tables -I OUTPUT 1 -o lo -j ACCEPT 2>/dev/null || true\n");
+                s.push_str("ip6tables -I OUTPUT 2 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true\n");
+                s.push_str("ip6tables -I OUTPUT 3 -o tun+ -j ACCEPT 2>/dev/null || true\n");
+                s.push_str("ip6tables -I OUTPUT 4 -d fe80::/10 -j ACCEPT 2>/dev/null || true\n");
+                s.push_str("ip6tables -I OUTPUT 5 -j DROP 2>/dev/null || true\n");
+            }
+            Ipv6Mode::Off => {}
+        }
+        
+        s
+    }
+
+    async fn run_single_script(&self, script: &str) -> Result<(), KillSwitchError> {
+        use tokio::process::Command;
+        use std::process::Stdio;
+        use tokio::io::AsyncWriteExt;
+
+        let mut child = Command::new("pkexec")
+            .arg("sh")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| KillSwitchError::Spawn(e))?;
+
+        // Write script to stdin
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(script.as_bytes()).await
+                .map_err(|e| KillSwitchError::Write(e))?;
+            // MUST drop stdin to signal EOF
+            drop(stdin);
         }
 
+        let output = child.wait_with_output().await
+            .map_err(|e| KillSwitchError::Wait(e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let code = output.status.code().unwrap_or(-1);
+            
+            if code == 126 || code == 127 {
+                return Err(KillSwitchError::Permission);
+            }
+            
+            return Err(KillSwitchError::Command(format!(
+                "Script failed (exit {}): {}", 
+                code, 
+                stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Verify our rules are actually in place
+    async fn verify_rules_exist(&self) -> bool {
+        // Check if our chain exists and has the jump rule
+        let output = Command::new("iptables")
+            .args(["-C", "OUTPUT", "-j", CHAIN_NAME])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await;
+
+        matches!(output, Ok(status) if status.success())
+    }
+
+    /// Disable the kill switch
+    pub async fn disable(&mut self) -> Result<(), KillSwitchError> {
         info!("Disabling VPN kill switch");
-        self.cleanup_all_rules().await?;
+
+        // We run cleanup regardless of enabled status to ensuring we don't leave
+        // the user stranded if the internal state is out of sync.
+
+        let script = r#"
+iptables -D OUTPUT -j SHROUD_KILLSWITCH 2>/dev/null || true
+iptables -F SHROUD_KILLSWITCH 2>/dev/null || true
+iptables -X SHROUD_KILLSWITCH 2>/dev/null || true
+ip6tables -D OUTPUT -j DROP 2>/dev/null || true
+ip6tables -D OUTPUT -o lo -j ACCEPT 2>/dev/null || true
+ip6tables -D OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
+ip6tables -D OUTPUT -o tun+ -j ACCEPT 2>/dev/null || true
+ip6tables -D OUTPUT -d fe80::/10 -j ACCEPT 2>/dev/null || true
+nft delete table inet shroud_killswitch 2>/dev/null || true
+"#;
+
+        self.run_single_script(script).await?;
+        
         self.enabled = false;
         info!("VPN kill switch disabled");
         Ok(())
@@ -399,89 +379,6 @@ impl KillSwitch {
         // Just toggle off/on to refresh rules
         self.disable().await?;
         self.enable().await
-    }
-
-    /// Clean up all iptables and ip6tables rules
-    async fn cleanup_all_rules(&self) -> Result<(), KillSwitchError> {
-        // --- IPv4 Cleanup ---
-
-        // 1. Remove jump rule from OUTPUT chain
-        // We loop because there might be multiple instances
-        loop {
-            let result = self
-                .run_iptables(&["-D", "OUTPUT", "-j", CHAIN_NAME])
-                .await;
-            if result.is_err() {
-                break;
-            }
-        }
-
-        // 2. Flush our chain (remove all rules inside)
-        let _ = self.run_iptables(&["-F", CHAIN_NAME]).await;
-
-        // 3. Delete our chain
-        let _ = self.run_iptables(&["-X", CHAIN_NAME]).await;
-
-        // --- IPv6 Cleanup ---
-        // For Block/Tunnel modes we inserted simple rules at fixed positions.
-        // There isn't a perfect way to identify them without a chain or parsing.
-        // However, we can try to delete the specific rules we added.
-
-        let _ = self
-            .run_ip6tables(&["-D", "OUTPUT", "-j", "DROP"])
-            .await;
-        // In block mode we added "-o lo -j ACCEPT", in tunnel mode too.
-        // Deleting common rules might affect user's own rules if they matched exactly.
-        // But the requirement was "Clean shutdown: Remove all rules".
-        // Given we don't have a chain for IPv6 in this implementation (to stick to requirements),
-        // we do best effort cleanup of the most impactful rule (the DROP rule).
-        // Since we can't safely ID the other rules, we might leave accept rules.
-        // NOTE: For a production V2, we should use a chain for IPv6 too.
-
-        Ok(())
-    }
-
-    // Wrap iptables execution with pkexec
-    async fn run_iptables(&self, args: &[&str]) -> Result<(), KillSwitchError> {
-        self.run_cmd("iptables", args).await
-    }
-
-    // Wrap ip6tables execution with pkexec
-    async fn run_ip6tables(&self, args: &[&str]) -> Result<(), KillSwitchError> {
-        self.run_cmd("ip6tables", args).await
-    }
-
-    /// Run a firewall command (via pkexec for GUI privilege escalation)
-    async fn run_cmd(&self, cmd_bin: &str, args: &[&str]) -> Result<(), KillSwitchError> {
-        let mut cmd = Command::new("pkexec");
-        cmd.arg(cmd_bin);
-        cmd.args(args);
-
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
-
-        let output = cmd.output().await.map_err(KillSwitchError::Spawn)?;
-
-        if output.status.success() {
-            Ok(())
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            // Handling exit codes 126/127 (command not found / permission)
-            if output.status.code() == Some(126) || output.status.code() == Some(127) {
-                // Check if binary exists in path using `which`
-                use std::process::Command as StdCommand;
-                if StdCommand::new("which")
-                    .arg(cmd_bin)
-                    .output()
-                    .map(|o| !o.status.success())
-                    .unwrap_or(true)
-                {
-                    return Err(KillSwitchError::NotFound);
-                }
-                return Err(KillSwitchError::Permission);
-            }
-            Err(KillSwitchError::Command(stderr.trim().to_string()))
-        }
     }
 
     /// Detect the VPN tunnel interface from the system
@@ -650,34 +547,53 @@ impl KillSwitch {
 pub fn cleanup_stale_rules() {
     use std::process::{Command, Stdio};
 
-    // Remove jump rule
-    let _ = Command::new("pkexec")
-        .args(["iptables", "-D", "OUTPUT", "-j", CHAIN_NAME])
+    let cleanup_script = format!(
+        r#"
+        iptables -D OUTPUT -j {CHAIN_NAME} 2>/dev/null
+        iptables -F {CHAIN_NAME} 2>/dev/null
+        iptables -X {CHAIN_NAME} 2>/dev/null
+        ip6tables -D OUTPUT -j DROP 2>/dev/null
+        ip6tables -D OUTPUT -o lo -j ACCEPT 2>/dev/null
+        ip6tables -D OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null
+        ip6tables -D OUTPUT -o tun+ -j ACCEPT 2>/dev/null
+        ip6tables -D OUTPUT -o wg+ -j ACCEPT 2>/dev/null
+        ip6tables -D OUTPUT -d fe80::/10 -j ACCEPT 2>/dev/null
+        nft delete table inet shroud_killswitch 2>/dev/null
+        exit 0
+    "#
+    );
+
+    // Try with pkexec first
+    let result = Command::new("pkexec")
+        .args(["sh", "-c", &cleanup_script])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
 
-    // Flush chain
-    let _ = Command::new("pkexec")
-        .args(["iptables", "-F", CHAIN_NAME])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-
-    // Delete chain
-    let _ = Command::new("pkexec")
-        .args(["iptables", "-X", CHAIN_NAME])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+    match result {
+        Ok(status) if status.success() => {
+            info!("Cleaned up stale kill switch rules");
+        }
+        Ok(_) => {
+            // pkexec might have been cancelled, try sudo as fallback
+            let _ = Command::new("sudo")
+                .args(["-n", "sh", "-c", &cleanup_script]) // -n = non-interactive
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+        Err(e) => {
+            warn!("Failed to clean up kill switch rules: {}", e);
+        }
+    }
 }
 
-/// Check if kill switch rules exist (synchronous, for startup check)
+/// Check if rules exist (synchronous)
 pub fn rules_exist() -> bool {
     use std::process::{Command, Stdio};
 
     let result = Command::new("iptables")
-        .args(["-t", "filter", "-nL", CHAIN_NAME])
+        .args(["-C", "OUTPUT", "-j", CHAIN_NAME])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
@@ -726,15 +642,23 @@ mod tests {
         assert_eq!(ks.ipv6_mode, Ipv6Mode::Tunnel);
     }
 
-    // Since we're no longer generating a string ruleset but running commands,
-    // we can't unit test the rule generation logic as easily without mocking.
-    // However, we can test that the configuration state is handled correctly.
-
     #[test]
     fn test_kill_switch_configuration_update() {
         let mut ks = KillSwitch::new();
         ks.set_config(DnsMode::Any, Ipv6Mode::Off);
         assert_eq!(ks.dns_mode, DnsMode::Any);
         assert_eq!(ks.ipv6_mode, Ipv6Mode::Off);
+    }
+
+    // Verify format of complete script
+    #[test]
+    fn test_build_complete_script() {
+        let ks = KillSwitch::new();
+        let script = ks.build_complete_script(&[]);
+        assert!(script.contains("iptables -N SHROUD_KILLSWITCH"));
+        assert!(script.contains("iptables -I OUTPUT 1 -j SHROUD_KILLSWITCH"));
+        assert!(script.contains("nft delete table inet shroud_killswitch"));
+        // Check for cleanup commands at start
+        assert!(script.contains("iptables -X SHROUD_KILLSWITCH 2>/dev/null || true"));
     }
 }

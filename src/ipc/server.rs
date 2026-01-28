@@ -140,8 +140,9 @@ impl IpcServer {
                     } else {
                         // Wait for response from supervisor
                         // We use a timeout to prevent hanging forever if supervisor is busy/deadlocked
+                        // Increased to 60s for interactive commands (e.g. pkexec)
                         match tokio::time::timeout(
-                            std::time::Duration::from_secs(5),
+                            std::time::Duration::from_secs(60),
                             resp_rx.recv(),
                         )
                         .await

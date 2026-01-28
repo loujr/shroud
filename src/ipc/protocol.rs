@@ -92,6 +92,11 @@ pub enum IpcResponse {
     /// Operation completed successfully.
     Ok,
 
+    /// Operation completed with a message
+    OkMessage {
+        message: String,
+    },
+
     /// Operation failed with an error message.
     Error {
         /// Human-readable error description
@@ -116,9 +121,24 @@ pub enum IpcResponse {
         names: Vec<String>,
     },
 
-    // Generic value response for things I haven't strictly typed yet
-    // or for simple json returns
-    Value(serde_json::Value),
+    /// Kill switch status
+    KillSwitchStatus {
+        enabled: bool,
+    },
+
+    /// Auto-reconnect status
+    AutoReconnectStatus {
+        enabled: bool,
+    },
+
+    /// Debug info
+    DebugInfo {
+        log_path: Option<String>,
+        debug_enabled: bool,
+    },
+
+    /// Pong response
+    Pong,
 }
 
 impl IpcCommand {

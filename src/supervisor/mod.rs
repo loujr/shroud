@@ -135,7 +135,13 @@ impl VpnSupervisor {
         };
 
         // Create kill switch with config-based DNS and IPv6 modes
-        let kill_switch = KillSwitch::with_config(app_config.dns_mode, app_config.ipv6_mode);
+        let mut kill_switch = KillSwitch::with_config(app_config.dns_mode, app_config.ipv6_mode);
+
+        // Sync with actual system state (detect existing rules)
+        kill_switch.sync_state();
+        if kill_switch.is_enabled() {
+            info!("Kill switch rules detected from previous session");
+        }
 
         Self {
             machine: StateMachine::with_config(sm_config),

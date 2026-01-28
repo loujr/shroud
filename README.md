@@ -46,7 +46,7 @@ The name has layers:
 ## Features
 
 - **Provider-agnostic** — Works with any `.ovpn` config file (NordVPN, Mullvad, ProtonVPN, self-hosted, corporate VPNs)
-- **Kill switch** — nftables-based traffic blocking with DNS and IPv6 leak protection
+- **Kill switch** — iptables-based traffic blocking with DNS and IPv6 leak protection
 - **Auto-reconnect** — Health monitoring with exponential backoff retry
 - **Formal state machine** — Disconnected → Connecting → Connected → Degraded → Reconnecting → Failed
 - **Works alongside NetworkManager** — Wraps, doesn't replace (Principle I)

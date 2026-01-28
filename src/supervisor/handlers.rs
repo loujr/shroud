@@ -1009,28 +1009,46 @@ impl super::VpnSupervisor {
                     self.kill_switch.disable().await
                 };
 
-                if let Err(e) = result {
-                    IpcResponse::Error {
-                        message: e.to_string(),
+                match result {
+                    Ok(()) => {
+                        // Update shared state
+                        {
+                            let mut state = self.shared_state.write().await;
+                            state.kill_switch = enable;
+                        }
+                        self.sync_shared_state().await;
+                        IpcResponse::OkMessage {
+                            message: format!(
+                                "Kill switch {}",
+                                if enable { "enabled" } else { "disabled" }
+                            ),
+                        }
                     }
-                } else {
-                    self.sync_shared_state().await;
-                    IpcResponse::Ok
+                    Err(e) => IpcResponse::Error {
+                        message: e.to_string(),
+                    },
                 }
             }
             IpcCommand::KillSwitchToggle => {
                 self.toggle_kill_switch().await;
                 // toggle_kill_switch updates state
                 let state = self.shared_state.read().await;
-                IpcResponse::Value(serde_json::json!({
-                    "message": format!("Kill switch {}", if state.kill_switch { "enabled" } else { "disabled" })
-                }))
+                IpcResponse::OkMessage {
+                    message: format!(
+                        "Kill switch {}",
+                        if state.kill_switch {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        }
+                    ),
+                }
             }
             IpcCommand::KillSwitchStatus => {
                 let state = self.shared_state.read().await;
-                IpcResponse::Value(serde_json::json!({
-                    "enabled": state.kill_switch
-                }))
+                IpcResponse::KillSwitchStatus {
+                    enabled: state.kill_switch,
+                }
             }
             IpcCommand::AutoReconnect { enable } => {
                 self.app_config.auto_reconnect = enable;
@@ -1041,15 +1059,22 @@ impl super::VpnSupervisor {
             IpcCommand::AutoReconnectToggle => {
                 self.toggle_auto_reconnect().await;
                 let state = self.shared_state.read().await;
-                IpcResponse::Value(serde_json::json!({
-                    "message": format!("Auto-reconnect {}", if state.auto_reconnect { "enabled" } else { "disabled" })
-                }))
+                IpcResponse::OkMessage {
+                    message: format!(
+                        "Auto-reconnect {}",
+                        if state.auto_reconnect {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        }
+                    ),
+                }
             }
             IpcCommand::AutoReconnectStatus => {
                 let state = self.shared_state.read().await;
-                IpcResponse::Value(serde_json::json!({
-                    "enabled": state.auto_reconnect
-                }))
+                IpcResponse::AutoReconnectStatus {
+                    enabled: state.auto_reconnect,
+                }
             }
             IpcCommand::Debug { enable } => {
                 let success = if enable {
