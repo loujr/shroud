@@ -28,6 +28,7 @@
 //! every transition with its reason. State is sacred — if the state says
 //! Disconnected, we are disconnected.
 
+mod autostart;
 mod cli;
 mod config;
 mod daemon;

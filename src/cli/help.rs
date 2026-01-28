@@ -28,6 +28,7 @@ COMMANDS:
     list                 List available VPN connections
     killswitch           Manage kill switch (on/off/toggle/status)
     auto-reconnect       Manage auto-reconnect (on/off/toggle/status)
+    autostart            Manage autostart on login (on/off/toggle/status)
     debug                Manage debug logging (on/off/log-path/tail/dump)
     ping                 Check if daemon is running
     refresh              Refresh VPN connection list
@@ -46,6 +47,8 @@ EXAMPLES:
     shroud killswitch on            Enable the kill switch
     shroud list                     List available VPN connections
     shroud debug tail               Follow the debug log file
+    shroud autostart on             Enable autostart on login
+    shroud autostart status         Check autostart status
     shroud reload                   Reload configuration from disk
     shroud update                   Build, install, and restart
     shroud version --check          Check if rebuild is needed
@@ -54,6 +57,7 @@ ALIASES:
     ls                   Alias for 'list'
     ks                   Alias for 'killswitch'
     ar                   Alias for 'auto-reconnect'
+    startup              Alias for 'autostart'
     stop, exit           Aliases for 'quit'
 
 For more information, visit: https://github.com/loujr/shroud"#
@@ -196,6 +200,26 @@ ALIASES:
 
 When enabled, Shroud will automatically attempt to reconnect if the
 VPN connection drops unexpectedly."#
+        ),
+
+        "autostart" | "startup" => println!(
+            r#"Manage automatic startup on login
+
+USAGE:
+    shroud autostart <on|off|toggle|status>
+
+SUBCOMMANDS:
+    on        Enable autostart on login
+    off       Disable autostart
+    toggle    Toggle autostart state
+    status    Show current autostart status
+
+EXAMPLES:
+    shroud autostart on
+    shroud autostart status
+
+This uses the XDG autostart specification. The desktop file
+is created at ~/.config/autostart/shroud.desktop"#
         ),
 
         "debug" => println!(

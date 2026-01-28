@@ -59,6 +59,9 @@ pub enum ParsedCommand {
     // Auto-reconnect
     AutoReconnect { action: ToggleAction },
 
+    // Autostart
+    Autostart { action: ToggleAction },
+
     // Debug
     Debug { action: DebugAction },
 
@@ -210,6 +213,10 @@ fn parse_command(argv: &[String]) -> Result<ParsedCommand, String> {
         "debug" => {
             let action = parse_debug_action(argv.get(1).map(|s| s.as_str()))?;
             Ok(ParsedCommand::Debug { action })
+        }
+        "autostart" | "startup" => {
+            let action = parse_toggle_action(argv.get(1).map(|s| s.as_str()))?;
+            Ok(ParsedCommand::Autostart { action })
         }
         "ping" => Ok(ParsedCommand::Ping),
         "refresh" => Ok(ParsedCommand::Refresh),

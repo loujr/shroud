@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Documentation**: Enhanced `ARCHITECTURE.md` with CLI architecture diagram and error handling strategy.
 
+## [1.5.0] - 2026-02-12
+
+### Added
+- **Autostart**: XDG autostart support with `shroud autostart on/off/toggle/status`.
+- **Tray**: “Start on Login” checkbox in the tray menu.
+
 ## [1.4.0] - 2026-02-12
 
 ### Added

@@ -28,6 +28,9 @@ pub async fn run_client_mode(args: &Args) -> i32 {
 
     // Handle local commands that don't need the daemon
     match command {
+        ParsedCommand::Autostart { action } => {
+            return handle_autostart_command(*action);
+        }
         ParsedCommand::Update { yes, debug } => {
             return handle_update_command(*yes, *debug).await;
         }
@@ -151,6 +154,8 @@ fn args_to_command(cmd: &ParsedCommand) -> Option<IpcCommand> {
             ToggleAction::Status => Some(IpcCommand::AutoReconnectStatus),
         },
 
+        ParsedCommand::Autostart { .. } => None,
+
         ParsedCommand::Debug { action } => match action {
             DebugAction::On => Some(IpcCommand::Debug { enable: true }),
             DebugAction::Off => Some(IpcCommand::Debug { enable: false }),
@@ -262,6 +267,62 @@ fn handle_response(response: IpcResponse, args: &Args) -> i32 {
         }
         IpcResponse::Pong => {
             println!("Pong");
+            0
+        }
+    }
+}
+
+fn handle_autostart_command(action: ToggleAction) -> i32 {
+    use crate::autostart::Autostart;
+
+    match action {
+        ToggleAction::On => match Autostart::enable() {
+            Ok(()) => {
+                println!("Autostart enabled");
+                println!("Shroud will start automatically on login");
+                0
+            }
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                1
+            }
+        },
+        ToggleAction::Off => match Autostart::disable() {
+            Ok(()) => {
+                println!("Autostart disabled");
+                0
+            }
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                1
+            }
+        },
+        ToggleAction::Toggle => match Autostart::toggle() {
+            Ok(true) => {
+                println!("Autostart enabled");
+                0
+            }
+            Ok(false) => {
+                println!("Autostart disabled");
+                0
+            }
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                1
+            }
+        },
+        ToggleAction::Status => {
+            let enabled = Autostart::is_enabled();
+            println!(
+                "Autostart: {}",
+                if enabled { "enabled" } else { "disabled" }
+            );
+
+            if enabled {
+                if let Some(path) = dirs::config_dir().map(|c| c.join("autostart/shroud.desktop")) {
+                    println!("Desktop file: {}", path.display());
+                }
+            }
             0
         }
     }

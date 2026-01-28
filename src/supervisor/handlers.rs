@@ -878,6 +878,20 @@ impl super::VpnSupervisor {
         }
     }
 
+    /// Toggle autostart on login
+    pub(crate) async fn toggle_autostart(&mut self) {
+        match crate::autostart::Autostart::toggle() {
+            Ok(enabled) => {
+                self.update_tray();
+                self.show_notification("Autostart", if enabled { "Enabled" } else { "Disabled" });
+            }
+            Err(e) => {
+                error!("Failed to toggle autostart: {}", e);
+                self.show_notification("Autostart Error", &e);
+            }
+        }
+    }
+
     /// Toggle debug logging to file
     pub(crate) async fn toggle_debug_logging(&mut self) {
         let currently_enabled = logging::is_debug_logging_enabled();

@@ -74,6 +74,9 @@ impl super::VpnSupervisor {
                         VpnCommand::ToggleKillSwitch => {
                             self.toggle_kill_switch().await;
                         }
+                        VpnCommand::ToggleAutostart => {
+                            self.toggle_autostart().await;
+                        }
                         VpnCommand::ToggleDebugLogging => {
                             self.toggle_debug_logging().await;
                         }

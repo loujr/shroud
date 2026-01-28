@@ -229,6 +229,12 @@ shroud auto-reconnect on        # Enable auto-reconnect
 shroud ar off                   # Disable auto-reconnect
 shroud ar toggle                # Toggle auto-reconnect
 
+# Autostart control
+shroud autostart on             # Enable autostart on login
+shroud autostart off            # Disable autostart
+shroud autostart status         # Show autostart status
+shroud autostart toggle         # Toggle autostart
+
 # Debug and diagnostics
 shroud debug on                 # Enable debug logging to file
 shroud debug off                # Disable debug logging

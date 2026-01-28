@@ -6,6 +6,7 @@ use ksni::{menu::CheckmarkItem, menu::StandardItem, MenuItem, Tray};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+use crate::autostart::Autostart;
 use crate::state::VpnState;
 use crate::tray::icons::{get_status_icon, IconType};
 
@@ -20,6 +21,8 @@ pub enum VpnCommand {
     ToggleAutoReconnect,
     /// Toggle kill switch (blocks non-VPN traffic)
     ToggleKillSwitch,
+    /// Toggle autostart on login
+    ToggleAutostart,
     /// Toggle debug logging to file
     ToggleDebugLogging,
     /// Open the log file in default viewer
@@ -283,6 +286,20 @@ impl Tray for VpnTray {
                 let tx = tray.tx.clone();
                 tokio::spawn(async move {
                     let _ = tx.send(VpnCommand::ToggleKillSwitch).await;
+                });
+            }),
+            ..Default::default()
+        }));
+
+        // Autostart toggle with checkbox
+        items.push(MenuItem::Checkmark(CheckmarkItem {
+            label: "Start on Login".to_string(),
+            enabled: true,
+            checked: Autostart::is_enabled(),
+            activate: Box::new(|tray: &mut Self| {
+                let tx = tray.tx.clone();
+                tokio::spawn(async move {
+                    let _ = tx.send(VpnCommand::ToggleAutostart).await;
                 });
             }),
             ..Default::default()
