@@ -309,14 +309,14 @@ impl KillSwitch {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| KillSwitchError::Spawn(e))?;
+            .map_err(KillSwitchError::Spawn)?;
 
         // Write script to stdin
         if let Some(mut stdin) = child.stdin.take() {
             stdin
                 .write_all(script.as_bytes())
                 .await
-                .map_err(|e| KillSwitchError::Write(e))?;
+                .map_err(KillSwitchError::Write)?;
             // MUST drop stdin to signal EOF
             drop(stdin);
         }
@@ -324,7 +324,7 @@ impl KillSwitch {
         let output = child
             .wait_with_output()
             .await
-            .map_err(|e| KillSwitchError::Wait(e))?;
+            .map_err(KillSwitchError::Wait)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
