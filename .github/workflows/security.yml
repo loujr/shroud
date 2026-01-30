@@ -3,12 +3,14 @@ name: Security Audit
 on:
   workflow_dispatch:
   schedule:
-    # Run every Monday at 06:00 UTC
-    - cron: "0 6 * * 1"
+    - cron: "0 9 1 * *"
   push:
-    branches:
-      - main
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
   pull_request:
+    paths:
+      - 'Cargo.toml'
 
 env:
   CARGO_TERM_COLOR: always
