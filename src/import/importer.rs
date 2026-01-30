@@ -58,11 +58,45 @@ fn nmcli_command() -> Command {
     }
 }
 
+async fn nmcli_output(args: &[&str]) -> std::io::Result<std::process::Output> {
+    if let Ok(path) = std::env::var("SHROUD_NMCLI") {
+        let output = Command::new(&path).args(args).output().await;
+        match output {
+            Ok(out) => Ok(out),
+            Err(_) => Command::new("sh").arg(path).args(args).output().await,
+        }
+    } else {
+        Command::new("nmcli").args(args).output().await
+    }
+}
+
+async fn nmcli_output_with_path(
+    args: &[&str],
+    path: &Path,
+) -> std::io::Result<std::process::Output> {
+    if let Ok(cmd_path) = std::env::var("SHROUD_NMCLI") {
+        let output = Command::new(&cmd_path)
+            .args(args)
+            .arg(path)
+            .output()
+            .await;
+        match output {
+            Ok(out) => Ok(out),
+            Err(_) => Command::new("sh")
+                .arg(cmd_path)
+                .args(args)
+                .arg(path)
+                .output()
+                .await,
+        }
+    } else {
+        Command::new("nmcli").args(args).arg(path).output().await
+    }
+}
+
 /// Check if NetworkManager is running
 pub async fn check_networkmanager() -> Result<(), ImportError> {
-    let output = nmcli_command()
-        .args(["general", "status"])
-        .output()
+    let output = nmcli_output(&["general", "status"])
         .await
         .map_err(|_| ImportError::NetworkManagerNotRunning)?;
 
@@ -75,10 +109,7 @@ pub async fn check_networkmanager() -> Result<(), ImportError> {
 
 /// Check if a connection with this name already exists
 pub async fn connection_exists(name: &str) -> bool {
-    let output = nmcli_command()
-        .args(["-t", "-f", "NAME", "connection", "show"])
-        .output()
-        .await;
+    let output = nmcli_output(&["-t", "-f", "NAME", "connection", "show"]).await;
 
     match output {
         Ok(o) => {
@@ -132,12 +163,12 @@ pub async fn import_file(
         VpnConfigType::OpenVpn => "openvpn",
     };
 
-    let output = nmcli_command()
-        .args(["connection", "import", "type", nmcli_type, "file"])
-        .arg(path)
-        .output()
-        .await
-        .map_err(|e| ImportError::NmcliError(e.to_string()))?;
+    let output = nmcli_output_with_path(
+        &["connection", "import", "type", nmcli_type, "file"],
+        path,
+    )
+    .await
+    .map_err(|e| ImportError::NmcliError(e.to_string()))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -146,10 +177,14 @@ pub async fn import_file(
 
     if let Some(name) = custom_name {
         if name != default_name {
-            let _ = nmcli_command()
-                .args(["connection", "modify", &default_name, "connection.id", name])
-                .output()
-                .await;
+            let _ = nmcli_output(&[
+                "connection",
+                "modify",
+                &default_name,
+                "connection.id",
+                name,
+            ])
+            .await;
         }
     }
 
@@ -245,7 +280,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_connection_exists() {
-        let stub = make_nmcli_stub("demo-vpn\n");
+        let stub = make_nmcli_stub("demo-vpn");
         std::env::set_var("SHROUD_NMCLI", stub.path());
         assert!(connection_exists("demo-vpn").await);
         assert!(!connection_exists("other").await);
