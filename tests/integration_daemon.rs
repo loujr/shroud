@@ -88,6 +88,7 @@ fn test_daemon_lifecycle() {
     assert!(wait_for_daemon_stop(5), "Daemon failed to stop");
 
     let _ = daemon.kill();
+    let _ = daemon.wait();
 }
 
 #[test]

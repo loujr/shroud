@@ -284,7 +284,7 @@ mod tests {
 
         let result = Autostart::toggle();
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
         assert!(Autostart::is_enabled());
 
         let _ = Autostart::disable();
@@ -297,7 +297,7 @@ mod tests {
 
         let result = Autostart::toggle();
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
         assert!(!Autostart::is_enabled());
     }
 

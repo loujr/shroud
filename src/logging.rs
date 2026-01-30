@@ -448,7 +448,6 @@ mod tests {
 
     #[test]
     fn test_log_file_rotation_size() {
-        assert!(MAX_LOG_SIZE > 0);
         assert_eq!(MAX_LOG_SIZE, 10 * 1024 * 1024);
     }
 
