@@ -37,7 +37,9 @@ jobs:
         run: cargo install cargo-tarpaulin --locked
 
       - name: Run tarpaulin
+        id: tarpaulin
         run: |
+          set +e
           cargo tarpaulin \
             --verbose \
             --all-features \
@@ -46,8 +48,23 @@ jobs:
             --out xml \
             --out html \
             --output-dir coverage \
-            --skip-clean
-        continue-on-error: true
+            --skip-clean \
+            --ignore-tests \
+            2>&1 | tee tarpaulin-output.txt
+          TARP_EXIT=$?
+          set -e
+
+          if grep -q "test result: ok" tarpaulin-output.txt; then
+            echo "Tests passed, coverage generated"
+            echo "status=success" >> $GITHUB_OUTPUT
+          elif grep -q "test result: FAILED" tarpaulin-output.txt; then
+            echo "Tests actually failed"
+            echo "status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "Tarpaulin completed with exit code $TARP_EXIT"
+            echo "status=unknown" >> $GITHUB_OUTPUT
+          fi
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -63,4 +80,12 @@ jobs:
           name: coverage-report
           path: coverage/
           retention-days: 14
+        if: always()
+
+      - name: Upload tarpaulin log
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarpaulin-output
+          path: tarpaulin-output.txt
+          retention-days: 7
         if: always()
