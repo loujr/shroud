@@ -675,3 +675,202 @@ mod tests {
         assert!(script.contains("iptables -X SHROUD_KILLSWITCH 2>/dev/null || true"));
     }
 }
+
+#[cfg(test)]
+mod leak_tests {
+    use super::*;
+    use std::process::Command;
+
+    /// Helper to check if iptables has shroud rules
+    fn get_iptables_rules() -> Result<String, std::io::Error> {
+        let output = Command::new("sudo")
+            .args(["iptables", "-L", "OUTPUT", "-n", "-v"])
+            .output()?;
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    /// Helper to check if ip6tables has shroud rules
+    fn get_ip6tables_rules() -> Result<String, std::io::Error> {
+        let output = Command::new("sudo")
+            .args(["ip6tables", "-L", "OUTPUT", "-n", "-v"])
+            .output()?;
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires sudo
+    async fn test_killswitch_creates_drop_rules() {
+        let mut ks = KillSwitch::new();
+
+        // Enable kill switch
+        ks.enable().await.expect("Failed to enable kill switch");
+
+        // Verify iptables has DROP rules
+        let rules = get_iptables_rules().expect("Failed to get iptables rules");
+
+        // Should have a default DROP or REJECT for non-VPN traffic
+        assert!(
+            rules.contains("DROP") || rules.contains("REJECT"),
+            "Kill switch should create DROP/REJECT rules. Got:\n{}",
+            rules
+        );
+
+        // Clean up
+        ks.disable().await.expect("Failed to disable kill switch");
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires sudo
+    async fn test_killswitch_allows_localhost() {
+        let mut ks = KillSwitch::new();
+        ks.enable().await.expect("Failed to enable kill switch");
+
+        let rules = get_iptables_rules().expect("Failed to get iptables rules");
+
+        // Should allow localhost (127.0.0.0/8)
+        assert!(
+            rules.contains("127.0.0.0") || rules.contains("lo"),
+            "Kill switch should allow localhost. Got:\n{}",
+            rules
+        );
+
+        ks.disable().await.expect("Failed to disable kill switch");
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires sudo
+    async fn test_killswitch_allows_lan() {
+        let mut ks = KillSwitch::new();
+        ks.enable().await.expect("Failed to enable kill switch");
+
+        let rules = get_iptables_rules().expect("Failed to get iptables rules");
+
+        // Should allow LAN (192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12)
+        let allows_lan = rules.contains("192.168.0.0")
+            || rules.contains("10.0.0.0")
+            || rules.contains("172.16.0.0");
+
+        assert!(allows_lan, "Kill switch should allow LAN. Got:\n{}", rules);
+
+        ks.disable().await.expect("Failed to disable kill switch");
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires sudo
+    async fn test_killswitch_allows_vpn_server() {
+        let mut ks = KillSwitch::new();
+
+        // Set a test VPN server IP
+        let test_server_ip: IpAddr = "203.0.113.50".parse().unwrap(); // TEST-NET-3
+        ks.set_vpn_server(Some(test_server_ip));
+        ks.enable().await.expect("Failed to enable kill switch");
+
+        let rules = get_iptables_rules().expect("Failed to get iptables rules");
+
+        // Should allow traffic to VPN server
+        assert!(
+            rules.contains("203.0.113.50"),
+            "Kill switch should allow VPN server IP {}. Got:\n{}",
+            test_server_ip,
+            rules
+        );
+
+        ks.disable().await.expect("Failed to disable kill switch");
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires sudo
+    async fn test_killswitch_allows_vpn_interface() {
+        let mut ks = KillSwitch::new();
+        ks.enable().await.expect("Failed to enable kill switch");
+
+        let rules = get_iptables_rules().expect("Failed to get iptables rules");
+
+        // Should allow traffic on tun interface
+        assert!(
+            rules.contains("tun") || rules.contains("tap"),
+            "Kill switch should allow VPN interface (tun/tap). Got:\n{}",
+            rules
+        );
+
+        ks.disable().await.expect("Failed to disable kill switch");
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires sudo
+    async fn test_killswitch_blocks_ipv6() {
+        let mut ks = KillSwitch::new();
+        ks.enable().await.expect("Failed to enable kill switch");
+
+        let rules = get_ip6tables_rules().expect("Failed to get ip6tables rules");
+
+        // Should block IPv6 to prevent leaks
+        assert!(
+            rules.contains("DROP") || rules.contains("REJECT"),
+            "Kill switch should block IPv6. Got:\n{}",
+            rules
+        );
+
+        ks.disable().await.expect("Failed to disable kill switch");
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires sudo
+    async fn test_killswitch_disable_removes_rules() {
+        let mut ks = KillSwitch::new();
+
+        // Enable then disable
+        ks.enable().await.expect("Failed to enable kill switch");
+        ks.disable().await.expect("Failed to disable kill switch");
+
+        let rules = get_iptables_rules().expect("Failed to get iptables rules");
+
+        // Should not have shroud-specific rules
+        // Check for marker comments or chain names
+        assert!(
+            !rules.contains("SHROUD") && !rules.contains("shroud"),
+            "Kill switch rules should be removed after disable. Got:\n{}",
+            rules
+        );
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires sudo
+    async fn test_killswitch_idempotent_enable() {
+        let mut ks = KillSwitch::new();
+
+        // Enable twice should not duplicate rules
+        ks.enable().await.expect("Failed to enable kill switch");
+        let rules_first = get_iptables_rules().expect("Failed to get rules");
+
+        ks.enable()
+            .await
+            .expect("Failed to enable kill switch again");
+        let rules_second = get_iptables_rules().expect("Failed to get rules");
+
+        // Rule count should be the same
+        let count_first = rules_first.matches("DROP").count();
+        let count_second = rules_second.matches("DROP").count();
+
+        assert_eq!(
+            count_first, count_second,
+            "Enabling twice should not duplicate rules"
+        );
+
+        ks.disable().await.expect("Failed to disable kill switch");
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires sudo
+    async fn test_killswitch_idempotent_disable() {
+        let mut ks = KillSwitch::new();
+
+        // Disable when not enabled should not error
+        let result = ks.disable().await;
+        assert!(result.is_ok(), "Disable when not enabled should succeed");
+
+        // Double disable should not error
+        let result = ks.disable().await;
+        assert!(result.is_ok(), "Double disable should succeed");
+    }
+}
