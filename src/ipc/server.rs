@@ -190,10 +190,85 @@ impl Drop for IpcServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    #[test]
+    fn test_server_error_display_bind() {
+        let err = ServerError::Bind {
+            path: "/tmp/test.sock".to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::AddrInUse, "address in use"),
+        };
+        let display = format!("{}", err);
+        assert!(display.contains("Failed to bind"));
+        assert!(display.contains("/tmp/test.sock"));
+    }
+
+    #[test]
+    fn test_server_error_display_cleanup() {
+        let err = ServerError::Cleanup(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "permission denied",
+        ));
+        let display = format!("{}", err);
+        assert!(display.contains("Failed to remove stale socket"));
+    }
 
     #[tokio::test]
     async fn test_server_creation() {
         let (tx, _rx) = mpsc::channel(1);
         let _server = IpcServer::new(tx);
+    }
+
+    #[tokio::test]
+    async fn test_handle_connection_invalid_json() {
+        let (tx, _rx) = mpsc::channel(16);
+        let (client, server_stream) = tokio::net::UnixStream::pair().unwrap();
+
+        let handle =
+            tokio::spawn(async move { IpcServer::handle_connection(server_stream, tx).await });
+
+        let mut client = client;
+        client.write_all(b"not valid json\n").await.unwrap();
+        client.shutdown().await.unwrap();
+
+        let result = handle.await.unwrap();
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_connection_valid_command() {
+        let (tx, mut rx) = mpsc::channel::<(IpcCommand, mpsc::Sender<IpcResponse>)>(16);
+        let (client, server_stream) = tokio::net::UnixStream::pair().unwrap();
+
+        tokio::spawn(async move {
+            if let Some((cmd, responder)) = rx.recv().await {
+                assert!(matches!(cmd, IpcCommand::Ping));
+                responder.send(IpcResponse::Pong).await.unwrap();
+            }
+        });
+
+        let handle =
+            tokio::spawn(async move { IpcServer::handle_connection(server_stream, tx).await });
+
+        let (client_reader, mut client_writer) = client.into_split();
+        let ping_json = serde_json::to_string(&IpcCommand::Ping).unwrap();
+        client_writer
+            .write_all(format!("{}\n", ping_json).as_bytes())
+            .await
+            .unwrap();
+        client_writer.shutdown().await.unwrap();
+
+        let mut reader = BufReader::new(client_reader);
+        let mut response = String::new();
+        reader.read_line(&mut response).await.unwrap();
+
+        let parsed: IpcResponse = serde_json::from_str(&response).unwrap();
+        assert!(matches!(parsed, IpcResponse::Pong));
+
+        drop(reader);
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), handle).await;
+        assert!(result.is_ok(), "handle_connection timed out");
+        assert!(result.unwrap().unwrap().is_ok());
     }
 }

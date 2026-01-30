@@ -142,10 +142,41 @@ mod tests {
         assert!(err.to_string().contains("connect"));
     }
 
+    #[test]
+    fn test_client_error_send_display() {
+        let io_err = io::Error::new(io::ErrorKind::BrokenPipe, "broken pipe");
+        let err = ClientError::Send(io_err);
+        assert!(err.to_string().contains("send"));
+    }
+
+    #[test]
+    fn test_client_error_receive_display() {
+        let io_err = io::Error::new(io::ErrorKind::UnexpectedEof, "eof");
+        let err = ClientError::Receive(io_err);
+        assert!(err.to_string().contains("receive"));
+    }
+
+    #[test]
+    fn test_client_error_parse_display() {
+        let parse_err = serde_json::from_str::<IpcResponse>("not-json").unwrap_err();
+        let err = ClientError::Parse(parse_err);
+        assert!(err.to_string().contains("parse"));
+    }
+
     #[tokio::test]
     async fn test_daemon_not_running() {
         let result = is_daemon_running().await;
         // Don't assert value as it depends on system state, just ensure it runs
         let _ = result;
+    }
+
+    #[tokio::test]
+    async fn test_send_command_when_daemon_not_running() {
+        let result = send_command(IpcCommand::Ping).await;
+        match result {
+            Ok(IpcResponse::Pong) | Ok(IpcResponse::Ok) => {}
+            Err(ClientError::DaemonNotRunning) | Err(ClientError::Connection(_)) => {}
+            other => panic!("Unexpected result: {:?}", other),
+        }
     }
 }

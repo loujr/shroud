@@ -445,4 +445,42 @@ mod tests {
         let dir = log_directory();
         assert!(dir.to_string_lossy().contains("shroud"));
     }
+
+    #[test]
+    fn test_log_file_rotation_size() {
+        assert!(MAX_LOG_SIZE > 0);
+        assert_eq!(MAX_LOG_SIZE, 10 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_max_log_files_count() {
+        assert_eq!(MAX_LOG_FILES, 3);
+    }
+
+    #[test]
+    fn test_debug_logging_flag_default() {
+        assert!(!DEBUG_LOGGING_ENABLED.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_debug_logging_toggle() {
+        let initial = DEBUG_LOGGING_ENABLED.load(Ordering::Relaxed);
+        DEBUG_LOGGING_ENABLED.store(!initial, Ordering::Relaxed);
+        assert_ne!(DEBUG_LOGGING_ENABLED.load(Ordering::Relaxed), initial);
+        DEBUG_LOGGING_ENABLED.store(initial, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn test_log_directory_creation() {
+        let dir = ensure_log_directory();
+        assert!(dir.is_ok());
+        let path = dir.unwrap();
+        assert!(path.to_string_lossy().contains("shroud"));
+    }
+
+    #[test]
+    fn test_get_log_file_path() {
+        let path = default_log_path();
+        assert!(path.to_string_lossy().ends_with(".log"));
+    }
 }

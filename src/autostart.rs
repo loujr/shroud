@@ -194,3 +194,141 @@ pub struct AutostartStatus {
     pub has_old_systemd: bool,
     pub systemd_service_path: Option<PathBuf>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_desktop_file_path_returns_valid_path() {
+        let path = Autostart::desktop_file_path();
+        assert!(path.is_ok());
+        let path = path.unwrap();
+        assert!(path.to_string_lossy().contains("autostart"));
+        assert!(path.to_string_lossy().ends_with("shroud.desktop"));
+    }
+
+    #[test]
+    fn test_find_binary_returns_existing_path() {
+        let result = Autostart::find_binary();
+        assert!(result.is_ok());
+        let path = result.unwrap();
+        assert!(path.is_absolute());
+    }
+
+    #[test]
+    fn test_generate_desktop_entry_contains_required_fields() {
+        let result = Autostart::generate_desktop_entry();
+        assert!(result.is_ok());
+        let content = result.unwrap();
+
+        assert!(content.contains("[Desktop Entry]"));
+        assert!(content.contains("Type=Application"));
+        assert!(content.contains("Name=Shroud"));
+        assert!(content.contains("Exec="));
+        assert!(content.contains("Terminal=false"));
+
+        for line in content.lines() {
+            if let Some(exec_path) = line.strip_prefix("Exec=") {
+                assert!(
+                    exec_path.starts_with('/'),
+                    "Exec path should be absolute: {}",
+                    exec_path
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_is_enabled_does_not_panic() {
+        let _ = Autostart::is_enabled();
+    }
+
+    #[test]
+    fn test_enable_creates_desktop_file() {
+        let result = Autostart::enable();
+        assert!(result.is_ok(), "Enable failed: {:?}", result);
+
+        assert!(Autostart::is_enabled());
+
+        let path = Autostart::desktop_file_path().unwrap();
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("[Desktop Entry]"));
+
+        let _ = Autostart::disable();
+    }
+
+    #[test]
+    fn test_disable_removes_desktop_file() {
+        Autostart::enable().unwrap();
+        assert!(Autostart::is_enabled());
+
+        let result = Autostart::disable();
+        assert!(result.is_ok());
+        assert!(!Autostart::is_enabled());
+    }
+
+    #[test]
+    fn test_disable_succeeds_when_not_enabled() {
+        let _ = Autostart::disable();
+
+        let result = Autostart::disable();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_toggle_enables_when_disabled() {
+        let _ = Autostart::disable();
+        assert!(!Autostart::is_enabled());
+
+        let result = Autostart::toggle();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), true);
+        assert!(Autostart::is_enabled());
+
+        let _ = Autostart::disable();
+    }
+
+    #[test]
+    fn test_toggle_disables_when_enabled() {
+        Autostart::enable().unwrap();
+        assert!(Autostart::is_enabled());
+
+        let result = Autostart::toggle();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), false);
+        assert!(!Autostart::is_enabled());
+    }
+
+    #[test]
+    fn test_status_returns_valid_struct() {
+        let status = Autostart::status();
+
+        assert!(status.desktop_file.is_some());
+
+        if let Some(ref path) = status.binary_path {
+            assert_eq!(status.binary_exists, path.exists());
+        }
+
+        assert_eq!(status.enabled, Autostart::is_enabled());
+    }
+
+    #[test]
+    fn test_cleanup_old_systemd_succeeds_when_no_service() {
+        let result = Autostart::cleanup_old_systemd();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_enable_creates_parent_directory() {
+        let path = Autostart::desktop_file_path().unwrap();
+        let parent = path.parent().unwrap();
+
+        let result = Autostart::enable();
+        assert!(result.is_ok());
+        assert!(parent.exists());
+
+        let _ = Autostart::disable();
+    }
+}

@@ -668,3 +668,105 @@ fn find_project_directory() -> Result<PathBuf, Box<dyn std::error::Error>> {
 
     Err("Could not find shroud project directory. Set SHROUD_PROJECT_DIR or run from project directory.".into())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::args::{Args, ToggleAction};
+    use crate::cli::help;
+
+    fn default_args() -> Args {
+        Args::default()
+    }
+
+    fn args_with_json() -> Args {
+        Args {
+            json_output: true,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_version_returns_zero() {
+        let exit_code = handle_version_command(false).await;
+        assert_eq!(exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn test_handle_version_with_check_returns_zero() {
+        let exit_code = handle_version_command(true).await;
+        assert_eq!(exit_code, 0);
+    }
+
+    #[test]
+    fn test_help_main() {
+        help::print_main_help();
+    }
+
+    #[test]
+    fn test_help_connect() {
+        help::print_command_help("connect");
+    }
+
+    #[test]
+    fn test_help_invalid_command() {
+        help::print_command_help("nonexistent");
+    }
+
+    #[test]
+    fn test_handle_autostart_status() {
+        let args = default_args();
+        let exit_code = handle_autostart_command(ToggleAction::Status, &args);
+        assert_eq!(exit_code, 0);
+    }
+
+    #[test]
+    fn test_handle_autostart_on_off() {
+        let args = default_args();
+        let exit_code = handle_autostart_command(ToggleAction::On, &args);
+        assert_eq!(exit_code, 0);
+
+        let exit_code = handle_autostart_command(ToggleAction::Off, &args);
+        assert_eq!(exit_code, 0);
+    }
+
+    #[test]
+    fn test_handle_autostart_toggle() {
+        let args = default_args();
+        let initial = crate::autostart::Autostart::is_enabled();
+
+        let exit_code = handle_autostart_command(ToggleAction::Toggle, &args);
+        assert_eq!(exit_code, 0);
+
+        assert_ne!(crate::autostart::Autostart::is_enabled(), initial);
+
+        let _ = handle_autostart_command(ToggleAction::Toggle, &args);
+    }
+
+    #[test]
+    fn test_handle_autostart_json_output() {
+        let args = args_with_json();
+        let exit_code = handle_autostart_command(ToggleAction::Status, &args);
+        assert_eq!(exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn test_handle_cleanup_returns_zero() {
+        let args = default_args();
+        let exit_code = handle_cleanup_command(&args).await;
+        assert_eq!(exit_code, 0);
+    }
+
+    #[test]
+    fn test_find_project_directory_from_repo() {
+        let result = find_project_directory();
+        if let Ok(path) = result {
+            assert!(path.join("Cargo.toml").exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_is_daemon_running_returns_bool() {
+        let _ = is_daemon_running().await;
+    }
+}

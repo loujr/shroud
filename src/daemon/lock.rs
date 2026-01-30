@@ -93,6 +93,24 @@ pub fn release_instance_lock() {
 mod tests {
     use super::*;
     use std::env;
+    use std::time::{Duration, Instant};
+    use tempfile::TempDir;
+
+    fn with_temp_runtime_dir<F, R>(f: F) -> R
+    where
+        F: FnOnce(&std::path::Path) -> R,
+    {
+        let temp = TempDir::new().unwrap();
+        let prev = env::var("XDG_RUNTIME_DIR").ok();
+        env::set_var("XDG_RUNTIME_DIR", temp.path());
+        let result = f(temp.path());
+        if let Some(val) = prev {
+            env::set_var("XDG_RUNTIME_DIR", val);
+        } else {
+            env::remove_var("XDG_RUNTIME_DIR");
+        }
+        result
+    }
 
     #[test]
     fn test_lock_file_path_uses_runtime_dir() {
@@ -101,5 +119,105 @@ mod tests {
             let path = get_lock_file_path();
             assert!(path.to_string_lossy().contains("shroud.lock"));
         }
+    }
+
+    #[test]
+    fn test_acquire_lock_writes_pid() {
+        with_temp_runtime_dir(|_| {
+            let result = acquire_instance_lock();
+            if let Ok(file) = result {
+                let path = get_lock_file_path();
+                let content = std::fs::read_to_string(&path).unwrap();
+                let pid: u32 = content.trim().parse().unwrap();
+                assert_eq!(pid, std::process::id());
+
+                drop(file);
+                release_instance_lock();
+            }
+        });
+    }
+
+    #[test]
+    fn test_release_lock_removes_file() {
+        with_temp_runtime_dir(|_| {
+            if let Ok(file) = acquire_instance_lock() {
+                let path = get_lock_file_path();
+                assert!(path.exists());
+
+                drop(file);
+                release_instance_lock();
+
+                assert!(!path.exists());
+            }
+        });
+    }
+
+    #[test]
+    fn test_release_lock_idempotent() {
+        with_temp_runtime_dir(|_| {
+            release_instance_lock();
+            release_instance_lock();
+        });
+    }
+
+    #[test]
+    fn test_lock_conflict_detection() {
+        with_temp_runtime_dir(|_| {
+            #[cfg(unix)]
+            unsafe {
+                let pid = libc::fork();
+                if pid == 0 {
+                    let _lock = acquire_instance_lock().expect("child should acquire lock");
+                    std::thread::sleep(Duration::from_secs(2));
+                    std::process::exit(0);
+                } else {
+                    let start = Instant::now();
+                    let pid_str = pid.to_string();
+                    while start.elapsed() < Duration::from_secs(1) {
+                        if let Ok(contents) = std::fs::read_to_string(get_lock_file_path()) {
+                            if contents.trim() == pid_str {
+                                break;
+                            }
+                        }
+                        std::thread::sleep(Duration::from_millis(50));
+                    }
+
+                    let second = acquire_instance_lock();
+                    assert!(second.is_err());
+
+                    let err = second.unwrap_err();
+                    assert!(err.contains("Another instance is already running"));
+
+                    let _ = libc::waitpid(pid, std::ptr::null_mut(), 0);
+                    release_instance_lock();
+                }
+            }
+
+            #[cfg(not(unix))]
+            {
+                // No reliable way to test flock conflicts on non-Unix platforms.
+                assert!(true);
+            }
+        });
+    }
+
+    #[test]
+    fn test_lock_file_permissions() {
+        with_temp_runtime_dir(|_| {
+            if let Ok(file) = acquire_instance_lock() {
+                let path = get_lock_file_path();
+                let metadata = std::fs::metadata(&path).unwrap();
+
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let mode = metadata.permissions().mode();
+                    assert_eq!(mode & 0o777, 0o600);
+                }
+
+                drop(file);
+                release_instance_lock();
+            }
+        });
     }
 }

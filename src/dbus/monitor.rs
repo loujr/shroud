@@ -362,4 +362,10 @@ mod tests {
         assert_eq!(vpn_failure_reason(9), "Login failed");
         assert!(vpn_failure_reason(99).contains("Unknown"));
     }
+
+    #[test]
+    fn test_vpn_failure_reason_basic_codes() {
+        assert_eq!(vpn_failure_reason(0), "Unknown");
+        assert_eq!(vpn_failure_reason(1), "Not provided");
+    }
 }
