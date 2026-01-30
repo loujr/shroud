@@ -247,6 +247,9 @@ shroud version --check          # Check if rebuild is needed
 shroud --help                   # Show main help
 shroud help connect             # Help for specific command
 shroud connect --help           # Alternative help syntax
+
+# Security
+shroud audit                    # Check dependencies for vulnerabilities
 ```
 
 ---
@@ -315,6 +318,8 @@ ipv6_mode = "block"
 
 ## Security
 
+See [SECURITY.md](SECURITY.md) for vulnerability reporting guidance.
+
 ### Kill Switch
 
 When enabled, the kill switch creates iptables rules that:
@@ -351,6 +356,17 @@ sudo iptables -S SHROUD_KILLSWITCH
 
 # View OUTPUT rules (jump into kill switch chain)
 sudo iptables -S OUTPUT
+
+### Dependency Audits
+
+Shroud uses cargo-audit to check dependencies against the RustSec Advisory Database.
+
+```bash
+./scripts/audit.sh
+
+# Or via the CLI
+shroud audit
+```
 ```
 
 ---

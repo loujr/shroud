@@ -5,6 +5,10 @@ on:
   schedule:
     # Run every Monday at 06:00 UTC
     - cron: "0 6 * * 1"
+  push:
+    branches:
+      - main
+  pull_request:
 
 env:
   CARGO_TERM_COLOR: always
@@ -26,4 +30,4 @@ jobs:
         run: cargo install cargo-audit --locked
       
       - name: Run audit
-        run: cargo audit
+        run: ./scripts/audit.sh

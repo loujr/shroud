@@ -36,6 +36,7 @@ COMMANDS:
     quit                 Stop the daemon gracefully
     restart              Restart the daemon
     reload               Reload configuration without restart
+    audit                Check dependencies for vulnerabilities
     update               Build, install, and restart (dev workflow)
     version              Show version information
     help <COMMAND>       Show help for a command
@@ -52,6 +53,7 @@ EXAMPLES:
     shroud autostart status         Check autostart status
     shroud cleanup                  Remove old systemd service and stale files
     shroud reload                   Reload configuration from disk
+    shroud audit                    Check dependencies for vulnerabilities
     shroud update                   Build, install, and restart
     shroud version --check          Check if rebuild is needed
 
@@ -243,6 +245,19 @@ This command removes:
     - Stale lock files (if daemon not running)
 
 This is safe to run at any time."#
+        ),
+
+        "audit" => println!(
+            r#"Audit dependencies for vulnerabilities
+
+USAGE:
+    shroud audit
+
+Runs cargo-audit against the project dependencies. Installs cargo-audit
+if missing and reports known vulnerabilities from RustSec.
+
+EXAMPLES:
+    shroud audit"#
         ),
 
         "debug" => println!(

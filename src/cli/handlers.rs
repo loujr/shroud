@@ -40,6 +40,9 @@ pub async fn run_client_mode(args: &Args) -> i32 {
         ParsedCommand::Version { check } => {
             return handle_version_command(*check).await;
         }
+        ParsedCommand::Audit => {
+            return handle_audit_command();
+        }
         ParsedCommand::Help { command: Some(cmd) } => {
             help::print_command_help(cmd);
             return 0;
@@ -175,8 +178,59 @@ fn args_to_command(cmd: &ParsedCommand) -> Option<IpcCommand> {
         ParsedCommand::Reload => Some(IpcCommand::Reload),
         ParsedCommand::Update { .. } => None,
         ParsedCommand::Version { .. } => None,
+        ParsedCommand::Audit => None,
 
         ParsedCommand::Help { .. } => None, // Handled locally
+    }
+}
+
+/// Run cargo-audit on the project.
+pub fn handle_audit_command() -> i32 {
+    use std::process::Command;
+
+    println!("Checking dependencies for known vulnerabilities...\n");
+
+    let check = Command::new("cargo").args(["audit", "--version"]).output();
+
+    if check.is_err() || !check.as_ref().unwrap().status.success() {
+        println!("cargo-audit not installed. Installing...\n");
+        let install = Command::new("cargo")
+            .args(["install", "cargo-audit"])
+            .status();
+
+        if install.is_err() || !install.unwrap().success() {
+            eprintln!("Failed to install cargo-audit");
+            return 1;
+        }
+    }
+
+    let project_dir = match find_project_directory() {
+        Ok(dir) => dir,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            eprintln!("Run this command from the shroud project directory");
+            return 1;
+        }
+    };
+
+    let status = Command::new("cargo")
+        .arg("audit")
+        .current_dir(&project_dir)
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            println!("\n✓ No known vulnerabilities found");
+            0
+        }
+        Ok(_) => {
+            println!("\n⚠ Vulnerabilities detected! See above for details.");
+            1
+        }
+        Err(e) => {
+            eprintln!("Failed to run cargo audit: {}", e);
+            1
+        }
     }
 }
 

@@ -82,6 +82,9 @@ pub enum ParsedCommand {
     Update { yes: bool, debug: bool },
     Version { check: bool },
 
+    // Development/maintenance
+    Audit,
+
     // Help
     Help { command: Option<String> },
 }
@@ -245,6 +248,7 @@ fn parse_command(argv: &[String]) -> Result<ParsedCommand, String> {
         "quit" | "stop" | "exit" => Ok(ParsedCommand::Quit),
         "restart" => Ok(ParsedCommand::Restart),
         "reload" => Ok(ParsedCommand::Reload),
+        "audit" => Ok(ParsedCommand::Audit),
         "update" => parse_update_flags(&argv[1..]),
         "version" => parse_version_flags(&argv[1..]),
         "help" => Ok(ParsedCommand::Help {
@@ -446,6 +450,12 @@ mod tests {
     fn test_list_alias() {
         let result = parse_args_from(&args("ls")).unwrap();
         assert!(matches!(result.command, Some(ParsedCommand::List)));
+    }
+
+    #[test]
+    fn test_audit_command() {
+        let result = parse_args_from(&args("audit")).unwrap();
+        assert!(matches!(result.command, Some(ParsedCommand::Audit)));
     }
 }
 
