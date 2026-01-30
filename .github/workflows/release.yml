@@ -1,0 +1,107 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v1.5.1)'
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  BINARY_NAME: shroud
+
+jobs:
+  build-release:
+    name: Build Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ inputs.tag }}" >> $GITHUB_ENV
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          fi
+
+      - name: Validate Cargo.toml version
+        run: |
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          TAG_VERSION=${VERSION#v}
+          if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
+            echo "Error: Tag version ($TAG_VERSION) doesn't match Cargo.toml ($CARGO_VERSION)"
+            exit 1
+          fi
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test --all-features
+
+      - name: Build release binary
+        run: cargo build --release --all-features
+
+      - name: Strip binary
+        run: strip target/release/${{ env.BINARY_NAME }}
+
+      - name: Prepare release assets
+        run: |
+          ASSET_NAME=shroud-linux-x86_64
+          cp target/release/${{ env.BINARY_NAME }} $ASSET_NAME
+          SIZE=$(du -h $ASSET_NAME | cut -f1)
+          echo "BINARY_SIZE=$SIZE" >> $GITHUB_ENV
+
+          mkdir -p release
+          cp $ASSET_NAME release/
+          cp README.md LICENSE release/
+
+          TAR_NAME=shroud-${{ env.VERSION }}-linux-x86_64.tar.gz
+          tar -czvf $TAR_NAME -C release .
+          sha256sum $TAR_NAME > $TAR_NAME.sha256
+
+      - name: Generate changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            echo "## Changes since $PREV_TAG" > CHANGELOG_RELEASE.md
+            git log --pretty=format:"- %s (%h)" $PREV_TAG..HEAD >> CHANGELOG_RELEASE.md
+          else
+            echo "## Initial Release" > CHANGELOG_RELEASE.md
+            git log --pretty=format:"- %s (%h)" >> CHANGELOG_RELEASE.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: Shroud ${{ env.VERSION }}
+          body_path: CHANGELOG_RELEASE.md
+          draft: false
+          prerelease: ${{ contains(env.VERSION, '-') }}
+          files: |
+            shroud-linux-x86_64
+            shroud-${{ env.VERSION }}-linux-x86_64.tar.gz
+            shroud-${{ env.VERSION }}-linux-x86_64.tar.gz.sha256
+          generate_release_notes: true
+
+      - name: Release summary
+        run: |
+          echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Version: ${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Binary size: ${{ env.BINARY_SIZE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Asset: shroud-linux-x86_64" >> $GITHUB_STEP_SUMMARY

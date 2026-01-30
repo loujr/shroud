@@ -1,0 +1,146 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      suites:
+        description: "Comma-separated test suites to run (default: all)"
+        required: false
+        type: string
+  schedule:
+    - cron: "0 3 * * 0"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
+  RUST_LOG: debug
+
+jobs:
+  integration-tests:
+    name: Integration Tests (privileged)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container:
+      image: ubuntu:24.04
+      options: --privileged --cap-add=NET_ADMIN --cap-add=SYS_ADMIN
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            sudo \
+            iptables \
+            iproute2 \
+            network-manager \
+            dbus \
+            libdbus-1-dev \
+            pkg-config \
+            ca-certificates \
+            curl \
+            build-essential
+
+      - name: Start D-Bus
+        run: |
+          dbus-daemon --system --fork
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build test binaries
+        run: cargo test --no-run --all-features
+
+      - name: Run ignored security suites
+        run: |
+          set -euo pipefail
+          mkdir -p target/test-logs
+
+          INPUT_SUITES="${{ inputs.suites }}"
+          if [[ -z "$INPUT_SUITES" || "$INPUT_SUITES" == "all" ]]; then
+            SUITES=(security_ipc security_crash security_race security_signals security_privilege security_resources leak_test security_dbus)
+          else
+            IFS=',' read -r -a SUITES <<< "$INPUT_SUITES"
+          fi
+
+          declare -A RESULTS
+          run_suite() {
+            local suite="$1"
+            local cmd="cargo test --test ${suite} -- --ignored --nocapture"
+            if [[ "$suite" == "security_privilege" ]]; then
+              cmd="sudo ${cmd}"
+            fi
+            echo "Running ${suite}..."
+            set +e
+            bash -lc "$cmd" 2>&1 | tee "target/test-logs/${suite}.log"
+            RESULTS["$suite"]=${PIPESTATUS[0]}
+            set -e
+          }
+
+          for suite in "${SUITES[@]}"; do
+            run_suite "$suite"
+          done
+
+          echo "" > target/test-logs/summary.txt
+          critical_fail=0
+          for suite in "${SUITES[@]}"; do
+            status=${RESULTS[$suite]:-1}
+            if [[ $status -eq 0 ]]; then
+              echo "PASS ${suite}" | tee -a target/test-logs/summary.txt
+            else
+              echo "FAIL ${suite}" | tee -a target/test-logs/summary.txt
+            fi
+
+            case "$suite" in
+              security_ipc|security_crash|security_race|security_signals|security_privilege)
+                if [[ $status -ne 0 ]]; then
+                  critical_fail=1
+                fi
+                ;;
+            esac
+          done
+
+          if [[ $critical_fail -ne 0 ]]; then
+            echo "Critical test suites failed."
+            exit 1
+          fi
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-logs
+          path: target/test-logs/
+
+  docker-network-tests:
+    name: Docker Network Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run privileged Docker network tests
+        run: |
+          docker run --rm --privileged --cap-add=NET_ADMIN --cap-add=SYS_ADMIN \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            ubuntu:24.04 \
+            bash -lc "\
+              apt-get update && \
+              apt-get install -y sudo iptables iproute2 dbus libdbus-1-dev pkg-config ca-certificates curl build-essential && \
+              curl https://sh.rustup.rs -sSf | sh -s -- -y && \
+              . $HOME/.cargo/env && \
+              cargo test --no-run --all-features && \
+              cargo test --test leak_test -- --ignored --nocapture\
+            "
