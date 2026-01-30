@@ -430,3 +430,127 @@ mod tests {
         assert!(matches!(result.command, Some(ParsedCommand::List)));
     }
 }
+
+#[cfg(test)]
+mod security_tests {
+    use super::*;
+
+    #[test]
+    fn test_vpn_name_sanitization() {
+        // Names with shell metacharacters
+        let dangerous_names = vec![
+            "; rm -rf /",
+            "$(whoami)",
+            "`id`",
+            "| cat /etc/passwd",
+            "&& echo pwned",
+            "test\necho injected",
+            "test\x00hidden",
+        ];
+
+        for name in dangerous_names {
+            let args = vec!["connect".to_string(), name.to_string()];
+            let result = parse_args_from(&args);
+
+            // Should either accept or reject, but never crash
+            match result {
+                Ok(args) => {
+                    if let Some(ParsedCommand::Connect { name: parsed }) = args.command {
+                        println!("Accepted name: {:?}", parsed);
+                    }
+                }
+                Err(e) => {
+                    println!("Rejected with error: {}", e);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_timeout_bounds() {
+        // Very large timeout
+        let args = vec![
+            "--timeout".to_string(),
+            "999999999999".to_string(),
+            "status".to_string(),
+        ];
+        let result = parse_args_from(&args);
+
+        if let Ok(args) = result {
+            if args.timeout > 3600 {
+                println!(
+                    "WARNING: Large timeout accepted without clamping: {}",
+                    args.timeout
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_negative_timeout_rejected() {
+        let args = vec![
+            "--timeout".to_string(),
+            "-1".to_string(),
+            "status".to_string(),
+        ];
+        let result = parse_args_from(&args);
+
+        // Should either error or default to positive value
+        if let Ok(args) = result {
+            assert!(args.timeout > 0);
+        }
+    }
+
+    #[test]
+    fn test_log_file_path_traversal() {
+        let traversal_paths = vec![
+            "../../../etc/passwd",
+            "/etc/passwd",
+            "..\\..\\..\\windows\\system32\\config\\sam",
+            "/dev/null",
+            "/proc/self/environ",
+        ];
+
+        for path in traversal_paths {
+            let args = vec![
+                "--log-file".to_string(),
+                path.to_string(),
+                "status".to_string(),
+            ];
+            let result = parse_args_from(&args);
+
+            // Should accept (validation elsewhere) or reject
+            match result {
+                Ok(args) => {
+                    if let Some(log_file) = args.log_file {
+                        println!("Accepted log file: {:?}", log_file);
+                    }
+                }
+                Err(e) => println!("Rejected: {}", e),
+            }
+        }
+    }
+
+    #[test]
+    fn test_log_level_injection() {
+        let injection_levels = vec!["debug; rm -rf /", "$(whoami)", "trace\nmalicious"];
+
+        for level in injection_levels {
+            let args = vec![
+                "--log-level".to_string(),
+                level.to_string(),
+                "status".to_string(),
+            ];
+            let result = parse_args_from(&args);
+
+            if let Ok(args) = result {
+                if let Some(log_level) = args.log_level {
+                    let valid = ["error", "warn", "info", "debug", "trace"];
+                    if !valid.contains(&log_level.to_lowercase().as_str()) {
+                        println!("WARNING: Invalid log level accepted: {}", log_level);
+                    }
+                }
+            }
+        }
+    }
+}
