@@ -75,19 +75,17 @@ async fn nmcli_output_with_path(
     path: &Path,
 ) -> std::io::Result<std::process::Output> {
     if let Ok(cmd_path) = std::env::var("SHROUD_NMCLI") {
-        let output = Command::new(&cmd_path)
-            .args(args)
-            .arg(path)
-            .output()
-            .await;
+        let output = Command::new(&cmd_path).args(args).arg(path).output().await;
         match output {
             Ok(out) => Ok(out),
-            Err(_) => Command::new("sh")
-                .arg(cmd_path)
-                .args(args)
-                .arg(path)
-                .output()
-                .await,
+            Err(_) => {
+                Command::new("sh")
+                    .arg(cmd_path)
+                    .args(args)
+                    .arg(path)
+                    .output()
+                    .await
+            }
         }
     } else {
         Command::new("nmcli").args(args).arg(path).output().await
@@ -176,8 +174,7 @@ pub async fn import_file(
     if let Some(name) = custom_name {
         if name != default_name {
             let _ =
-                nmcli_output(&["connection", "modify", &default_name, "connection.id", name])
-                    .await;
+                nmcli_output(&["connection", "modify", &default_name, "connection.id", name]).await;
         }
     }
 
