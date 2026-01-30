@@ -135,10 +135,8 @@ async fn import_single_file(options: &ImportOptions) -> ImportSummary {
 }
 
 async fn import_from_directory(options: &ImportOptions) -> ImportSummary {
-    if options.name.is_some() {
-        if !options.quiet && !options.json {
-            warn!("--name is ignored when importing a directory");
-        }
+    if options.name.is_some() && !options.quiet && !options.json {
+        warn!("--name is ignored when importing a directory");
     }
 
     if options.dry_run {
