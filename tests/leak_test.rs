@@ -154,7 +154,7 @@ fn get_available_vpns() -> Vec<String> {
 // ============================================================================
 
 #[test]
-#[ignore = "requires root privileges for iptables"]
+#[ignore = "requires root privileges for iptables manipulation"]
 fn test_leak_killswitch_blocks_after_vpn_crash() {
     println!("\n=== LEAK TEST: Kill switch blocks after VPN crash ===\n");
 
@@ -307,7 +307,7 @@ fn test_leak_killswitch_blocks_after_vpn_crash() {
 }
 
 #[test]
-#[ignore = "requires root privileges for iptables"]
+#[ignore = "requires root privileges for iptables manipulation"]
 fn test_leak_killswitch_blocks_before_vpn_connects() {
     println!("\n=== LEAK TEST: Kill switch blocks before VPN connects ===\n");
 

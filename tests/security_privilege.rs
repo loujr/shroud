@@ -60,7 +60,7 @@ fn check_iptables_for_injection() -> bool {
 // ============================================================================
 
 #[test]
-#[ignore = "requires specific user/group setup"]
+#[ignore = "requires specific privilege setup - run with sudo"]
 fn test_iptables_ip_validation() {
     // These should be rejected as invalid IPs
     let invalid_ips = vec![
@@ -87,7 +87,7 @@ fn test_iptables_ip_validation() {
 }
 
 #[test]
-#[ignore = "requires specific user/group setup"]
+#[ignore = "requires specific privilege setup - run with sudo"]
 fn test_iptables_interface_validation() {
     // Invalid interface names that could be injection attempts
     let invalid_interfaces = vec![
@@ -112,7 +112,7 @@ fn test_iptables_interface_validation() {
 }
 
 #[test]
-#[ignore = "requires specific user/group setup"]
+#[ignore = "requires specific privilege setup - run with sudo"]
 fn test_killswitch_script_no_injection_vectors() {
     // Enable/disable kill switch and verify clean rules
     let _ = shroud(&["killswitch", "on"]);
@@ -128,7 +128,7 @@ fn test_killswitch_script_no_injection_vectors() {
 }
 
 #[test]
-#[ignore = "requires specific user/group setup"]
+#[ignore = "requires specific privilege setup - run with sudo"]
 fn test_no_suid_binaries_created() {
     // Verify shroud doesn't create any SUID binaries
     let output = Command::new("find")
@@ -146,7 +146,7 @@ fn test_no_suid_binaries_created() {
 }
 
 #[test]
-#[ignore = "requires specific user/group setup"]
+#[ignore = "requires specific privilege setup - run with sudo"]
 fn test_no_world_writable_files() {
     // Check shroud doesn't create world-writable files
     let home = std::env::var("HOME").unwrap_or_default();
@@ -180,7 +180,7 @@ fn test_no_world_writable_files() {
 // ============================================================================
 
 #[test]
-#[ignore = "requires specific user/group setup"]
+#[ignore = "requires specific privilege setup - run with sudo"]
 fn test_no_sensitive_env_leakage() {
     // Set some sensitive env vars and verify they don't leak
     std::env::set_var("SECRET_KEY", "super_secret_value");
@@ -206,7 +206,7 @@ fn test_no_sensitive_env_leakage() {
 }
 
 #[test]
-#[ignore = "requires specific user/group setup"]
+#[ignore = "requires specific privilege setup - run with sudo"]
 fn test_path_not_hijackable() {
     // Temporarily modify PATH to include a malicious directory
     let original_path = std::env::var("PATH").unwrap_or_default();

@@ -104,7 +104,7 @@ fn cleanup_iptables() {
 // ============================================================================
 
 #[test]
-#[ignore = "requires root privileges for signal handling"]
+#[ignore = "requires root privileges for signal handling and iptables"]
 fn test_sigterm_cleans_up_killswitch() {
     println!("\n=== TEST: SIGTERM cleans up kill switch ===\n");
 
@@ -147,7 +147,7 @@ fn test_sigterm_cleans_up_killswitch() {
 }
 
 #[test]
-#[ignore = "requires root privileges for signal handling"]
+#[ignore = "requires root privileges for signal handling and iptables"]
 fn test_sigint_cleans_up_killswitch() {
     println!("\n=== TEST: SIGINT cleans up kill switch ===\n");
 
@@ -190,7 +190,7 @@ fn test_sigint_cleans_up_killswitch() {
 }
 
 #[test]
-#[ignore = "requires root privileges for signal handling"]
+#[ignore = "requires root privileges for signal handling and iptables"]
 fn test_sigterm_during_iptables_modification() {
     println!("\n=== TEST: SIGTERM during iptables modification ===\n");
 
@@ -244,7 +244,7 @@ fn test_sigterm_during_iptables_modification() {
 // ============================================================================
 
 #[test]
-#[ignore = "requires root privileges for signal handling"]
+#[ignore = "requires root privileges for signal handling and iptables"]
 fn test_sighup_safe_reload() {
     println!("\n=== TEST: SIGHUP safe reload ===\n");
     let mut started_daemon = None;
@@ -288,7 +288,7 @@ fn test_sighup_safe_reload() {
 }
 
 #[test]
-#[ignore = "requires root privileges for signal handling"]
+#[ignore = "requires root privileges for signal handling and iptables"]
 fn test_rapid_sighup() {
     println!("\n=== TEST: Rapid SIGHUP signals ===\n");
     let mut started_daemon = None;

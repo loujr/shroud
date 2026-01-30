@@ -78,7 +78,7 @@ jobs:
             local suite="$1"
             local cmd="cargo test --test ${suite} -- --ignored --nocapture"
             if [[ "$suite" == "security_privilege" ]]; then
-              cmd="sudo ${cmd}"
+              cmd="sudo -E env \"PATH=$PATH\" ${cmd}"
             fi
             echo "Running ${suite}..."
             set +e
