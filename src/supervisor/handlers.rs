@@ -1203,21 +1203,17 @@ impl super::VpnSupervisor {
                     }
                 }
 
-                let exe = match std::env::current_exe() {
+                let exe_path = match resolve_restart_path() {
                     Ok(path) => path,
-                    Err(e) => {
-                        let _ = response_tx
-                            .send(IpcResponse::Error {
-                                message: format!("Failed to get executable path: {}", e),
-                            })
-                            .await;
+                    Err(message) => {
+                        let _ = response_tx.send(IpcResponse::Error { message }).await;
                         return;
                     }
                 };
 
-                info!("Spawning new daemon instance: {:?}", exe);
+                info!("Spawning new daemon instance: {:?}", exe_path);
 
-                let spawn_result = std::process::Command::new(&exe)
+                let spawn_result = std::process::Command::new(&exe_path)
                     .stdin(std::process::Stdio::null())
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null())
@@ -1260,7 +1256,8 @@ fn resolve_restart_path() -> Result<std::path::PathBuf, String> {
     let exe_path =
         std::env::current_exe().map_err(|e| format!("Failed to get executable path: {}", e))?;
 
-    if exe_path.exists() {
+    let exe_display = exe_path.to_string_lossy();
+    if exe_path.exists() && !exe_display.contains(" (deleted)") {
         return Ok(exe_path);
     }
 
