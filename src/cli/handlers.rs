@@ -45,6 +45,9 @@ pub async fn run_client_mode(args: &Args) -> i32 {
         ParsedCommand::Audit => {
             return handle_audit_command();
         }
+        ParsedCommand::Doctor => {
+            return handle_doctor_command();
+        }
         ParsedCommand::Import { options } => {
             let mut merged = options.clone();
             if args.json_output {
@@ -208,6 +211,7 @@ fn args_to_command(cmd: &ParsedCommand) -> Option<IpcCommand> {
         ParsedCommand::Update { .. } => None,
         ParsedCommand::Version { .. } => None,
         ParsedCommand::Audit => None,
+        ParsedCommand::Doctor => None,
         ParsedCommand::Import { .. } => None,
 
         ParsedCommand::Help { .. } => None, // Handled locally
@@ -261,6 +265,107 @@ pub fn handle_audit_command() -> i32 {
             eprintln!("Failed to run cargo audit: {}", e);
             1
         }
+    }
+}
+
+fn handle_doctor_command() -> i32 {
+    use crate::killswitch::paths;
+    use crate::killswitch::sudo_check::{check_sudo_access, SudoAccessStatus};
+
+    println!("🔍 Shroud Doctor - Checking configuration...\n");
+
+    let mut issues = 0;
+
+    println!("=== Firewall Binaries ===");
+    let ipt = paths::iptables();
+    let ip6 = paths::ip6tables();
+    let nft = paths::nft();
+
+    if std::path::Path::new(ipt).exists() {
+        println!("  ✓ iptables:  {}", ipt);
+    } else {
+        println!("  ✗ iptables:  {} (NOT FOUND)", ipt);
+        issues += 1;
+    }
+
+    if std::path::Path::new(ip6).exists() {
+        println!("  ✓ ip6tables: {}", ip6);
+    } else {
+        println!("  ✗ ip6tables: {} (NOT FOUND)", ip6);
+        issues += 1;
+    }
+
+    if std::path::Path::new(nft).exists() {
+        println!("  ✓ nft:       {}", nft);
+    } else {
+        println!("  ⚠ nft:       {} (not found, optional)", nft);
+    }
+
+    println!();
+
+    println!("=== Sudo Access ===");
+    match check_sudo_access() {
+        SudoAccessStatus::Ok => {
+            println!("  ✓ Passwordless sudo configured correctly");
+        }
+        SudoAccessStatus::RequiresPassword => {
+            println!("  ✗ Sudo requires password for iptables");
+            println!("\n    Fix with: ./setup.sh --install-sudoers");
+            issues += 1;
+        }
+        SudoAccessStatus::SudoNotFound => {
+            println!("  ✗ sudo command not found");
+            issues += 1;
+        }
+        SudoAccessStatus::BinaryNotFound(path) => {
+            println!("  ✗ Binary not found: {}", path);
+            issues += 1;
+        }
+    }
+
+    println!();
+
+    println!("=== Sudoers File ===");
+    let sudoers_path = std::path::Path::new("/etc/sudoers.d/shroud");
+    if sudoers_path.exists() {
+        println!("  ✓ /etc/sudoers.d/shroud exists");
+    } else {
+        println!("  ✗ /etc/sudoers.d/shroud not found");
+        println!("    Run: ./setup.sh --install-sudoers");
+        issues += 1;
+    }
+
+    println!();
+
+    println!("=== User Groups ===");
+    if let Ok(output) = std::process::Command::new("groups").output() {
+        let groups = String::from_utf8_lossy(&output.stdout);
+        let in_wheel = groups.contains("wheel");
+        let in_sudo = groups.contains("sudo");
+
+        if in_wheel {
+            println!("  ✓ User is in 'wheel' group");
+        }
+        if in_sudo {
+            println!("  ✓ User is in 'sudo' group");
+        }
+        if !in_wheel && !in_sudo {
+            println!("  ✗ User is not in 'wheel' or 'sudo' group");
+            println!("    Add yourself with: sudo usermod -aG wheel $USER");
+            issues += 1;
+        }
+    }
+
+    println!();
+
+    println!("=== Summary ===");
+    if issues == 0 {
+        println!("  ✓ All checks passed! Kill switch should work correctly.");
+        0
+    } else {
+        println!("  ✗ Found {} issue(s) that need attention.", issues);
+        println!("\n  Quick fix: ./setup.sh --install-sudoers");
+        1
     }
 }
 

@@ -38,6 +38,7 @@ COMMANDS:
     restart              Restart the daemon
     reload               Reload configuration without restart
     audit                Check dependencies for vulnerabilities
+    doctor               Diagnose configuration issues
     update               Build, install, and restart (dev workflow)
     version              Show version information
     help <COMMAND>       Show help for a command
@@ -56,6 +57,7 @@ EXAMPLES:
     shroud cleanup                  Remove old systemd service and stale files
     shroud reload                   Reload configuration from disk
     shroud audit                    Check dependencies for vulnerabilities
+    shroud doctor                   Diagnose configuration issues
     shroud update                   Build, install, and restart
     shroud version --check          Check if rebuild is needed
 
@@ -276,6 +278,21 @@ This command removes:
     - Stale lock files (if daemon not running)
 
 This is safe to run at any time."#
+        ),
+
+        "doctor" => println!(
+            r#"Diagnose common configuration issues
+
+USAGE:
+    shroud doctor
+
+Checks for:
+    - Firewall binary paths (iptables, ip6tables, nft)
+    - Sudo access configuration
+    - Sudoers file presence
+    - User group membership
+
+Run this command if the kill switch is not working."#
         ),
 
         "audit" => println!(

@@ -111,6 +111,7 @@ pub enum ParsedCommand {
 
     // Development/maintenance
     Audit,
+    Doctor,
 
     // Help
     Help {
@@ -279,6 +280,7 @@ fn parse_command(argv: &[String]) -> Result<ParsedCommand, String> {
         "reload" => Ok(ParsedCommand::Reload),
         "import" => parse_import_args(&argv[1..]),
         "audit" => Ok(ParsedCommand::Audit),
+        "doctor" => Ok(ParsedCommand::Doctor),
         "update" => parse_update_flags(&argv[1..]),
         "version" => parse_version_flags(&argv[1..]),
         "help" => Ok(ParsedCommand::Help {

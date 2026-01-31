@@ -71,6 +71,12 @@ async fn run_daemon_mode(args: cli::Args) {
     // Initialize logging
     logging::init_logging(&log_args);
 
+    if log::log_enabled!(log::Level::Debug) {
+        killswitch::paths::log_detected_paths();
+    }
+
+    killswitch::validate_sudoers_on_startup();
+
     let _lock_file = match acquire_instance_lock() {
         Ok(file) => file,
         Err(msg) => {

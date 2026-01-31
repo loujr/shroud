@@ -1,21 +1,46 @@
 # Shroud VPN Kill Switch - Sudoers Configuration
+# Version: 2
 #
-# This file allows users in the wheel group to run iptables/ip6tables/nft
-# without a password for Shroud kill switch management.
+# This file allows passwordless iptables/ip6tables/nft for kill switch management.
+# Supports multiple Linux distributions with different binary locations.
 #
-# Remove this file to revoke the privilege:
-#   sudo rm /etc/sudoers.d/shroud
+# Compatibility:
+#   - Arch Linux, Manjaro: /usr/bin/*
+#   - Debian, Ubuntu: /usr/sbin/*
+#   - Fedora, RHEL, CentOS: /usr/sbin/*
+#   - openSUSE: /usr/sbin/*
 #
-# NOTE: Debian/Ubuntu typically use the "sudo" group instead of "wheel".
-# Adjust the group name as needed.
+# Remove this file to revoke: sudo rm /etc/sudoers.d/shroud
+# Reinstall with: ./setup.sh --install-sudoers
 
-%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables
-%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables
-%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables-legacy
-%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables-legacy
-%wheel ALL=(ALL) NOPASSWD: /usr/sbin/nft
+# Wheel group (Arch, Fedora, RHEL, openSUSE)
 %wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables
-%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables
 %wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables-legacy
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables-nft
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables
 %wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables-legacy
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables-nft
 %wheel ALL=(ALL) NOPASSWD: /usr/bin/nft
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables-legacy
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables-nft
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables-legacy
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables-nft
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/nft
+
+# Sudo group (Debian, Ubuntu)
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables-legacy
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables-nft
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables-legacy
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables-nft
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/nft
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables-legacy
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables-nft
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables-legacy
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables-nft
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/nft

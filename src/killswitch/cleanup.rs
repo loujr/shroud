@@ -11,6 +11,8 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
+use crate::killswitch::paths::{ip6tables, iptables, nft};
+
 /// Default timeout for cleanup operations
 pub const CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -37,7 +39,7 @@ pub enum CleanupResult {
 
 /// Check if SHROUD_KILLSWITCH chain exists in iptables
 pub fn rules_exist() -> Result<bool, CleanupError> {
-    let output = Command::new("iptables")
+    let output = Command::new(iptables())
         .args(["-L", "SHROUD_KILLSWITCH", "-n"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -55,7 +57,7 @@ pub fn rules_exist() -> Result<bool, CleanupError> {
 
 /// Check if IPv6 SHROUD_KILLSWITCH chain exists
 pub fn rules_exist_ipv6() -> Result<bool, CleanupError> {
-    let output = Command::new("ip6tables")
+    let output = Command::new(ip6tables())
         .args(["-L", "SHROUD_KILLSWITCH", "-n"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -73,24 +75,12 @@ pub fn rules_exist_ipv6() -> Result<bool, CleanupError> {
 
 fn run_cleanup_command() -> Result<(), CleanupError> {
     let commands: Vec<Vec<&str>> = vec![
-        vec![
-            "/usr/bin/iptables",
-            "-D",
-            "OUTPUT",
-            "-j",
-            "SHROUD_KILLSWITCH",
-        ],
-        vec!["/usr/bin/iptables", "-F", "SHROUD_KILLSWITCH"],
-        vec!["/usr/bin/iptables", "-X", "SHROUD_KILLSWITCH"],
-        vec![
-            "/usr/bin/ip6tables",
-            "-D",
-            "OUTPUT",
-            "-j",
-            "SHROUD_KILLSWITCH",
-        ],
-        vec!["/usr/bin/ip6tables", "-F", "SHROUD_KILLSWITCH"],
-        vec!["/usr/bin/ip6tables", "-X", "SHROUD_KILLSWITCH"],
+        vec![iptables(), "-D", "OUTPUT", "-j", "SHROUD_KILLSWITCH"],
+        vec![iptables(), "-F", "SHROUD_KILLSWITCH"],
+        vec![iptables(), "-X", "SHROUD_KILLSWITCH"],
+        vec![ip6tables(), "-D", "OUTPUT", "-j", "SHROUD_KILLSWITCH"],
+        vec![ip6tables(), "-F", "SHROUD_KILLSWITCH"],
+        vec![ip6tables(), "-X", "SHROUD_KILLSWITCH"],
     ];
 
     for command in commands {
@@ -103,13 +93,7 @@ fn run_cleanup_command() -> Result<(), CleanupError> {
     }
 
     let _ = Command::new("sudo")
-        .args([
-            "/usr/bin/nft",
-            "delete",
-            "table",
-            "inet",
-            "shroud_killswitch",
-        ])
+        .args([nft(), "delete", "table", "inet", "shroud_killswitch"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -172,12 +156,12 @@ pub fn cleanup_with_fallback() -> CleanupResult {
             error!("Your firewall rules may still be blocking network traffic.");
             error!("To manually clean up, run:");
             error!("");
-            error!("  sudo /usr/bin/iptables -D OUTPUT -j SHROUD_KILLSWITCH");
-            error!("  sudo /usr/bin/iptables -F SHROUD_KILLSWITCH");
-            error!("  sudo /usr/bin/iptables -X SHROUD_KILLSWITCH");
-            error!("  sudo /usr/bin/ip6tables -D OUTPUT -j SHROUD_KILLSWITCH");
-            error!("  sudo /usr/bin/ip6tables -F SHROUD_KILLSWITCH");
-            error!("  sudo /usr/bin/ip6tables -X SHROUD_KILLSWITCH");
+            error!("  sudo {} -D OUTPUT -j SHROUD_KILLSWITCH", iptables());
+            error!("  sudo {} -F SHROUD_KILLSWITCH", iptables());
+            error!("  sudo {} -X SHROUD_KILLSWITCH", iptables());
+            error!("  sudo {} -D OUTPUT -j SHROUD_KILLSWITCH", ip6tables());
+            error!("  sudo {} -F SHROUD_KILLSWITCH", ip6tables());
+            error!("  sudo {} -X SHROUD_KILLSWITCH", ip6tables());
             error!("");
             error!("To avoid this in the future, install the sudoers rule:");
             error!("  ./setup.sh --install-sudoers");
@@ -227,9 +211,9 @@ pub fn cleanup_stale_on_startup() {
 fn log_manual_cleanup_instructions() {
     error!("");
     error!("Manual cleanup commands:");
-    error!("  sudo /usr/bin/iptables -D OUTPUT -j SHROUD_KILLSWITCH");
-    error!("  sudo /usr/bin/iptables -F SHROUD_KILLSWITCH");
-    error!("  sudo /usr/bin/iptables -X SHROUD_KILLSWITCH");
+    error!("  sudo {} -D OUTPUT -j SHROUD_KILLSWITCH", iptables());
+    error!("  sudo {} -F SHROUD_KILLSWITCH", iptables());
+    error!("  sudo {} -X SHROUD_KILLSWITCH", iptables());
     error!("  sudo ip6tables -D OUTPUT -j SHROUD_KILLSWITCH");
     error!("  sudo ip6tables -F SHROUD_KILLSWITCH");
     error!("  sudo ip6tables -X SHROUD_KILLSWITCH");
