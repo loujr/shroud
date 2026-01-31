@@ -293,7 +293,19 @@ impl KillSwitch {
         match backend {
             FirewallBackend::Iptables => {
                 let script = self.build_complete_script(&vpn_server_ips);
-                self.run_single_script(&script).await?;
+                match self.run_single_script(&script).await {
+                    Ok(()) => {}
+                    Err(err) if Self::should_fallback_to_nft(&err) => {
+                        if Self::nft_is_available().await {
+                            warn!("iptables failed, falling back to nftables");
+                            self.backend = FirewallBackend::Nftables;
+                            self.enable_nft(&vpn_server_ips).await?;
+                        } else {
+                            return Err(err);
+                        }
+                    }
+                    Err(err) => return Err(err),
+                }
             }
             FirewallBackend::Nftables => {
                 self.enable_nft(&vpn_server_ips).await?;
@@ -509,6 +521,8 @@ impl KillSwitch {
                 msg.contains("ip_tables")
                     || msg.contains("table does not exist")
                     || msg.contains("can't initialize iptables table")
+                    || msg.contains("cache initialization failed")
+                    || msg.contains("netlink: error")
                     || msg.contains("does not exist")
             }
             KillSwitchError::Spawn(_) | KillSwitchError::NotFound => true,
