@@ -28,7 +28,7 @@
 
 #![allow(dead_code)]
 
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use std::net::IpAddr;
 use std::process::Stdio;
 use thiserror::Error;
@@ -247,9 +247,7 @@ impl KillSwitch {
 
         info!("Enabling VPN kill switch");
 
-        if !Self::ensure_sudo_access() {
-            return Err(KillSwitchError::Permission);
-        }
+        Self::check_sudo_access()?;
 
         // Detect VPN server IPs first
         let vpn_server_ips = Self::detect_all_vpn_server_ips().await;
@@ -455,43 +453,36 @@ impl KillSwitch {
     }
 
     /// Check if sudo is available and configured for passwordless iptables.
-    pub fn check_sudo_access() -> Result<(), String> {
+    pub fn check_sudo_access() -> Result<(), KillSwitchError> {
+        let sudo_check = std::process::Command::new("sudo")
+            .args(["-n", "true"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(KillSwitchError::Spawn)?;
+
+        if !sudo_check.status.success() {
+            return Err(KillSwitchError::Permission);
+        }
+
         let output = std::process::Command::new("sudo")
             .args(["-n", "iptables", "-L", "-n"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
-            .output();
+            .output()
+            .map_err(KillSwitchError::Spawn)?;
 
-        match output {
-            Ok(result) if result.status.success() => Ok(()),
-            Ok(result) => {
-                let stderr = String::from_utf8_lossy(&result.stderr);
-                if stderr.contains("password is required") || stderr.contains("sudo:") {
-                    Err("Sudo requires a password for iptables.\n\n\
-To fix this, run:\n\
-  ./setup.sh --install-sudoers\n\n\
-Or manually:\n\
-  sudo cp assets/sudoers.d/shroud /etc/sudoers.d/shroud\n\
-  sudo chmod 440 /etc/sudoers.d/shroud"
-                        .to_string())
-                } else {
-                    Err(format!("Sudo check failed: {}", stderr.trim()))
-                }
-            }
-            Err(e) => Err(format!("Failed to run sudo: {}", e)),
+        if output.status.success() {
+            return Ok(());
         }
-    }
 
-    /// Check sudo access and log a helpful error if not configured.
-    pub fn ensure_sudo_access() -> bool {
-        match Self::check_sudo_access() {
-            Ok(()) => true,
-            Err(msg) => {
-                error!("{}", msg);
-                false
-            }
-        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(KillSwitchError::Command(format!(
+            "Sudo check failed: {}",
+            stderr.trim()
+        )))
     }
 
     /// Verify our rules are actually in place
@@ -511,9 +502,7 @@ Or manually:\n\
     pub async fn disable(&mut self) -> Result<(), KillSwitchError> {
         info!("Disabling VPN kill switch");
 
-        if !Self::ensure_sudo_access() {
-            return Err(KillSwitchError::Permission);
-        }
+        Self::check_sudo_access()?;
 
         // We run cleanup regardless of enabled status to ensuring we don't leave
         // the user stranded if the internal state is out of sync.
