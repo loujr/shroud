@@ -80,15 +80,12 @@ async fn run_daemon_mode(args: cli::Args) {
     };
 
     // Clean up any stale kill switch rules from previous crash
-    if killswitch::rules_exist() {
-        warn!("Found stale kill switch rules from previous run, cleaning up...");
-        killswitch::cleanup_stale_rules();
-    }
+    killswitch::cleanup_stale_on_startup();
 
     ctrlc::set_handler(move || {
         info!("Shutdown signal received, cleaning up...");
-        // Clean up kill switch rules (sync version for signal handler)
-        killswitch::cleanup_stale_rules();
+        // Non-blocking cleanup with timeout
+        let _ = killswitch::cleanup_with_fallback();
         release_instance_lock();
         // Clean up CLI socket
         let socket_path = ipc::protocol::socket_path();

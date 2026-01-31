@@ -3,8 +3,11 @@
 //! Provides VPN kill switch functionality using iptables.
 //! When enabled, blocks all traffic except through the VPN tunnel.
 
+pub mod cleanup;
 pub mod firewall;
 
-pub use firewall::cleanup_stale_rules;
-pub use firewall::rules_exist;
+pub use cleanup::{
+    cleanup_stale_on_startup, cleanup_with_fallback, cleanup_with_timeout, rules_exist,
+    CleanupError, CleanupResult, CLEANUP_TIMEOUT,
+};
 pub use firewall::KillSwitch;

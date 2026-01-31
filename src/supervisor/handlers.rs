@@ -777,12 +777,24 @@ impl super::VpnSupervisor {
     pub(crate) async fn handle_quit(&mut self) {
         info!("Quit requested, cleaning up...");
 
-        // Disable kill switch before exiting
+        // Non-blocking kill switch cleanup with timeout
         if self.kill_switch.is_enabled() {
-            info!("Disabling kill switch before shutdown");
-            if let Err(e) = self.kill_switch.disable().await {
-                warn!("Failed to disable kill switch on shutdown: {}", e);
+            info!("Cleaning up kill switch before shutdown");
+            match crate::killswitch::cleanup_with_fallback() {
+                crate::killswitch::CleanupResult::Cleaned => {
+                    info!("Kill switch cleanup successful");
+                }
+                crate::killswitch::CleanupResult::NothingToClean => {
+                    debug!("No kill switch rules to clean");
+                }
+                crate::killswitch::CleanupResult::Failed(_) => {
+                    self.show_notification(
+                        "Cleanup Failed",
+                        "Firewall rules may need manual cleanup. See logs.",
+                    );
+                }
             }
+            self.kill_switch.sync_state();
         }
 
         // Show notification
@@ -804,10 +816,22 @@ impl super::VpnSupervisor {
         info!("Performing graceful shutdown");
 
         if self.kill_switch.is_enabled() {
-            info!("Disabling kill switch before shutdown");
-            if let Err(e) = self.kill_switch.disable().await {
-                warn!("Failed to disable kill switch during shutdown: {}", e);
+            info!("Cleaning up kill switch before shutdown");
+            match crate::killswitch::cleanup_with_fallback() {
+                crate::killswitch::CleanupResult::Cleaned => {
+                    info!("Kill switch cleanup successful");
+                }
+                crate::killswitch::CleanupResult::NothingToClean => {
+                    debug!("No kill switch rules to clean");
+                }
+                crate::killswitch::CleanupResult::Failed(_) => {
+                    self.show_notification(
+                        "Cleanup Failed",
+                        "Firewall rules may need manual cleanup. See logs.",
+                    );
+                }
             }
+            self.kill_switch.sync_state();
         }
 
         release_instance_lock();

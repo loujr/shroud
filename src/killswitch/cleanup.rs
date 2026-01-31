@@ -1,0 +1,267 @@
+//! Kill switch cleanup functionality
+//!
+//! Principle III: Leave No Trace
+//! Cleanup is non-negotiable.
+//!
+//! Principle II: Fail Loud, Recover Quiet
+//! Cleanup should be silent on success, loud on failure.
+
+use log::{debug, error, info, warn};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+use thiserror::Error;
+
+/// Default timeout for cleanup operations
+pub const CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Errors that can occur during cleanup
+#[derive(Error, Debug)]
+pub enum CleanupError {
+    #[error("Cleanup timed out after {0:?} - password prompt may be blocking")]
+    Timeout(Duration),
+
+    #[error("Failed to spawn cleanup process: {0}")]
+    Spawn(#[source] std::io::Error),
+
+    #[error("Cleanup command failed: {0}")]
+    CommandFailed(String),
+
+    #[error("Failed to check rule status: {0}")]
+    StatusCheck(String),
+}
+
+/// Result of a cleanup attempt
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CleanupResult {
+    /// Rules were cleaned up successfully
+    Cleaned,
+    /// No rules existed, nothing to clean
+    NothingToClean,
+    /// Cleanup failed but we logged instructions
+    Failed(String),
+}
+
+/// Check if SHROUD_KILLSWITCH chain exists in iptables
+pub fn rules_exist() -> Result<bool, CleanupError> {
+    let output = Command::new("iptables")
+        .args(["-L", "SHROUD_KILLSWITCH", "-n"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    match output {
+        Ok(status) => Ok(status.success()),
+        Err(e) => {
+            debug!("Could not check iptables rules: {}", e);
+            Ok(false)
+        }
+    }
+}
+
+/// Check if IPv6 SHROUD_KILLSWITCH chain exists
+pub fn rules_exist_ipv6() -> Result<bool, CleanupError> {
+    let output = Command::new("ip6tables")
+        .args(["-L", "SHROUD_KILLSWITCH", "-n"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    match output {
+        Ok(status) => Ok(status.success()),
+        Err(e) => {
+            debug!("Could not check ip6tables rules: {}", e);
+            Ok(false)
+        }
+    }
+}
+
+fn run_cleanup_command() -> Result<(), CleanupError> {
+    let commands = [
+        [
+            "/usr/sbin/iptables",
+            "-D",
+            "OUTPUT",
+            "-j",
+            "SHROUD_KILLSWITCH",
+        ],
+        ["/usr/sbin/iptables", "-F", "SHROUD_KILLSWITCH"],
+        ["/usr/sbin/iptables", "-X", "SHROUD_KILLSWITCH"],
+        [
+            "/usr/sbin/ip6tables",
+            "-D",
+            "OUTPUT",
+            "-j",
+            "SHROUD_KILLSWITCH",
+        ],
+        ["/usr/sbin/ip6tables", "-F", "SHROUD_KILLSWITCH"],
+        ["/usr/sbin/ip6tables", "-X", "SHROUD_KILLSWITCH"],
+    ];
+
+    for command in commands {
+        let _ = Command::new("pkexec")
+            .args(command)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+
+    let _ = Command::new("pkexec")
+        .args([
+            "/usr/sbin/nft",
+            "delete",
+            "table",
+            "inet",
+            "shroud_killswitch",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    Ok(())
+}
+
+/// Execute cleanup with a timeout.
+///
+/// This prevents blocking forever if a password prompt appears.
+pub fn cleanup_with_timeout(timeout: Duration) -> Result<CleanupResult, CleanupError> {
+    let ipv4_exists = rules_exist().unwrap_or(false);
+    let ipv6_exists = rules_exist_ipv6().unwrap_or(false);
+
+    if !ipv4_exists && !ipv6_exists {
+        debug!("No kill switch rules to clean up");
+        return Ok(CleanupResult::NothingToClean);
+    }
+
+    info!("Cleaning up kill switch rules...");
+
+    let start = Instant::now();
+
+    loop {
+        match run_cleanup_command() {
+            Ok(()) => {
+                if rules_exist().unwrap_or(false) || rules_exist_ipv6().unwrap_or(false) {
+                    return Err(CleanupError::CommandFailed(
+                        "Kill switch rules still present after cleanup".to_string(),
+                    ));
+                }
+                info!("Kill switch rules cleaned up successfully");
+                return Ok(CleanupResult::Cleaned);
+            }
+            Err(err) => {
+                if start.elapsed() > timeout {
+                    warn!("Cleanup timed out after {:?}", timeout);
+                    return Err(CleanupError::Timeout(timeout));
+                }
+                return Err(err);
+            }
+        }
+    }
+}
+
+/// Perform cleanup, logging clear instructions on failure.
+pub fn cleanup_with_fallback() -> CleanupResult {
+    match cleanup_with_timeout(CLEANUP_TIMEOUT) {
+        Ok(result) => result,
+        Err(e) => {
+            error!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            error!("KILL SWITCH CLEANUP FAILED");
+            error!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            error!("");
+            error!("Error: {}", e);
+            error!("");
+            error!("Your firewall rules may still be blocking network traffic.");
+            error!("To manually clean up, run:");
+            error!("");
+            error!("  sudo iptables -D OUTPUT -j SHROUD_KILLSWITCH");
+            error!("  sudo iptables -F SHROUD_KILLSWITCH");
+            error!("  sudo iptables -X SHROUD_KILLSWITCH");
+            error!("  sudo ip6tables -D OUTPUT -j SHROUD_KILLSWITCH");
+            error!("  sudo ip6tables -F SHROUD_KILLSWITCH");
+            error!("  sudo ip6tables -X SHROUD_KILLSWITCH");
+            error!("");
+            error!("To avoid this in the future, install the polkit policy:");
+            error!("  ./setup.sh --install-polkit");
+            error!("");
+            error!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+            CleanupResult::Failed(e.to_string())
+        }
+    }
+}
+
+/// Clean up stale rules from a previous crash.
+pub fn cleanup_stale_on_startup() {
+    let ipv4_exists = rules_exist().unwrap_or(false);
+    let ipv6_exists = rules_exist_ipv6().unwrap_or(false);
+
+    if !ipv4_exists && !ipv6_exists {
+        return;
+    }
+
+    warn!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    warn!("STALE KILL SWITCH RULES DETECTED");
+    warn!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    warn!("");
+    warn!("Found firewall rules from a previous Shroud instance.");
+    warn!("Attempting cleanup...");
+    warn!("");
+
+    match cleanup_with_timeout(CLEANUP_TIMEOUT) {
+        Ok(CleanupResult::Cleaned) => {
+            info!("Stale rules cleaned up successfully");
+        }
+        Ok(CleanupResult::NothingToClean) => {
+            debug!("No stale rules to clean");
+        }
+        Ok(CleanupResult::Failed(msg)) | Err(CleanupError::CommandFailed(msg)) => {
+            error!("Failed to clean stale rules: {}", msg);
+            log_manual_cleanup_instructions();
+        }
+        Err(CleanupError::Timeout(_)) => {
+            warn!("Cleanup timed out. You may need to enter your password.");
+            log_manual_cleanup_instructions();
+        }
+        Err(e) => {
+            error!("Unexpected error during stale cleanup: {}", e);
+            log_manual_cleanup_instructions();
+        }
+    }
+}
+
+fn log_manual_cleanup_instructions() {
+    error!("");
+    error!("Manual cleanup commands:");
+    error!("  sudo iptables -D OUTPUT -j SHROUD_KILLSWITCH");
+    error!("  sudo iptables -F SHROUD_KILLSWITCH");
+    error!("  sudo iptables -X SHROUD_KILLSWITCH");
+    error!("  sudo ip6tables -D OUTPUT -j SHROUD_KILLSWITCH");
+    error!("  sudo ip6tables -F SHROUD_KILLSWITCH");
+    error!("  sudo ip6tables -X SHROUD_KILLSWITCH");
+    error!("");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cleanup_result_variants() {
+        let cleaned = CleanupResult::Cleaned;
+        let nothing = CleanupResult::NothingToClean;
+        let failed = CleanupResult::Failed("test".to_string());
+
+        assert_eq!(cleaned, CleanupResult::Cleaned);
+        assert_eq!(nothing, CleanupResult::NothingToClean);
+        assert_ne!(cleaned, nothing);
+
+        if let CleanupResult::Failed(msg) = failed {
+            assert_eq!(msg, "test");
+        } else {
+            panic!("Expected Failed variant");
+        }
+    }
+}

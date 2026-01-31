@@ -378,6 +378,56 @@ When enabled, the kill switch creates iptables rules that:
 6. **Allow** DHCP for network configuration
 7. **Drop** everything else
 
+## Kill Switch Privileges
+
+The kill switch requires root privileges to manage firewall rules. Shroud supports a polkit policy that enables passwordless operation for active desktop sessions.
+
+### Option 1: Polkit Policy (Recommended)
+
+Install during setup or standalone:
+
+```bash
+./setup.sh                # Will prompt to install polkit policy
+./setup.sh --install-polkit
+```
+
+What this grants:
+
+- Run iptables/ip6tables without password
+- Only for active local desktop sessions
+- SSH/remote sessions still require authentication
+
+Policy location:
+
+```
+/usr/share/polkit-1/actions/com.shroud.killswitch.policy
+```
+
+Remove policy:
+
+```bash
+./setup.sh --uninstall-polkit
+# or
+sudo rm /usr/share/polkit-1/actions/com.shroud.killswitch.policy
+```
+
+### Option 2: Password Prompts
+
+If you skip the polkit policy, you will be prompted when enabling/disabling the kill switch and during shutdown cleanup.
+
+### Stale Rule Cleanup
+
+If Shroud crashes, it will detect and clean stale rules on startup. If automatic cleanup fails, run:
+
+```bash
+sudo iptables -D OUTPUT -j SHROUD_KILLSWITCH
+sudo iptables -F SHROUD_KILLSWITCH
+sudo iptables -X SHROUD_KILLSWITCH
+sudo ip6tables -D OUTPUT -j SHROUD_KILLSWITCH
+sudo ip6tables -F SHROUD_KILLSWITCH
+sudo ip6tables -X SHROUD_KILLSWITCH
+```
+
 ### DNS Leak Protection
 
 | Mode | Behavior | Use Case |

@@ -19,6 +19,10 @@
 #   -n, --dry-run   Show what would be done
 #   -v, --verbose   Show detailed output
 #   -q, --quiet     Minimal output
+
+Polkit Options:
+    --install-polkit     Install polkit policy for passwordless kill switch
+    --uninstall-polkit   Remove polkit policy
 #
 # Examples:
 #   ./setup.sh                  # Install
@@ -43,7 +47,8 @@ BASH_COMPLETIONS_DIR="$HOME/.local/share/bash-completion/completions"
 ZSH_COMPLETIONS_DIR="$HOME/.local/share/zsh/site-functions"
 FISH_COMPLETIONS_DIR="$HOME/.config/fish/completions"
 POLKIT_ACTIONS_DIR="/usr/share/polkit-1/actions"
-POLKIT_RULES_DIR="/usr/share/polkit-1/rules.d"
+POLKIT_POLICY_SRC="assets/com.shroud.killswitch.policy"
+POLKIT_POLICY_DEST="$POLKIT_ACTIONS_DIR/com.shroud.killswitch.policy"
 
 # Script state
 FORCE=false
@@ -892,63 +897,45 @@ EOF
 }
 
 install_polkit_policy() {
-    echo
-    info "The kill switch requires elevated privileges to modify firewall rules."
-    info "You can install a polkit policy to avoid password prompts."
-    echo
-    warn "This will allow your user to run 'iptables' commands without a password."
-    warn "Only do this if you understand the security implications."
-    echo
-    
-    if ! confirm "Install polkit policy for passwordless iptables?"; then
-        info "Skipping polkit policy installation"
-        return 0
-    fi
-    
-    if [ "$DRY_RUN" = "true" ]; then
-        echo -e "${DIM}[DRY-RUN] Would install polkit policy${NC}"
-        return 0
-    fi
-    
-    local policy_file="$POLKIT_ACTIONS_DIR/org.shroud.iptables.policy"
-    local rules_file="$POLKIT_RULES_DIR/50-shroud-iptables.rules"
-    
-    # Create policy
-    sudo tee "$policy_file" > /dev/null << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE policyconfig PUBLIC
- "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
- "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
-<policyconfig>
-  <vendor>Shroud VPN Manager</vendor>
-  <vendor_url>https://github.com/loujr/shroud</vendor_url>
-  
-    <action id="org.shroud.iptables">
-        <description>Run iptables for Shroud VPN kill switch</description>
-    <message>Authentication is required to modify firewall rules for Shroud VPN Manager</message>
-    <defaults>
-      <allow_any>auth_admin</allow_any>
-      <allow_inactive>auth_admin</allow_inactive>
-      <allow_active>auth_admin_keep</allow_active>
-    </defaults>
-    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/iptables</annotate>
-  </action>
-</policyconfig>
-EOF
+    echo ""
+    echo "┌─────────────────────────────────────────────────────────────────┐"
+    echo "│              POLKIT POLICY FOR KILL SWITCH                      │"
+    echo "└─────────────────────────────────────────────────────────────────┘"
+    echo ""
+    echo "  Shroud's kill switch needs root privileges to manage firewall"
+    echo "  rules. Installing the polkit policy allows passwordless operation"
+    echo "  for active desktop sessions, while still requiring authentication"
+    echo "  for remote/SSH sessions."
+    echo ""
+    echo "  POLICY FILE:"
+    echo "    $POLKIT_POLICY_DEST"
+    echo ""
 
-    # Create rules for automatic authorization
-    sudo tee "$rules_file" > /dev/null << 'EOF'
-// Allow members of wheel group to run iptables without password for Shroud
-polkit.addRule(function(action, subject) {
-    if (action.id == "org.shroud.iptables" &&
-        subject.isInGroup("wheel")) {
-        return polkit.Result.YES;
-    }
-});
-EOF
+    if [ "$FORCE" != "true" ]; then
+        if ! confirm "Install polkit policy for passwordless kill switch?" "y"; then
+            info "Skipped polkit policy installation"
+            return 0
+        fi
+    fi
+
+    if [ "$DRY_RUN" = "true" ]; then
+        echo -e "${DIM}[DRY-RUN] Would install: $POLKIT_POLICY_DEST${NC}"
+        return 0
+    fi
+
+    if [ ! -f "$POLKIT_POLICY_SRC" ]; then
+        error "Policy file not found: $POLKIT_POLICY_SRC"
+        return 1
+    fi
+
+    sudo cp "$POLKIT_POLICY_SRC" "$POLKIT_POLICY_DEST"
+    sudo chmod 644 "$POLKIT_POLICY_DEST"
+
+    if command -v systemctl &>/dev/null; then
+        sudo systemctl reload polkit 2>/dev/null || true
+    fi
 
     success "Polkit policy installed"
-    info "You may need to log out and back in for changes to take effect"
 }
 
 verify_installation() {
@@ -1034,12 +1021,9 @@ show_summary() {
 # ============================================================================
 
 remove_polkit_policy() {
-    local policy_file="$POLKIT_ACTIONS_DIR/org.shroud.iptables.policy"
-    local rules_file="$POLKIT_RULES_DIR/50-shroud-iptables.rules"
-    
-    if [ -f "$policy_file" ] || [ -f "$rules_file" ]; then
+    if [ -f "$POLKIT_POLICY_DEST" ]; then
         info "Removing polkit policy..."
-        sudo rm -f "$policy_file" "$rules_file" 2>/dev/null || true
+        sudo rm -f "$POLKIT_POLICY_DEST" 2>/dev/null || true
         success "Polkit policy removed"
     fi
 }
@@ -1091,19 +1075,16 @@ do_uninstall() {
     success "Shell completions removed"
     
     # Remove polkit policy
-    remove_polkit_policy
-    
-    # Ask about config
-    if [ -d "$CONFIG_DIR" ]; then
-        echo
-        if confirm "Remove configuration ($CONFIG_DIR)?"; then
-            rm -rf "$CONFIG_DIR"
-            success "Configuration removed"
-        else
-            info "Configuration preserved"
+    remove_polkit_policy() {
+        if [ -f "$POLKIT_POLICY_DEST" ]; then
+            if confirm "Remove polkit policy?"; then
+                rm -f "$POLKIT_POLICY_DEST"
+                success "Polkit policy removed"
+            else
+                info "Polkit policy preserved"
+            fi
         fi
-    fi
-    
+    }
     # Ask about logs
     if [ -d "$DATA_DIR" ]; then
         if confirm "Remove logs and data ($DATA_DIR)?"; then
@@ -1340,6 +1321,14 @@ parse_args() {
                 QUIET=true
                 shift
                 ;;
+            --install-polkit)
+                COMMAND="install-polkit"
+                shift
+                ;;
+            --uninstall-polkit)
+                COMMAND="uninstall-polkit"
+                shift
+                ;;
             install|update|uninstall|check|repair|status)
                 COMMAND="$1"
                 shift
@@ -1397,6 +1386,12 @@ main() {
             ;;
         status)
             show_status
+            ;;
+        install-polkit)
+            install_polkit_policy
+            ;;
+        uninstall-polkit)
+            remove_polkit_policy
             ;;
         *)
             error "Unknown command: $COMMAND"

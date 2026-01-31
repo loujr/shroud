@@ -405,46 +405,44 @@ impl KillSwitch {
     }
 
     async fn run_single_script(&self, script: &str) -> Result<(), KillSwitchError> {
-        use std::process::Stdio;
-        use tokio::io::AsyncWriteExt;
         use tokio::process::Command;
 
-        let mut child = Command::new("pkexec")
-            .arg("sh")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(KillSwitchError::Spawn)?;
-
-        // Write script to stdin
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(script.as_bytes())
-                .await
-                .map_err(KillSwitchError::Write)?;
-            // MUST drop stdin to signal EOF
-            drop(stdin);
-        }
-
-        let output = child
-            .wait_with_output()
-            .await
-            .map_err(KillSwitchError::Wait)?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let code = output.status.code().unwrap_or(-1);
-
-            if code == 126 || code == 127 {
-                return Err(KillSwitchError::Permission);
+        for raw_line in script.lines() {
+            let mut line = raw_line.trim().to_string();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
             }
 
-            return Err(KillSwitchError::Command(format!(
-                "Script failed (exit {}): {}",
-                code,
-                stderr.trim()
-            )));
+            let ignore_error = line.contains("|| true");
+            if let Some(stripped) = line.strip_suffix("|| true") {
+                line = stripped.trim().to_string();
+            }
+            line = line.replace("2>/dev/null", "").trim().to_string();
+            if line.is_empty() || line == "exit 0" {
+                continue;
+            }
+
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.is_empty() {
+                continue;
+            }
+
+            let status = Command::new("pkexec")
+                .args(&parts)
+                .status()
+                .await
+                .map_err(KillSwitchError::Spawn)?;
+
+            if !status.success() && !ignore_error {
+                let code = status.code().unwrap_or(-1);
+                if code == 126 || code == 127 {
+                    return Err(KillSwitchError::Permission);
+                }
+                return Err(KillSwitchError::Command(format!(
+                    "Command failed (exit {}): {}",
+                    code, line
+                )));
+            }
         }
 
         Ok(())
@@ -654,70 +652,6 @@ nft delete table inet shroud_killswitch 2>/dev/null || true
 
         None
     }
-}
-
-/// Synchronously clean up any stale kill switch rules
-///
-/// This is a standalone function that can be called from:
-/// - Signal handlers (which are synchronous)
-/// - Startup cleanup (before async runtime is available)
-///
-/// Uses blocking std::process::Command
-pub fn cleanup_stale_rules() {
-    use std::process::{Command, Stdio};
-
-    let cleanup_script = format!(
-        r#"
-        iptables -D OUTPUT -j {CHAIN_NAME} 2>/dev/null
-        iptables -F {CHAIN_NAME} 2>/dev/null
-        iptables -X {CHAIN_NAME} 2>/dev/null
-        ip6tables -D OUTPUT -j DROP 2>/dev/null
-        ip6tables -D OUTPUT -o lo -j ACCEPT 2>/dev/null
-        ip6tables -D OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null
-        ip6tables -D OUTPUT -o tun+ -j ACCEPT 2>/dev/null
-        ip6tables -D OUTPUT -o wg+ -j ACCEPT 2>/dev/null
-        ip6tables -D OUTPUT -d fe80::/10 -j ACCEPT 2>/dev/null
-        nft delete table inet shroud_killswitch 2>/dev/null
-        exit 0
-    "#
-    );
-
-    // Try with pkexec first
-    let result = Command::new("pkexec")
-        .args(["sh", "-c", &cleanup_script])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-
-    match result {
-        Ok(status) if status.success() => {
-            info!("Cleaned up stale kill switch rules");
-        }
-        Ok(_) => {
-            // pkexec might have been cancelled, try sudo as fallback
-            let _ = Command::new("sudo")
-                .args(["-n", "sh", "-c", &cleanup_script]) // -n = non-interactive
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-        }
-        Err(e) => {
-            warn!("Failed to clean up kill switch rules: {}", e);
-        }
-    }
-}
-
-/// Check if rules exist (synchronous)
-pub fn rules_exist() -> bool {
-    use std::process::{Command, Stdio};
-
-    let result = Command::new("iptables")
-        .args(["-C", "OUTPUT", "-j", CHAIN_NAME])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-
-    matches!(result, Ok(status) if status.success())
 }
 
 impl Default for KillSwitch {

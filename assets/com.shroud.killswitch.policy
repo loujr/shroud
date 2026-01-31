@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Shroud VPN Manager</vendor>
+  <vendor_url>https://github.com/loujr/shroud</vendor_url>
+
+  <!--
+    Shroud Kill Switch Privilege Policy
+
+    Principle VI: Speak the System's Language
+    - Uses polkit, the native Linux privilege escalation system
+
+    Principle XI: Security Through Clarity
+    - This policy is auditable and self-documenting
+    - Anyone can read this file and understand what privileges are granted
+
+    Principle X: Built for the Quiet Majority
+    - Active desktop sessions don't require password entry
+    - Remote/inactive sessions still require authentication
+  -->
+
+  <action id="com.shroud.killswitch.manage">
+    <description>Manage Shroud VPN Kill Switch Firewall Rules</description>
+    <message>Shroud needs to modify firewall rules to protect your VPN connection.</message>
+    <icon_name>network-vpn</icon_name>
+
+    <defaults>
+      <!-- Remote or inactive sessions require admin authentication -->
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+
+      <!-- Active desktop session: allow without password -->
+      <allow_active>yes</allow_active>
+    </defaults>
+
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/sbin/iptables</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="com.shroud.killswitch.manage.ipv6">
+    <description>Manage Shroud VPN Kill Switch IPv6 Firewall Rules</description>
+    <message>Shroud needs to modify IPv6 firewall rules to protect your VPN connection.</message>
+    <icon_name>network-vpn</icon_name>
+
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/sbin/ip6tables</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="com.shroud.killswitch.manage.nft">
+    <description>Manage Shroud VPN Kill Switch nftables Rules</description>
+    <message>Shroud needs to modify nftables rules to protect your VPN connection.</message>
+    <icon_name>network-vpn</icon_name>
+
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/sbin/nft</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+</policyconfig>
