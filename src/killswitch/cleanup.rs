@@ -134,24 +134,26 @@ pub fn cleanup_with_timeout(timeout: Duration) -> Result<CleanupResult, CleanupE
 
     let start = Instant::now();
 
-    loop {
-        match run_cleanup_command() {
-            Ok(()) => {
-                if rules_exist().unwrap_or(false) || rules_exist_ipv6().unwrap_or(false) {
-                    return Err(CleanupError::CommandFailed(
-                        "Kill switch rules still present after cleanup".to_string(),
-                    ));
-                }
-                info!("Kill switch rules cleaned up successfully");
-                return Ok(CleanupResult::Cleaned);
+    match run_cleanup_command() {
+        Ok(()) => {
+            if start.elapsed() > timeout {
+                warn!("Cleanup timed out after {:?}", timeout);
+                return Err(CleanupError::Timeout(timeout));
             }
-            Err(err) => {
-                if start.elapsed() > timeout {
-                    warn!("Cleanup timed out after {:?}", timeout);
-                    return Err(CleanupError::Timeout(timeout));
-                }
-                return Err(err);
+            if rules_exist().unwrap_or(false) || rules_exist_ipv6().unwrap_or(false) {
+                return Err(CleanupError::CommandFailed(
+                    "Kill switch rules still present after cleanup".to_string(),
+                ));
             }
+            info!("Kill switch rules cleaned up successfully");
+            Ok(CleanupResult::Cleaned)
+        }
+        Err(err) => {
+            if start.elapsed() > timeout {
+                warn!("Cleanup timed out after {:?}", timeout);
+                return Err(CleanupError::Timeout(timeout));
+            }
+            Err(err)
         }
     }
 }
