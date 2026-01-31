@@ -349,25 +349,35 @@ impl KillSwitch {
 
         // Create chain
         s.push_str(&format!("{} -N SHROUD_KILLSWITCH\n", iptables()));
-        s.push_str(&format!("{} -I OUTPUT 1 -j SHROUD_KILLSWITCH\n", iptables()));
+        s.push_str(&format!(
+            "{} -I OUTPUT 1 -j SHROUD_KILLSWITCH\n",
+            iptables()
+        ));
 
         // Rules
         s.push_str(&format!(
             "{} -A SHROUD_KILLSWITCH -o lo -j ACCEPT\n",
             iptables()
         ));
-        s.push_str(
-            &format!(
-                "{} -A SHROUD_KILLSWITCH -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n",
-                iptables()
-            ),
-        );
+        s.push_str(&format!(
+            "{} -A SHROUD_KILLSWITCH -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n",
+            iptables()
+        ));
         // DNS rules must come before VPN interface allow rules
         s.push_str(&self.build_dns_rules());
 
-        s.push_str(&format!("{} -A SHROUD_KILLSWITCH -o tun+ -j ACCEPT\n", iptables()));
-        s.push_str(&format!("{} -A SHROUD_KILLSWITCH -o tap+ -j ACCEPT\n", iptables()));
-        s.push_str(&format!("{} -A SHROUD_KILLSWITCH -o wg+ -j ACCEPT\n", iptables()));
+        s.push_str(&format!(
+            "{} -A SHROUD_KILLSWITCH -o tun+ -j ACCEPT\n",
+            iptables()
+        ));
+        s.push_str(&format!(
+            "{} -A SHROUD_KILLSWITCH -o tap+ -j ACCEPT\n",
+            iptables()
+        ));
+        s.push_str(&format!(
+            "{} -A SHROUD_KILLSWITCH -o wg+ -j ACCEPT\n",
+            iptables()
+        ));
 
         s.push_str(&self.build_doh_blocking_rules());
 
@@ -498,18 +508,14 @@ impl KillSwitch {
             }
             DnsMode::Localhost => {
                 s.push_str("# DNS Leak Protection (Localhost)\n");
-                s.push_str(
-                    &format!(
-                        "{} -A SHROUD_KILLSWITCH -d 127.0.0.0/8 -p udp --dport 53 -j ACCEPT\n",
-                        iptables()
-                    ),
-                );
-                s.push_str(
-                    &format!(
-                        "{} -A SHROUD_KILLSWITCH -d 127.0.0.0/8 -p tcp --dport 53 -j ACCEPT\n",
-                        iptables()
-                    ),
-                );
+                s.push_str(&format!(
+                    "{} -A SHROUD_KILLSWITCH -d 127.0.0.0/8 -p udp --dport 53 -j ACCEPT\n",
+                    iptables()
+                ));
+                s.push_str(&format!(
+                    "{} -A SHROUD_KILLSWITCH -d 127.0.0.0/8 -p tcp --dport 53 -j ACCEPT\n",
+                    iptables()
+                ));
                 s.push_str(&format!(
                     "{} -A SHROUD_KILLSWITCH -d ::1 -p udp --dport 53 -j ACCEPT\n",
                     iptables()
@@ -598,7 +604,9 @@ impl KillSwitch {
             }
 
             let mut cmd = parts[0];
-            if self.use_legacy && (parts[0].ends_with("iptables") || parts[0].ends_with("ip6tables")) {
+            if self.use_legacy
+                && (parts[0].ends_with("iptables") || parts[0].ends_with("ip6tables"))
+            {
                 if let Some(legacy_cmd) = Self::legacy_variant(parts[0]).await {
                     cmd = legacy_cmd;
                 }
@@ -896,21 +904,19 @@ impl KillSwitch {
         );
 
         match self.backend {
-            FirewallBackend::Iptables => {
-                match self.run_single_script(&script).await {
-                    Ok(()) => {}
-                    Err(err) if Self::should_fallback_to_nft(&err) => {
-                        if Self::nft_is_available().await {
-                            warn!("iptables failed during disable; falling back to nftables");
-                            self.backend = FirewallBackend::Nftables;
-                            self.disable_nft().await?;
-                        } else {
-                            warn!("iptables failed during disable and nft is unavailable; proceeding best-effort");
-                        }
+            FirewallBackend::Iptables => match self.run_single_script(&script).await {
+                Ok(()) => {}
+                Err(err) if Self::should_fallback_to_nft(&err) => {
+                    if Self::nft_is_available().await {
+                        warn!("iptables failed during disable; falling back to nftables");
+                        self.backend = FirewallBackend::Nftables;
+                        self.disable_nft().await?;
+                    } else {
+                        warn!("iptables failed during disable and nft is unavailable; proceeding best-effort");
                     }
-                    Err(err) => return Err(err),
                 }
-            }
+                Err(err) => return Err(err),
+            },
             FirewallBackend::Nftables => {
                 self.disable_nft().await?;
             }

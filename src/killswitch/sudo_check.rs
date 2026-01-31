@@ -104,7 +104,10 @@ pub fn validate_sudoers_on_startup() {
             error!("sudo command not found - kill switch will not work");
         }
         SudoAccessStatus::BinaryNotFound(path) => {
-            error!("Firewall binary not found: {} - kill switch will not work", path);
+            error!(
+                "Firewall binary not found: {} - kill switch will not work",
+                path
+            );
         }
     }
 }

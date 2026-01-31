@@ -24,12 +24,7 @@ const IP6TABLES_CANDIDATES: &[&str] = &[
     "/sbin/ip6tables",
 ];
 
-const NFT_CANDIDATES: &[&str] = &[
-    "/usr/bin/nft",
-    "/usr/sbin/nft",
-    "/bin/nft",
-    "/sbin/nft",
-];
+const NFT_CANDIDATES: &[&str] = &["/usr/bin/nft", "/usr/sbin/nft", "/bin/nft", "/sbin/nft"];
 
 fn find_binary(candidates: &[&str], name: &str) -> PathBuf {
     for candidate in candidates {
