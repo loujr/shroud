@@ -65,7 +65,7 @@ use crate::tray::{SharedState, VpnTray};
 async fn run_daemon_mode(args: cli::Args) {
     // Print startup banner FIRST (before any async/logging setup)
     println!("Shroud daemon starting... (use Ctrl+C to stop)");
-    
+
     // Convert CLI args to logging args format
     let log_args = logging::Args {
         verbose: args.verbose,
