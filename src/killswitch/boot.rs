@@ -46,6 +46,7 @@ pub fn disable_boot_killswitch() -> Result<(), KillSwitchError> {
 }
 
 /// Check if boot kill switch is active.
+#[allow(dead_code)]
 pub fn is_boot_killswitch_active() -> bool {
     run_iptables(&["-L", BOOT_CHAIN]).is_ok()
 }

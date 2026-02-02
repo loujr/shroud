@@ -126,6 +126,8 @@ pub async fn run_headless(config: Config) -> Result<(), Box<dyn std::error::Erro
     let mut sigterm = signal(SignalKind::terminate())?;
     let mut sigint = signal(SignalKind::interrupt())?;
     let mut sighup = signal(SignalKind::hangup())?;
+    let mut sigusr1 = signal(SignalKind::user_defined1())?;
+    let mut sigusr2 = signal(SignalKind::user_defined2())?;
 
     // Step 9: Watchdog loop
     let shared_state_watchdog = Arc::clone(&shared_state);
@@ -148,14 +150,25 @@ pub async fn run_headless(config: Config) -> Result<(), Box<dyn std::error::Erro
         }
     });
 
-    // Step 10: Wait for shutdown signal
-    let shutdown_reason = tokio::select! {
-        _ = sigterm.recv() => "SIGTERM",
-        _ = sigint.recv() => "SIGINT",
-        _ = sighup.recv() => {
-            info!("Received SIGHUP, reloading config");
-            warn!("Config reload not yet implemented");
-            "SIGHUP"
+    // Step 10: Wait for shutdown signal (ignoring non-fatal signals)
+    let shutdown_reason = loop {
+        tokio::select! {
+            _ = sigterm.recv() => break "SIGTERM",
+            _ = sigint.recv() => break "SIGINT",
+            _ = sighup.recv() => {
+                info!("Received SIGHUP, reloading config");
+                warn!("Config reload not yet implemented");
+                // Don't shutdown on SIGHUP, just log and continue
+                continue;
+            }
+            _ = sigusr1.recv() => {
+                debug!("Received SIGUSR1, ignoring");
+                continue;
+            }
+            _ = sigusr2.recv() => {
+                debug!("Received SIGUSR2, ignoring");
+                continue;
+            }
         }
     };
 

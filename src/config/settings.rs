@@ -197,20 +197,15 @@ impl Default for GatewayConfig {
 }
 
 /// Allowed clients for gateway mode
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum AllowedClients {
     /// Allow all clients on LAN
+    #[default]
     All,
     /// Allow specific CIDR range
     Cidr(String),
     /// Allow specific IP addresses
     List(Vec<String>),
-}
-
-impl Default for AllowedClients {
-    fn default() -> Self {
-        Self::All
-    }
 }
 
 impl Serialize for AllowedClients {

@@ -112,20 +112,21 @@ fn auto_detect_mode() -> RuntimeMode {
 }
 
 /// Check if headless mode can run (basic requirements).
+#[allow(dead_code)]
 pub fn check_headless_requirements() -> Result<(), String> {
     // Check if we can access system config directory
     let config_dir = std::path::Path::new("/etc/shroud");
     if !config_dir.exists() {
-        return Err(format!(
-            "Headless mode requires /etc/shroud directory.\n\
+        return Err("Headless mode requires /etc/shroud directory.\n\
              Create it with: sudo mkdir -p /etc/shroud"
-        ));
+            .to_string());
     }
 
     Ok(())
 }
 
 /// Check if desktop mode can run (basic requirements).
+#[allow(dead_code)]
 pub fn check_desktop_requirements() -> Result<(), String> {
     // Check for display
     if env::var("DISPLAY").is_err() && env::var("WAYLAND_DISPLAY").is_err() {

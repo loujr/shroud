@@ -40,6 +40,7 @@ pub enum GatewayError {
     Nat(String),
     Firewall(String),
     Detection(String),
+    #[allow(dead_code)]
     Config(String),
 }
 
@@ -132,6 +133,7 @@ pub fn is_enabled() -> bool {
 }
 
 /// Update gateway when VPN interface changes.
+#[allow(dead_code)]
 pub async fn update_vpn_interface(new_interface: &str) -> Result<(), GatewayError> {
     if !is_enabled() {
         return Ok(());

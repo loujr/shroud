@@ -10,6 +10,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
+# Check for --unprivileged flag
+if [[ "${1:-}" == "--unprivileged" ]]; then
+    echo "Skipping headless runtime tests (requires root)"
+    echo "Run with sudo to execute these tests"
+    exit 0
+fi
+
 require_root
 
 # ============================================================================

@@ -78,6 +78,7 @@ pub fn notify_watchdog() {
 }
 
 /// Notify that the service is reloading configuration.
+#[allow(dead_code)]
 pub fn notify_reloading() {
     notify("RELOADING=1");
 }
@@ -91,11 +92,13 @@ pub fn watchdog_interval() -> Option<Duration> {
 }
 
 /// Check if running under systemd.
+#[allow(dead_code)]
 pub fn is_systemd_service() -> bool {
     notify_socket().is_some() || env::var("INVOCATION_ID").is_ok()
 }
 
 /// Get the systemd invocation ID.
+#[allow(dead_code)]
 pub fn invocation_id() -> Option<String> {
     env::var("INVOCATION_ID").ok()
 }
