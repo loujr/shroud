@@ -3,10 +3,21 @@
 # Test: Cleanup Verification (Privileged)
 #
 # Verifies that all resources are cleaned up when daemon exits.
+# Requires root privileges and DISPLAY.
 
 set -euo pipefail
 
 SHROUD_BIN="${SHROUD_BIN:-./target/release/shroud}"
+
+# Skip if no display (CI environment)
+if [[ -z "${DISPLAY:-}" ]] && [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
+    echo "=== Cleanup Verification Tests ==="
+    echo ""
+    echo "  ○ SKIP: No display available (CI environment)"
+    echo "  These tests require a desktop session."
+    echo ""
+    exit 0
+fi
 
 PASSED=0
 FAILED=0
@@ -20,8 +31,8 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 cleanup_all() {
-    pkill -f shroud 2>/dev/null || true
-    sleep 1
+    pkill -9 -f shroud 2>/dev/null || true
+    sleep 0.5
     iptables -D OUTPUT -j SHROUD_KILLSWITCH 2>/dev/null || true
     iptables -F SHROUD_KILLSWITCH 2>/dev/null || true
     iptables -X SHROUD_KILLSWITCH 2>/dev/null || true
@@ -30,6 +41,9 @@ cleanup_all() {
     iptables -X SHROUD_BOOT_KS 2>/dev/null || true
     rm -f "${XDG_RUNTIME_DIR:-/tmp}/shroud.sock" 2>/dev/null || true
 }
+
+# Ensure cleanup on exit
+trap cleanup_all EXIT
 
 echo "=== Cleanup Verification Tests ==="
 echo ""

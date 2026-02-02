@@ -139,6 +139,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "v2"
+        continue-on-error: true
 
       - name: Build release
         run: cargo build --release
@@ -146,9 +147,11 @@ jobs:
       - name: Make test scripts executable
         run: chmod +x tests/e2e/desktop/*.sh
 
-      - name: Run non-privileged E2E tests
-        run: ./tests/e2e/desktop/run-desktop-tests.sh
-        continue-on-error: true
+      - name: Run E2E tests (display-independent only)
+        run: |
+          echo "Note: Tests requiring DISPLAY will be skipped in CI"
+          ./tests/e2e/desktop/run-desktop-tests.sh
+        timeout-minutes: 5
 
       - name: Upload E2E results
         uses: actions/upload-artifact@v4

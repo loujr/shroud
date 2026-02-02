@@ -355,6 +355,7 @@ fn test_rapid_sighup() {
 // ============================================================================
 
 #[test]
+#[ignore = "requires root privileges for signal handling and iptables"]
 fn test_unexpected_signals_handled() {
     println!("\n=== TEST: Unexpected signals handled ===\n");
     let mut started_daemon = None;

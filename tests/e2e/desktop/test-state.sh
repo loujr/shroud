@@ -3,10 +3,22 @@
 # Test: State Machine Consistency
 #
 # Verifies that the state machine remains consistent through various operations.
+#
+# NOTE: Requires DISPLAY or will be skipped in CI.
 
 set -euo pipefail
 
 SHROUD_BIN="${SHROUD_BIN:-./target/release/shroud}"
+
+# Skip if no display (CI environment)
+if [[ -z "${DISPLAY:-}" ]] && [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
+    echo "=== State Consistency Tests ==="
+    echo ""
+    echo "  ○ SKIP: No display available (CI environment)"
+    echo "  These tests require a desktop session."
+    echo ""
+    exit 0
+fi
 
 PASSED=0
 FAILED=0
@@ -16,7 +28,12 @@ pass() { echo "  ✓ $1"; PASSED=$((PASSED + 1)); }
 fail() { echo "  ✗ $1"; FAILED=$((FAILED + 1)); }
 
 cleanup() {
-    [[ -n "$DAEMON_PID" ]] && kill "$DAEMON_PID" 2>/dev/null || true
+    if [[ -n "$DAEMON_PID" ]]; then
+        kill -9 "$DAEMON_PID" 2>/dev/null || true
+    fi
+    pkill -9 -f "shroud.*--desktop" 2>/dev/null || true
+    rm -f "${XDG_RUNTIME_DIR:-/tmp}/shroud.sock" 2>/dev/null || true
+    sleep 0.5
 }
 trap cleanup EXIT
 

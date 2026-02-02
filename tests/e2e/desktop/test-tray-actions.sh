@@ -4,11 +4,23 @@
 #
 # Simulates tray menu actions by sending commands that mirror
 # what the tray handlers send. Catches async/sync boundary bugs.
+#
+# NOTE: Requires DISPLAY or will be skipped in CI.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHROUD_BIN="${SHROUD_BIN:-./target/release/shroud}"
+
+# Skip if no display (CI environment)
+if [[ -z "${DISPLAY:-}" ]] && [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
+    echo "=== Tray Action Simulation Tests ==="
+    echo ""
+    echo "  ○ SKIP: No display available (CI environment)"
+    echo "  These tests require a desktop session."
+    echo ""
+    exit 0
+fi
 
 PASSED=0
 FAILED=0
@@ -19,9 +31,11 @@ fail() { echo "  ✗ $1"; FAILED=$((FAILED + 1)); }
 
 cleanup() {
     if [[ -n "$DAEMON_PID" ]]; then
-        kill "$DAEMON_PID" 2>/dev/null || true
-        wait "$DAEMON_PID" 2>/dev/null || true
+        kill -9 "$DAEMON_PID" 2>/dev/null || true
     fi
+    pkill -9 -f "shroud.*--desktop" 2>/dev/null || true
+    rm -f "${XDG_RUNTIME_DIR:-/tmp}/shroud.sock" 2>/dev/null || true
+    sleep 0.5
 }
 trap cleanup EXIT
 

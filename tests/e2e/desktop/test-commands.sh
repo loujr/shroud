@@ -3,11 +3,19 @@
 # Test: CLI Commands
 #
 # Verifies that all CLI commands work correctly in desktop mode.
+#
+# NOTE: Tests requiring daemon will be skipped without DISPLAY.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHROUD_BIN="${SHROUD_BIN:-./target/release/shroud}"
+
+# Check if we can run daemon tests
+CAN_RUN_DAEMON=true
+if [[ -z "${DISPLAY:-}" ]] && [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
+    CAN_RUN_DAEMON=false
+fi
 
 PASSED=0
 FAILED=0
@@ -18,9 +26,11 @@ fail() { echo "  ✗ $1"; FAILED=$((FAILED + 1)); }
 
 cleanup() {
     if [[ -n "$DAEMON_PID" ]]; then
-        kill "$DAEMON_PID" 2>/dev/null || true
-        wait "$DAEMON_PID" 2>/dev/null || true
+        kill -9 "$DAEMON_PID" 2>/dev/null || true
     fi
+    pkill -9 -f "shroud.*--desktop" 2>/dev/null || true
+    rm -f "${XDG_RUNTIME_DIR:-/tmp}/shroud.sock" 2>/dev/null || true
+    sleep 0.5
 }
 trap cleanup EXIT
 
@@ -164,23 +174,28 @@ test_version
 test_help
 test_subcommand_help
 
-# Start daemon and run remaining tests
-if start_daemon; then
-    sleep 1
+# Start daemon and run remaining tests (only if display available)
+if [[ "$CAN_RUN_DAEMON" == "true" ]]; then
+    if start_daemon; then
+        sleep 1
+        
+        test_status_command
+        test_list_command
+        test_list_json
+        test_ks_status_command
+        test_autostart_status
+        test_debug_log_path
+        test_ping_command
+    else
+        fail "Could not start daemon"
+    fi
     
-    test_status_command
-    test_list_command
-    test_list_json
-    test_ks_status_command
-    test_autostart_status
-    test_debug_log_path
-    test_ping_command
+    # Cleanup
+    "$SHROUD_BIN" quit 2>/dev/null || true
 else
-    fail "Could not start daemon"
+    echo ""
+    echo "  ○ SKIP: Daemon tests skipped (no display)"
 fi
-
-# Cleanup
-"$SHROUD_BIN" quit 2>/dev/null || true
 
 echo ""
 echo "CLI Commands: $PASSED passed, $FAILED failed"

@@ -4,11 +4,23 @@
 #
 # Verifies that CLI commands reach the daemon via IPC socket.
 # This catches bugs like the tokio::spawn-in-std::thread issue.
+#
+# NOTE: Requires DISPLAY or will be skipped in CI.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHROUD_BIN="${SHROUD_BIN:-./target/release/shroud}"
+
+# Skip if no display (CI environment)
+if [[ -z "${DISPLAY:-}" ]] && [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
+    echo "=== IPC Communication Tests ==="
+    echo ""
+    echo "  ○ SKIP: No display available (CI environment)"
+    echo "  These tests require a desktop session to run the daemon."
+    echo ""
+    exit 0
+fi
 
 PASSED=0
 FAILED=0
@@ -18,12 +30,16 @@ pass() { echo "  ✓ $1"; PASSED=$((PASSED + 1)); }
 fail() { echo "  ✗ $1"; FAILED=$((FAILED + 1)); }
 
 cleanup() {
+    # Kill by PID
     if [[ -n "$DAEMON_PID" ]]; then
-        kill "$DAEMON_PID" 2>/dev/null || true
-        wait "$DAEMON_PID" 2>/dev/null || true
+        kill -9 "$DAEMON_PID" 2>/dev/null || true
     fi
+    # Kill any remaining shroud processes started by this test
+    pkill -9 -f "shroud.*--desktop" 2>/dev/null || true
     # Clean up socket
     rm -f "${XDG_RUNTIME_DIR:-/tmp}/shroud.sock" 2>/dev/null || true
+    # Brief wait for cleanup
+    sleep 0.5
 }
 trap cleanup EXIT
 
