@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.3] - 2026-02-01
+
+### Fixed
+- **CRITICAL: Tray Menu Actions Crash Application** - Clicking any tray menu item (Kill Switch, Connect, Disconnect, etc.) caused the application to crash with `SIGABRT` and core dump. The daemon would silently disappear from the system tray.
+
+  **Symptoms:**
+  - Clicking "Kill Switch" toggle in tray menu kills the application
+  - Tray icon disappears immediately
+  - Core dump generated with `SIGABRT` signal
+  - No error message displayed to user
+  
+  **Root Cause Analysis:**
+  The v1.8.1 fix changed tray menu handlers from `tokio::spawn()` to `blocking_send()`. This was based on the assumption that ksni runs in a pure `std::thread`. However, ksni internally creates its own async runtime for D-Bus communication. When `blocking_send()` is called from within ksni's callback context, tokio detects it's already inside an async runtime and panics:
+  
+  ```
+  thread '<unnamed>' panicked at src/tray/service.rs:281:33:
+  Cannot block the current thread from within a runtime. This happens because
+  a function attempted to block the current thread while the thread is being
+  used to drive asynchronous tasks.
+  ```
+  
+  **The Fix:**
+  Changed all 10 tray menu action handlers from `blocking_send()` to `try_send()`. The `try_send()` method is completely non-blocking and does not interact with any runtime context. It returns immediately with `Ok(())` if the channel has capacity, or `Err(TrySendError::Full)` if full. Since the channel capacity is 16 and commands are processed quickly, this is safe.
+  
+  **Affected Code:**
+  - `src/tray/service.rs` lines 236, 255, 269, 281, 293, 304, 318, 329, 343
+  - All `VpnCommand` variants: Connect, Disconnect, ToggleAutoReconnect, ToggleKillSwitch, ToggleAutostart, RefreshConnections, ToggleDebugLogging, OpenLogFile, Restart
+  
+  **Version History:**
+  - v1.8.0: Used `tokio::spawn()` - worked but was theoretically incorrect
+  - v1.8.1: Changed to `blocking_send()` - caused crash inside ksni's async context
+  - v1.8.3: Changed to `try_send()` - correct non-blocking approach
+
 ## [1.8.2] - 2026-02-01
 
 ### Fixed
