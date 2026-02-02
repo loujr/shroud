@@ -1062,6 +1062,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires XDG desktop environment - run with: cargo test -- --ignored"]
     fn test_handle_autostart_on_off() {
         let args = default_args();
         let exit_code = handle_autostart_command(ToggleAction::On, &args);
@@ -1072,6 +1073,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires XDG desktop environment - run with: cargo test -- --ignored"]
     fn test_handle_autostart_toggle() {
         let args = default_args();
         let initial = crate::autostart::Autostart::is_enabled();

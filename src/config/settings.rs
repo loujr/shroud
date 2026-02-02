@@ -929,4 +929,112 @@ kill_switch_enabled = true
         let mode = metadata.permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "Config file should have 600 permissions");
     }
+
+    // AllowedClients tests - TOML requires values to be in a table,
+    // so we test through GatewayConfig
+
+    #[test]
+    fn test_allowed_clients_default_is_all() {
+        assert_eq!(AllowedClients::default(), AllowedClients::All);
+    }
+
+    // GatewayConfig with AllowedClients integration tests
+    #[test]
+    fn test_gateway_config_serialize_all() {
+        let config = GatewayConfig {
+            allowed_clients: AllowedClients::All,
+            ..Default::default()
+        };
+        let toml = toml::to_string(&config).expect("should serialize");
+        assert!(toml.contains(r#"allowed_clients = "all""#));
+    }
+
+    #[test]
+    fn test_gateway_config_serialize_cidr() {
+        let config = GatewayConfig {
+            allowed_clients: AllowedClients::Cidr("192.168.1.0/24".to_string()),
+            ..Default::default()
+        };
+        let toml = toml::to_string(&config).expect("should serialize");
+        assert!(toml.contains(r#"allowed_clients = "192.168.1.0/24""#));
+    }
+
+    #[test]
+    fn test_gateway_config_serialize_list() {
+        let config = GatewayConfig {
+            allowed_clients: AllowedClients::List(vec![
+                "192.168.1.50".to_string(),
+                "192.168.1.51".to_string(),
+            ]),
+            ..Default::default()
+        };
+        let toml = toml::to_string(&config).expect("should serialize");
+        assert!(toml.contains("192.168.1.50"));
+        assert!(toml.contains("192.168.1.51"));
+    }
+
+    #[test]
+    fn test_gateway_config_with_allowed_clients_all() {
+        let toml = r#"
+            enabled = true
+            allowed_clients = "all"
+            kill_switch_forwarding = true
+            enable_ipv6 = false
+        "#;
+
+        let config: GatewayConfig = toml::from_str(toml).expect("should parse");
+        assert_eq!(config.allowed_clients, AllowedClients::All);
+        assert!(config.enabled);
+    }
+
+    #[test]
+    fn test_gateway_config_with_allowed_clients_cidr() {
+        let toml = r#"
+            enabled = true
+            allowed_clients = "192.168.1.0/24"
+            kill_switch_forwarding = true
+            enable_ipv6 = false
+        "#;
+
+        let config: GatewayConfig = toml::from_str(toml).expect("should parse");
+        assert_eq!(
+            config.allowed_clients,
+            AllowedClients::Cidr("192.168.1.0/24".to_string())
+        );
+    }
+
+    #[test]
+    fn test_gateway_config_with_allowed_clients_list() {
+        let toml = r#"
+            enabled = true
+            allowed_clients = ["192.168.1.50", "192.168.1.51"]
+            kill_switch_forwarding = true
+            enable_ipv6 = false
+        "#;
+
+        let config: GatewayConfig = toml::from_str(toml).expect("should parse");
+        assert_eq!(
+            config.allowed_clients,
+            AllowedClients::List(vec!["192.168.1.50".to_string(), "192.168.1.51".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_gateway_config_roundtrip() {
+        let original = GatewayConfig {
+            enabled: true,
+            required: false,
+            lan_interface: Some("eth0".to_string()),
+            allowed_clients: AllowedClients::Cidr("10.0.0.0/8".to_string()),
+            kill_switch_forwarding: true,
+            persist_ip_forward: false,
+            enable_ipv6: false,
+        };
+
+        let serialized = toml::to_string(&original).expect("serialize");
+        let deserialized: GatewayConfig = toml::from_str(&serialized).expect("deserialize");
+
+        assert_eq!(original.enabled, deserialized.enabled);
+        assert_eq!(original.allowed_clients, deserialized.allowed_clients);
+    }
 }

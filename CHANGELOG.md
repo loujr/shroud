@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-02-01
+
+### Fixed
+- **CRITICAL: Desktop Mode Broken** - Tray menu actions (connect, disconnect, toggle kill switch, etc.) were completely unresponsive after the 1.8.0 headless implementation. Root cause: the tray runs in a `std::thread` (required by ksni), but menu action callbacks used `tokio::spawn()` which requires a tokio runtime context. Changed all 9 menu action handlers to use `blocking_send()` instead, which correctly works from blocking (non-async) contexts.
+- **Autostart Tests Flaky in CI** - Changed 6 autostart-related tests to use `#[ignore]` attribute instead of runtime skip checks. Tests that create/modify XDG desktop files now require explicit `--ignored` flag, preventing race conditions in parallel test execution.
+- **README Duplicate Section** - Removed duplicate "Kill Switch Privileges" section that appeared twice (at lines 337 and 448).
+- **AllowedClients Test Coverage** - Added 7 comprehensive tests for `AllowedClients` enum serialization via `GatewayConfig` wrapper (TOML cannot serialize bare enums).
+
+### Added
+- **CONTRIBUTING.md** - Added contributor guidelines covering: design principles reference, development setup for Arch/Debian/Fedora, code quality requirements, PR process, commit message format, testing checklist, and code style guide.
+
+### Changed
+- **Binary Size Optimization** - Changed LTO from `"thin"` to `true` (fat LTO) in release profile. Reduces binary size from 3.0MB to 2.6MB (~13% reduction) through more aggressive cross-crate dead code elimination.
+
 ## [1.8.0] - 2026-02-01
 
 ### Added

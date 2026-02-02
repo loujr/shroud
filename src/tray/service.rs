@@ -231,11 +231,9 @@ impl Tray for VpnTray {
                     },
                     enabled: !is_current && !is_busy,
                     activate: Box::new(move |tray: &mut Self| {
-                        let tx = tray.tx.clone();
                         let conn = conn_clone.clone();
-                        tokio::spawn(async move {
-                            let _ = tx.send(VpnCommand::Connect(conn)).await;
-                        });
+                        // Use blocking_send since tray runs in std::thread, not tokio runtime
+                        let _ = tray.tx.blocking_send(VpnCommand::Connect(conn));
                     }),
                     ..Default::default()
                 }));
@@ -253,10 +251,8 @@ impl Tray for VpnTray {
             label: "Disconnect".to_string(),
             enabled: can_disconnect,
             activate: Box::new(|tray: &mut Self| {
-                let tx = tray.tx.clone();
-                tokio::spawn(async move {
-                    let _ = tx.send(VpnCommand::Disconnect).await;
-                });
+                // Use blocking_send since tray runs in std::thread, not tokio runtime
+                let _ = tray.tx.blocking_send(VpnCommand::Disconnect);
             }),
             ..Default::default()
         }));
@@ -269,10 +265,8 @@ impl Tray for VpnTray {
             enabled: true,
             checked: state.auto_reconnect,
             activate: Box::new(|tray: &mut Self| {
-                let tx = tray.tx.clone();
-                tokio::spawn(async move {
-                    let _ = tx.send(VpnCommand::ToggleAutoReconnect).await;
-                });
+                // Use blocking_send since tray runs in std::thread, not tokio runtime
+                let _ = tray.tx.blocking_send(VpnCommand::ToggleAutoReconnect);
             }),
             ..Default::default()
         }));
@@ -283,10 +277,8 @@ impl Tray for VpnTray {
             enabled: true,
             checked: state.kill_switch,
             activate: Box::new(|tray: &mut Self| {
-                let tx = tray.tx.clone();
-                tokio::spawn(async move {
-                    let _ = tx.send(VpnCommand::ToggleKillSwitch).await;
-                });
+                // Use blocking_send since tray runs in std::thread, not tokio runtime
+                let _ = tray.tx.blocking_send(VpnCommand::ToggleKillSwitch);
             }),
             ..Default::default()
         }));
@@ -297,10 +289,8 @@ impl Tray for VpnTray {
             enabled: true,
             checked: Autostart::is_enabled(),
             activate: Box::new(|tray: &mut Self| {
-                let tx = tray.tx.clone();
-                tokio::spawn(async move {
-                    let _ = tx.send(VpnCommand::ToggleAutostart).await;
-                });
+                // Use blocking_send since tray runs in std::thread, not tokio runtime
+                let _ = tray.tx.blocking_send(VpnCommand::ToggleAutostart);
             }),
             ..Default::default()
         }));
@@ -310,10 +300,8 @@ impl Tray for VpnTray {
             label: "Refresh Connections".to_string(),
             enabled: true,
             activate: Box::new(|tray: &mut Self| {
-                let tx = tray.tx.clone();
-                tokio::spawn(async move {
-                    let _ = tx.send(VpnCommand::RefreshConnections).await;
-                });
+                // Use blocking_send since tray runs in std::thread, not tokio runtime
+                let _ = tray.tx.blocking_send(VpnCommand::RefreshConnections);
             }),
             ..Default::default()
         }));
@@ -326,10 +314,8 @@ impl Tray for VpnTray {
             enabled: true,
             checked: state.debug_logging,
             activate: Box::new(|tray: &mut Self| {
-                let tx = tray.tx.clone();
-                tokio::spawn(async move {
-                    let _ = tx.send(VpnCommand::ToggleDebugLogging).await;
-                });
+                // Use blocking_send since tray runs in std::thread, not tokio runtime
+                let _ = tray.tx.blocking_send(VpnCommand::ToggleDebugLogging);
             }),
             ..Default::default()
         }));
@@ -339,10 +325,8 @@ impl Tray for VpnTray {
             label: "Open Log File".to_string(),
             enabled: state.debug_logging,
             activate: Box::new(|tray: &mut Self| {
-                let tx = tray.tx.clone();
-                tokio::spawn(async move {
-                    let _ = tx.send(VpnCommand::OpenLogFile).await;
-                });
+                // Use blocking_send since tray runs in std::thread, not tokio runtime
+                let _ = tray.tx.blocking_send(VpnCommand::OpenLogFile);
             }),
             ..Default::default()
         }));
@@ -355,10 +339,8 @@ impl Tray for VpnTray {
             icon_name: "view-refresh".to_string(),
             enabled: true,
             activate: Box::new(|tray: &mut Self| {
-                let tx = tray.tx.clone();
-                tokio::spawn(async move {
-                    let _ = tx.send(VpnCommand::Restart).await;
-                });
+                // Use blocking_send since tray runs in std::thread, not tokio runtime
+                let _ = tray.tx.blocking_send(VpnCommand::Restart);
             }),
             ..Default::default()
         }));
