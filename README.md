@@ -1,7 +1,7 @@
 # Shroud
 
 [![CI](https://github.com/loujr/shroud/actions/workflows/ci.yml/badge.svg)](https://github.com/loujr/shroud/actions/workflows/ci.yml)
-[![Security Audit](https://github.com/loujr/shroud/actions/workflows/security.yml/badge.svg)](https://github.com/loujr/shroud/actions/workflows/security.yml)
+[![Security Audit](https://github.com/loujr/shroud/actions/workflows/scheduled.yml/badge.svg)](https://github.com/loujr/shroud/actions/workflows/scheduled.yml)
 [![codecov](https://codecov.io/gh/loujr/shroud/graph/badge.svg)](https://codecov.io/gh/loujr/shroud)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)

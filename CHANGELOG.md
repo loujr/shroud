@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.6] - 2026-02-02
+
+### Fixed
+- **False Positive Latency Warnings During Builds** - Health checks no longer spam "VPN Degraded - High latency" notifications during cargo builds, system updates, or other CPU-intensive tasks. The degraded threshold was increased from 2000ms to 5000ms, and the system now requires 2 consecutive degraded checks before showing a warning. Latency counter resets when connectivity returns to normal.
+
 ## [1.8.5] - 2026-02-02
 
 ### Added
