@@ -10,7 +10,7 @@
 //! auto_reconnect = true
 //! last_server = "us-east-1"  # optional
 //! health_check_interval_secs = 30
-//! health_degraded_threshold_ms = 2000
+//! health_degraded_threshold_ms = 5000
 //! max_reconnect_attempts = 10
 //! kill_switch_enabled = false
 //!

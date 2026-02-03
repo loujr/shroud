@@ -31,6 +31,8 @@ pub struct HealthConfig {
     pub degraded_threshold_ms: u64,
     /// Number of consecutive failures before declaring dead
     pub failure_threshold: u32,
+    /// Number of consecutive degraded checks before warning
+    pub degraded_threshold: u32,
 }
 
 impl Default for HealthConfig {
@@ -42,8 +44,11 @@ impl Default for HealthConfig {
                 "https://api.ipify.org".to_string(),
             ],
             timeout_secs: 10,
-            degraded_threshold_ms: 2000,
+            // Increased from 2000ms - builds/updates can cause temporary latency
+            degraded_threshold_ms: 5000,
             failure_threshold: 3,
+            // Require 2 consecutive degraded checks before warning
+            degraded_threshold: 2,
         }
     }
 }
@@ -52,6 +57,7 @@ impl Default for HealthConfig {
 pub struct HealthChecker {
     config: HealthConfig,
     consecutive_failures: u32,
+    consecutive_degraded: u32,
 }
 
 impl HealthChecker {
@@ -65,17 +71,21 @@ impl HealthChecker {
         Self {
             config,
             consecutive_failures: 0,
+            consecutive_degraded: 0,
         }
     }
 
     /// Reset failure counter (call after successful connection)
     pub fn reset(&mut self) {
         self.consecutive_failures = 0;
+        self.consecutive_degraded = 0;
     }
 
     /// Perform a health check
     ///
     /// Returns the health status of the VPN tunnel.
+    /// Only returns Degraded after consecutive_degraded threshold is reached
+    /// to avoid false positives during temporary system load (builds, updates).
     pub async fn check(&mut self) -> HealthResult {
         for endpoint in &self.config.endpoints {
             match self.check_endpoint(endpoint).await {
@@ -83,13 +93,22 @@ impl HealthChecker {
                     self.consecutive_failures = 0;
 
                     if latency_ms > self.config.degraded_threshold_ms {
+                        self.consecutive_degraded += 1;
                         debug!(
-                            "Health check passed but degraded: {}ms > {}ms threshold",
-                            latency_ms, self.config.degraded_threshold_ms
+                            "Health check high latency: {}ms (degraded {}/{})",
+                            latency_ms, self.consecutive_degraded, self.config.degraded_threshold
                         );
-                        return HealthResult::Degraded { latency_ms };
+
+                        // Only report degraded after consecutive threshold
+                        if self.consecutive_degraded >= self.config.degraded_threshold {
+                            return HealthResult::Degraded { latency_ms };
+                        }
+                        // Below threshold - treat as healthy but track
+                        return HealthResult::Healthy;
                     }
 
+                    // Good latency - reset degraded counter
+                    self.consecutive_degraded = 0;
                     debug!("Health check passed: {}ms", latency_ms);
                     return HealthResult::Healthy;
                 }
@@ -102,6 +121,8 @@ impl HealthChecker {
 
         // All endpoints failed
         self.consecutive_failures += 1;
+        // Also count as degraded
+        self.consecutive_degraded += 1;
 
         if self.consecutive_failures >= self.config.failure_threshold {
             warn!(
@@ -203,6 +224,7 @@ mod tests {
             timeout_secs: 5,
             degraded_threshold_ms: 1000,
             failure_threshold: 5,
+            degraded_threshold: 2,
         };
         let checker = HealthChecker::with_config(config.clone());
         assert_eq!(checker.config.timeout_secs, 5);

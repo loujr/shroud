@@ -649,7 +649,7 @@ ipv6_mode = "block"
 health_check_interval_secs = 30
 
 # Latency threshold in milliseconds for marking connection as "degraded"
-health_degraded_threshold_ms = 2000
+health_degraded_threshold_ms = 5000
 
 # Last connected server (managed automatically)
 # last_server = ""

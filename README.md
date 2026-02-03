@@ -295,7 +295,7 @@ last_server = "us-east-1"
 health_check_interval_secs = 30
 
 # Latency threshold for degraded state (ms)
-health_degraded_threshold_ms = 2000
+health_degraded_threshold_ms = 5000
 
 # Maximum reconnection attempts before giving up
 max_reconnect_attempts = 10
