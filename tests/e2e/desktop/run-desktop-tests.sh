@@ -27,7 +27,7 @@ log_info() { echo -e "${YELLOW}→${NC} $1"; }
 log_skip() { echo -e "${YELLOW}○ SKIP${NC}: $1"; }
 
 # Try to source additional helpers (optional)
-source "${E2E_DIR}/lib.sh" 2>/dev/null || true
+source "${E2E_DIR}/lib/test-helpers.sh" 2>/dev/null || true
 
 # Flags
 PRIVILEGED=false

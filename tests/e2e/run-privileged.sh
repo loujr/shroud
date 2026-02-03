@@ -20,7 +20,7 @@ fi
 export RUN_PRIVILEGED=true
 
 # Source library
-source "${SCRIPT_DIR}/lib.sh"
+source "${SCRIPT_DIR}/lib/test-helpers.sh"
 
 echo ""
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
