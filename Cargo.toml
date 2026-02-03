@@ -79,6 +79,18 @@ panic = "abort"
 [dev-dependencies]
 tempfile = "3"
 
+# ============================================================================
+# Test Targets
+# ============================================================================
+
+# Integration tests - module interactions (no daemon required for most)
 [[test]]
 name = "integration"
 path = "tests/integration/mod.rs"
+
+# Security tests - privileged tests for security verification
+[[test]]
+name = "security"
+path = "tests/security/mod.rs"
+
+# Note: E2E tests are shell scripts in tests/e2e/ and are run separately

@@ -13,8 +13,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck source=lib.sh
-source "${SCRIPT_DIR}/lib.sh"
+# shellcheck source=lib/test-helpers.sh
+source "${SCRIPT_DIR}/lib/test-helpers.sh"
 
 # ============================================================================
 # Parse Arguments
@@ -121,8 +121,8 @@ echo -e "${BLUE}╚════════════════════�
 echo ""
 
 # Non-privileged tests
-run_suite "${SCRIPT_DIR}/test-mode-detection.sh"
-run_suite "${SCRIPT_DIR}/test-gateway-detection.sh"
+run_suite "${SCRIPT_DIR}/headless/test-mode-detection.sh"
+run_suite "${SCRIPT_DIR}/headless/test-gateway-detection.sh"
 
 # Privileged tests (require root)
 if $RUN_PRIVILEGED; then
@@ -131,10 +131,13 @@ if $RUN_PRIVILEGED; then
         exec sudo -E "$0" --privileged "${@:2}"
     fi
     
-    run_suite "${SCRIPT_DIR}/test-boot-killswitch.sh"
-    run_suite "${SCRIPT_DIR}/test-headless-runtime.sh"
-    run_suite "${SCRIPT_DIR}/test-gateway.sh"
-    run_suite "${SCRIPT_DIR}/test-cleanup.sh"
+    run_suite "${SCRIPT_DIR}/headless/test-boot-killswitch.sh"
+    run_suite "${SCRIPT_DIR}/headless/test-headless-runtime.sh"
+    run_suite "${SCRIPT_DIR}/headless/test-gateway.sh"
+    run_suite "${SCRIPT_DIR}/headless/test-cleanup.sh"
+    
+    # Desktop E2E tests
+    run_suite "${SCRIPT_DIR}/desktop/run-desktop-tests.sh"
 else
     echo -e "${YELLOW}Skipping privileged tests (use --privileged to run)${NC}"
 fi
