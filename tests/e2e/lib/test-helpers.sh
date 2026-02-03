@@ -10,8 +10,8 @@ set -euo pipefail
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-RESULTS_DIR="${SCRIPT_DIR}/results"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+RESULTS_DIR="${PROJECT_ROOT}/tests/e2e/results"
 SHROUD_BIN="${PROJECT_ROOT}/target/release/shroud"
 
 # Test counters
