@@ -80,10 +80,10 @@ run_test() {
     
     if bash "$script"; then
         echo -e "${GREEN}✓ ${name} passed${NC}"
-        ((PASSED++))
+        PASSED=$((PASSED + 1))
     else
         echo -e "${RED}✗ ${name} failed${NC}"
-        ((FAILED++))
+        FAILED=$((FAILED + 1))
     fi
 }
 
