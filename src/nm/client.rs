@@ -194,9 +194,30 @@ pub async fn get_vpn_uuid(connection_name: &str) -> Option<String> {
     parse_vpn_uuid(&stdout, connection_name)
 }
 
+/// Check if a specific VPN connection is currently active
+pub async fn is_connection_active(connection_name: &str) -> bool {
+    match get_active_vpn().await {
+        Some(active) => active == connection_name,
+        None => false,
+    }
+}
+
 /// Connect to a VPN via NetworkManager
+///
+/// Handles race conditions gracefully:
+/// - If connection is already active, returns Ok (success)
+/// - If a different VPN is active, proceeds with connection (NM will handle it)
 pub async fn connect(connection_name: &str) -> Result<(), NmError> {
     info!("Activating VPN connection: {}", connection_name);
+
+    // Pre-check: if already connected to this VPN, consider it success
+    if is_connection_active(connection_name).await {
+        info!(
+            "VPN '{}' is already active, no action needed",
+            connection_name
+        );
+        return Ok(());
+    }
 
     let output = match timeout(
         Duration::from_secs(NMCLI_TIMEOUT_SECS),
@@ -225,6 +246,16 @@ pub async fn connect(connection_name: &str) -> Result<(), NmError> {
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let msg = stderr.trim().to_string();
+
+        // Handle "already active" as success - race condition resolved
+        if msg.contains("already active") || msg.contains("already activated") {
+            info!(
+                "VPN '{}' is already active (race condition resolved)",
+                connection_name
+            );
+            return Ok(());
+        }
+
         error!("nmcli failed: {}", msg);
         Err(NmError::Command(msg))
     }

@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.4] - 2026-02-01
+
+### Fixed
+- **CRITICAL: Race Condition with External VPN State Changes** - When users interacted with NetworkManager directly (e.g., disconnecting via nm-applet, switching to a different VPN), Shroud's internal state would diverge from reality, causing reconnection loops, "Connection already active" error spam, and incorrect kill switch state.
+
+  **Symptoms:**
+  - "Connection already active" errors flooding logs
+  - Reconnection attempts when VPN is already connected
+  - Kill switch enabled when it shouldn't be (or vice versa)
+  - State showing "Connecting" when actually connected
+  - State showing "Connected" when user disconnected via nm-applet
+  
+  **Root Cause Analysis:**
+  Shroud relied on D-Bus events from NetworkManager to track state changes. However, D-Bus events can be delayed, arrive out of order, or be missed during high activity. When users bypass Shroud by using nm-applet, GNOME Settings, or `nmcli` directly, Shroud's internal state diverged from NetworkManager's actual state.
+  
+  **The Fix:**
+  1. **Pre-reconnect State Check**: Before each reconnection attempt, query NetworkManager for actual VPN state. If target VPN is already active, cancel reconnection and sync internal state. If a different VPN is active, assume user switched manually and stop reconnecting.
+  
+  2. **Handle "Already Active" Gracefully**: Enhanced `nm::connect()` to pre-check if connection is already active. If so, treat as success instead of error. Also detect "already active" in nmcli error output and treat as success.
+  
+  3. **Periodic State Sync**: Added `sync_state_from_nm()` method called during health checks. Compares internal state with NetworkManager reality and corrects discrepancies. Handles edge cases like:
+     - Internal: Disconnected, NM: VPN Active → Sync to Connected
+     - Internal: Connected, NM: No VPN → Sync to Disconnected
+     - Internal: Connected to VPN-A, NM: VPN-B Active → Sync to VPN-B
+  
+  4. **Kill Switch State Verification**: Added `sync_killswitch_state()` to verify kill switch rules are actually in iptables. Uses `is_actually_enabled()` to detect stale state.
+  
+  **New Methods:**
+  - `nm::is_connection_active()` - Check if specific connection is active in NM
+  - `supervisor::should_attempt_reconnect()` - Pre-flight check before reconnect
+  - `supervisor::sync_state_from_nm()` - Full state sync from NM reality
+  - `supervisor::sync_killswitch_state()` - Verify kill switch consistency
+  
+  **Affected Files:**
+  - `src/nm/client.rs` - Added `is_connection_active()`, enhanced `connect()`
+  - `src/supervisor/reconnect.rs` - Added `should_attempt_reconnect()`
+  - `src/supervisor/state_sync.rs` - Added `sync_state_from_nm()`, `sync_killswitch_state()`
+  - `src/supervisor/handlers.rs` - Integrated state sync into health check
+
 ## [1.8.3] - 2026-02-01
 
 ### Fixed

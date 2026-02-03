@@ -14,12 +14,72 @@ use crate::tray::VpnCommand;
 use super::{CONNECTION_VERIFY_DELAY_SECS, RECONNECT_BASE_DELAY_SECS, RECONNECT_MAX_DELAY_SECS};
 
 impl super::VpnSupervisor {
+    /// Check actual NetworkManager state before reconnecting
+    ///
+    /// Returns:
+    /// - Some(true) if we should proceed with reconnect (no VPN active)
+    /// - Some(false) if reconnect is unnecessary (target VPN already active)
+    /// - None if a different VPN is active (user switched manually)
+    async fn should_attempt_reconnect(&mut self, target_server: &str) -> Option<bool> {
+        // Query NetworkManager for actual state
+        match nm_get_active_vpn().await {
+            Some(active) if active == target_server => {
+                // Already connected to the target VPN!
+                info!(
+                    "VPN '{}' is already active, cancelling reconnect",
+                    target_server
+                );
+                // Sync our state to reality
+                self.dispatch(Event::NmVpnUp {
+                    server: active.clone(),
+                });
+                self.sync_shared_state().await;
+                self.update_tray();
+                Some(false)
+            }
+            Some(active) => {
+                // Connected to DIFFERENT VPN - user switched manually
+                info!(
+                    "Different VPN active ('{}'), user may have switched manually from '{}'",
+                    active, target_server
+                );
+                // Update our state to reflect reality
+                self.dispatch(Event::NmVpnUp {
+                    server: active.clone(),
+                });
+                self.sync_shared_state().await;
+                self.update_tray();
+                self.show_notification("VPN Switched", &format!("Now connected to {}", active));
+                None
+            }
+            None => {
+                // No VPN connected, proceed with reconnect
+                Some(true)
+            }
+        }
+    }
+
     /// Attempt to reconnect with exponential backoff (triggered by connection drop)
     pub(crate) async fn attempt_reconnect(&mut self, connection_name: &str) {
         // Clear any previous cancellation flag
         self.reconnect_cancelled = false;
 
-        // First, verify the connection still exists in NetworkManager
+        // CRITICAL: Check actual NM state before starting reconnect loop
+        match self.should_attempt_reconnect(connection_name).await {
+            Some(true) => {
+                // No VPN active, proceed with reconnect
+            }
+            Some(false) => {
+                // Target VPN is already active, we're done
+                return;
+            }
+            None => {
+                // Different VPN active, user switched manually - don't interfere
+                return;
+            }
+        }
+
+        // Verify the connection still exists in NetworkManager
         let available_connections = nm_list_vpn_connections().await;
         if !available_connections.iter().any(|c| c == connection_name) {
             error!(
@@ -54,6 +114,20 @@ impl super::VpnSupervisor {
                 self.sync_shared_state().await;
                 self.update_tray();
                 return;
+            }
+
+            // CRITICAL: Re-check NM state before each attempt
+            // User might have connected a VPN externally during our backoff delay
+            match self.should_attempt_reconnect(connection_name).await {
+                Some(true) => {
+                    // Still no VPN, proceed
+                }
+                Some(false) | None => {
+                    // VPN now active (target or different), stop reconnecting
+                    info!("Reconnect cancelled - VPN state resolved externally");
+                    reconnect_succeeded = true; // Consider it success - connection exists
+                    break;
+                }
             }
 
             info!(

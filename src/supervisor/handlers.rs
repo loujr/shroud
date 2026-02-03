@@ -426,6 +426,16 @@ impl super::VpnSupervisor {
 
     /// Run health check when connected
     pub(crate) async fn run_health_check(&mut self) {
+        // CRITICAL: First sync with NetworkManager state
+        // This catches external VPN changes before we do health checks
+        if self.sync_state_from_nm().await {
+            debug!("State corrected during health check, skipping health check");
+            return;
+        }
+
+        // Also sync kill switch state periodically
+        self.sync_killswitch_state();
+
         // Only run health checks when in Connected or Degraded state
         let server = match &self.machine.state {
             VpnState::Connected { server } => server.clone(),
