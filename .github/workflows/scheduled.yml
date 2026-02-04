@@ -1,4 +1,4 @@
-name: Scheduled Checks
+name: Security Audit
 
 on:
   schedule:

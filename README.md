@@ -2,32 +2,40 @@
 
 [![CI](https://github.com/loujr/shroud/actions/workflows/ci.yml/badge.svg)](https://github.com/loujr/shroud/actions/workflows/ci.yml)
 [![Security Audit](https://github.com/loujr/shroud/actions/workflows/scheduled.yml/badge.svg)](https://github.com/loujr/shroud/actions/workflows/scheduled.yml)
-[![codecov](https://codecov.io/gh/loujr/shroud/graph/badge.svg)](https://codecov.io/gh/loujr/shroud)
+[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 **A provider-agnostic VPN connection manager for Linux.**
 
+A **lock shroud** is the protective metal casing around a padlock's shackle. It doesn't replace the lock. It protects the lock from attack.
+
 ```
-    ┌────────────────────────────────────────────────────────────┐
-    │                                                            │
-    │      Your VPN config is the lock.                          │
-    │      NetworkManager is the mechanism.                      │
-    │      Shroud is the armor around both.                      │
-    │                                                            │
-    │              ┌─────────────────────┐                       │
-    │              │      SHROUD         │                       │
-    │              │   ┌─────────────┐   │                       │
-    │              │   │ NetworkMgr │   │                       │
-    │              │   │ ┌─────────┐ │   │                       │
-    │              │   │ │   VPN   │ │   │                       │
-    │              │   │ └─────────┘ │   │                       │
-    │              │   └─────────────┘   │                       │
-    │              └─────────────────────┘                       │
-    │                                                            │
-    │      We wrap. We protect. We disappear.                    │
-    │                                                            │
-    └────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│                                         │
+│         ┌───────────┐                   │
+│         │  SHROUD   │ ← Protective      │
+│         │ ┌───────┐ │    outer casing   │
+│         │ │ LOCK  │ │                   │
+│         │ │MECHANISM│ ← The vulnerable  │
+│         │ └───────┘ │    internals      │
+│         └───────────┘                   │
+│                                         │
+└─────────────────────────────────────────┘
 ```
+
+That's what Shroud does:
+
+| Lock Shroud | Shroud (This Tool) |
+|-------------|-------------------|
+| Wraps the lock | Wraps NetworkManager |
+| Protects the mechanism | Kill switch protects against leaks |
+| Doesn't replace anything | Works alongside your existing tools |
+| Hardens against attack | Hardens against failures and stale state |
+
+The name works on three levels:
+1. **Concealment** — A VPN shrouds your traffic
+2. **Hardware** — Protective armor around the lock
+3. **Architecture** — We wrap existing tools, we don't replace them
 
 ---
 
@@ -59,6 +67,9 @@ Read the full [Principles](docs/PRINCIPLES.md) if you want to understand what we
 │                                                                  │
 │   ✓ Auto-reconnect that doesn't nag                              │
 │     └─ Falls, gets back up, doesn't complain about it.           │
+│                                                                  │
+│   ✓ LAN access while connected                                   │
+│     └─ Print, share files, access local devices. VPN stays up.   │
 │                                                                  │
 │   ✓ System tray that stays out of your way                       │
 │     └─ Click to connect. Click to disconnect. That's it.         │
@@ -243,42 +254,6 @@ See [Troubleshooting](docs/TROUBLESHOOTING.md) for more.
 
 ---
 
-## Why "Shroud"?
-
-A **lock shroud** is the protective metal casing around a padlock's shackle. It doesn't replace the lock. It protects the lock from attack.
-
-```
-    ┌─────────────────────────────────────────┐
-    │         Physical Lock Shroud            │
-    ├─────────────────────────────────────────┤
-    │                                         │
-    │         ┌───────────────┐               │
-    │         │    SHROUD     │ ← Metal armor │
-    │         │  ┌─────────┐  │               │
-    │         │  │  LOCK   │  │ ← The lock    │
-    │         │  │ SHACKLE │  │   you protect │
-    │         │  └─────────┘  │               │
-    │         └───────────────┘               │
-    │                                         │
-    └─────────────────────────────────────────┘
-```
-
-That's what we do:
-
-| Lock Shroud | Shroud (This Tool) |
-|-------------|-------------------|
-| Wraps the lock | Wraps NetworkManager |
-| Protects the mechanism | Kill switch protects against leaks |
-| Doesn't replace anything | Works alongside your existing tools |
-| Hardens against attack | Hardens against failures and stale state |
-
-The name works on three levels:
-1. **Concealment** — A VPN shrouds your traffic
-2. **Hardware** — Protective armor around the lock
-3. **Architecture** — We wrap existing tools, we don't replace them
-
----
-
 ## Contributing
 
 We'd love your help. But first, read the [Principles](docs/PRINCIPLES.md). Every contribution should align with them.
@@ -312,14 +287,8 @@ See [LICENSE](LICENSE) for details.
 
 ---
 
-```
-    ┌────────────────────────────────────────────────────────────┐
-    │                                                            │
-    │   Shroud: Wrap your VPN in armor, not bloatware.           │
-    │                                                            │
-    │   We protect. We recover. We disappear.                    │
-    │                                                            │
-    │   Your traffic is your business.                           │
-    │                                                            │
-    └────────────────────────────────────────────────────────────┘
-```
+*Shroud: Wrap your VPN in armor, not bloatware.*
+
+*We protect. We recover. We disappear.*
+
+*Your traffic is your business.*
