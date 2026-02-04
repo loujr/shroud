@@ -1040,8 +1040,8 @@ impl KillSwitch {
         args: &[&str],
         stdin_data: Option<&str>,
     ) -> Result<(), KillSwitchError> {
-        use tokio::time::timeout;
         use std::time::Duration;
+        use tokio::time::timeout;
 
         let mut cmd = Command::new("sudo");
         cmd.arg("-n"); // Non-interactive to avoid password prompts
@@ -1054,27 +1054,25 @@ impl KillSwitch {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 
-        let result = timeout(
-            Duration::from_secs(Self::NFT_CMD_TIMEOUT_SECS),
-            async {
-                let mut child = cmd.spawn().map_err(KillSwitchError::Spawn)?;
+        let result = timeout(Duration::from_secs(Self::NFT_CMD_TIMEOUT_SECS), async {
+            let mut child = cmd.spawn().map_err(KillSwitchError::Spawn)?;
 
-                if let Some(data) = stdin_data {
-                    use tokio::io::AsyncWriteExt;
-                    if let Some(mut stdin) = child.stdin.take() {
-                        stdin
-                            .write_all(data.as_bytes())
-                            .await
-                            .map_err(KillSwitchError::Write)?;
-                    }
+            if let Some(data) = stdin_data {
+                use tokio::io::AsyncWriteExt;
+                if let Some(mut stdin) = child.stdin.take() {
+                    stdin
+                        .write_all(data.as_bytes())
+                        .await
+                        .map_err(KillSwitchError::Write)?;
                 }
-
-                child
-                    .wait_with_output()
-                    .await
-                    .map_err(KillSwitchError::Wait)
             }
-        ).await;
+
+            child
+                .wait_with_output()
+                .await
+                .map_err(KillSwitchError::Wait)
+        })
+        .await;
 
         match result {
             Ok(Ok(output)) => {
@@ -1087,7 +1085,10 @@ impl KillSwitch {
             }
             Ok(Err(e)) => Err(e),
             Err(_) => {
-                warn!("nft command timed out after {}s", Self::NFT_CMD_TIMEOUT_SECS);
+                warn!(
+                    "nft command timed out after {}s",
+                    Self::NFT_CMD_TIMEOUT_SECS
+                );
                 Err(KillSwitchError::Command(format!(
                     "nft command timed out after {}s",
                     Self::NFT_CMD_TIMEOUT_SECS
