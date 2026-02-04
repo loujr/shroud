@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Log Timestamps Off by ~15 Days** - Debug log timestamps showed dates roughly 15 days in the future (e.g., Feb 18 instead of Feb 3). The `chrono_lite_timestamp()` function used naive date math (`days / 365`) that ignored leap years, causing ~1 day drift per 4 years since 1970. Fixed by properly iterating through years and months accounting for leap years.
+
 ## [1.8.6] - 2026-02-02
 
 ### Fixed

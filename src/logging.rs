@@ -304,23 +304,62 @@ fn chrono_lite_timestamp() -> String {
     let secs = now.as_secs();
     let millis = now.subsec_millis();
 
-    // Convert to approximate UTC time components
-    let days = secs / 86400;
+    // Convert to UTC time components
     let time_secs = secs % 86400;
     let hours = time_secs / 3600;
     let minutes = (time_secs % 3600) / 60;
     let seconds = time_secs % 60;
 
-    // Approximate year/month/day (good enough for logging)
-    let years = 1970 + days / 365;
-    let day_of_year = days % 365;
-    let month = (day_of_year / 30).min(11) + 1;
-    let day = (day_of_year % 30) + 1;
+    // Calculate year/month/day accounting for leap years
+    let mut remaining_days = (secs / 86400) as i64;
+    let mut year = 1970i32;
+
+    loop {
+        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
+        if remaining_days < days_in_year {
+            break;
+        }
+        remaining_days -= days_in_year;
+        year += 1;
+    }
+
+    // Days in each month (adjusted for leap year)
+    let leap = is_leap_year(year);
+    let days_in_months: [i64; 12] = [
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
+
+    let mut month = 1u32;
+    for days_in_month in days_in_months {
+        if remaining_days < days_in_month {
+            break;
+        }
+        remaining_days -= days_in_month;
+        month += 1;
+    }
+
+    let day = remaining_days + 1;
 
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
-        years, month, day, hours, minutes, seconds, millis
+        year, month, day, hours, minutes, seconds, millis
     )
+}
+
+/// Check if a year is a leap year
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
 /// Initialize logging with the given configuration

@@ -1,6 +1,8 @@
-# Shroud — Core Principles
+# Principles
 
-These principles define how Shroud is built and must be reflected in all documentation, code comments, and design decisions.
+These aren't rules. They're promises.
+
+Every design decision, every line of code, every contribution should align with these values. If something contradicts a principle, either the thing is wrong or the principle needs updating. We should talk about it.
 
 ---
 
@@ -8,7 +10,9 @@ These principles define how Shroud is built and must be reflected in all documen
 
 Shroud is not a VPN. It is the armor around one.
 
-We do not reinvent NetworkManager. We do not rewrite OpenVPN or WireGuard. We do not spawn daemons where none are needed. The Linux ecosystem already solved these problems — our job is to protect and enhance, not to compete.
+We do not reinvent NetworkManager. We do not rewrite OpenVPN or WireGuard. We do not spawn daemons where none are needed.
+
+The Linux ecosystem already solved these problems — our job is to protect and enhance, not to compete.
 
 When you wrap something, you respect its shape. Shroud follows the contours of the tools it surrounds.
 
@@ -56,7 +60,7 @@ Simplicity is not laziness. It is discipline.
 
 ## VI. Speak the System's Language
 
-We use NetworkManager because it is there. We use D-Bus because it is the lingua franca. We use XDG paths because that is where config belongs. We use iptables because it is the current kill switch engine.
+We use NetworkManager because it is there. We use D-Bus because it is the lingua franca. We use XDG paths because that is where config belongs. We use iptables because it is the standard.
 
 Shroud should feel native on any Linux system — not like a foreign ambassador demanding special accommodations.
 
@@ -128,8 +132,16 @@ Ship the shield. Polish it later.
 
 ---
 
-*These principles are not rules. They are promises — to the user, to the system, and to ourselves.*
+## The Question
 
-*When in doubt, ask: "Does this make Shroud more like a shroud, or more like NordVPN?"*
+When in doubt, ask:
 
-*The answer should be obvious.*
+> "Does this make Shroud more like a shroud, or more like NordVPN?"
+
+The answer should be obvious.
+
+---
+
+*These principles are promises — to the user, to the system, and to ourselves.*
+
+*Break them only after serious discussion. Update them only when the world changes.*

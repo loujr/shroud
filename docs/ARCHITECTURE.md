@@ -1,6 +1,10 @@
-# Shroud — System Architecture
+# Architecture
 
-## High-Level Overview
+How Shroud is built. Not the marketing version — the actual structure.
+
+---
+
+## The Big Picture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -9,31 +13,35 @@
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐              │
 │  │   System     │    │     VPN      │    │    Kill      │              │
 │  │    Tray      │◄──►│  Supervisor  │◄──►│   Switch     │              │
-│  │   (ksni)     │    │              │    │ (iptables/   │              │
-│  │             │    │              │    │  nftables)   │              │
+│  │   (ksni)     │    │              │    │  (iptables)  │              │
 │  └──────────────┘    └──────────────┘    └──────────────┘              │
 │         │                   │                   │                        │
-│         │                   │                   │                        │
-│         ▼                   ▼                   ▼                        │
-│  ┌──────────────────────────────────────────────────────┐              │
-│  │                    Tokio Runtime                      │              │
-│  └──────────────────────────────────────────────────────┘              │
+│         └───────────────────┼───────────────────┘                        │
+│                             │                                            │
+│                    ┌────────────────────┐                                │
+│                    │   Tokio Runtime    │                                │
+│                    └────────────────────┘                                │
 │                             │                                            │
 └─────────────────────────────│────────────────────────────────────────────┘
                               │
           ┌───────────────────┼───────────────────┐
           ▼                   ▼                   ▼
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│ NetworkManager│    │    D-Bus     │    │ iptables/nft │
-│ (nmcli: OpenVPN/WireGuard) │    │   (zbus)     │    │    (sudo)    │
+│ NetworkManager│    │    D-Bus     │    │   iptables   │
+│   (nmcli)     │    │   (zbus)     │    │    (sudo)    │
 └──────────────┘    └──────────────┘    └──────────────┘
 ```
 
+Shroud doesn't replace anything. It sits between you and the tools that actually do the work:
+- **NetworkManager** handles VPN connections
+- **iptables/nftables** handles firewall rules
+- **D-Bus** handles system events
+
+We're the glue. And the armor.
+
 ---
 
-## CLI Architecture
-
-Shroud operates in two modes from a single binary:
+## One Binary, Two Modes
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -49,12 +57,13 @@ Shroud operates in two modes from a single binary:
 │   └─────────────┘             └─────────────┘               │
 │         ▲                                                   │
 │         │ Unix socket: $XDG_RUNTIME_DIR/shroud.sock         │
-│         │                                                   │
+│                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-- **Daemon mode** (`shroud`): Starts the tray application, listens for CLI commands
-- **Client mode** (`shroud <command>`): Sends command to running daemon and exits
+Same binary. If you run `shroud` with no arguments, you get the daemon with the tray icon. If you run `shroud <command>`, you get a one-shot client that talks to the running daemon.
+
+This is Principle VIII: One Binary, One Purpose.
 
 ---
 
@@ -62,249 +71,159 @@ Shroud operates in two modes from a single binary:
 
 ```
 src/
-├── main.rs           # Entry point, VpnSupervisor, main event loop
-├── cli/
-│   ├── mod.rs        # Module exports
-│   ├── args.rs       # Command-line argument parsing (clap)
-│   ├── handlers.rs   # CLI command handlers
-│   └── help.rs       # Custom help generation
-├── logging.rs        # Structured logging setup
-├── config/
-│   ├── mod.rs        # Module exports
-│   └── settings.rs   # Config struct, ConfigManager, TOML persistence
-├── dbus/
-│   ├── mod.rs        # Module exports
-│   └── monitor.rs    # NmMonitor, D-Bus signal subscription
-├── health/
-│   ├── mod.rs        # Module exports
-│   └── checker.rs    # HealthChecker, HTTP/ping connectivity tests
-├── import/
-│   ├── mod.rs         # Import module exports
-│   ├── detector.rs    # Config type detection (WireGuard/OpenVPN)
-│   ├── validator.rs   # Config validation
-│   ├── importer.rs    # nmcli import wrapper + bulk import
-│   └── types.rs       # Import options and JSON types
-├── ipc/
-│   ├── mod.rs        # Module exports
-│   ├── protocol.rs   # IPC types (IpcCommand, IpcResponse)
-│   ├── server.rs     # Unix Domain Socket Server
-│   └── client.rs     # Unix Domain Socket Client
-├── killswitch/
-│   ├── mod.rs        # Module exports
-│   └── firewall.rs   # KillSwitch, iptables/nftables rule generation
-├── nm/
-│   ├── mod.rs        # Module exports
-│   ├── client.rs     # nmcli wrappers (connect, disconnect, list)
-│   └── connections.rs # VPN type detection (wireguard/openvpn)
-├── state/
-│   ├── mod.rs        # Module exports
-│   ├── machine.rs    # StateMachine, event handling, transitions
-│   └── types.rs      # VpnState, Event, TransitionReason enums
-├── supervisor/       
-│   ├── mod.rs        # Module exports
-│   ├── event_loop.rs # Main event loop logic
-│   ├── handlers.rs   # Supervisor command handlers
-│   └── reconnect.rs  # Reconnection strategy
-└── tray/
-    ├── mod.rs        # Module exports
-    ├── service.rs    # VpnTray, SharedState, menu construction
-    └── icons.rs      # Icon generation (colored status indicators)
+├── main.rs              # Entry point, mode detection
+├── logging.rs           # Structured logging
+├── mode.rs              # Desktop vs headless detection
+├── autostart.rs         # XDG autostart handling
+│
+├── cli/                 # Command-line interface
+│   ├── args.rs          # Argument parsing
+│   ├── handlers.rs      # Command execution
+│   ├── help.rs          # Help text
+│   ├── import.rs        # Config import
+│   ├── install.rs       # Installation helpers
+│   └── validation.rs    # Input validation
+│
+├── config/              # Configuration
+│   └── settings.rs      # Config struct, TOML persistence
+│
+├── daemon/              # Single instance
+│   └── lock.rs          # Lock file handling
+│
+├── dbus/                # System events
+│   └── monitor.rs       # NmMonitor, D-Bus signals
+│
+├── gateway/             # VPN router mode
+│   ├── detect.rs        # Interface detection
+│   ├── firewall.rs      # NAT/forwarding rules
+│   ├── forwarding.rs    # IP forwarding
+│   ├── nat.rs           # MASQUERADE rules
+│   └── status.rs        # Gateway status
+│
+├── headless/            # Server mode
+│   ├── runtime.rs       # Headless runtime
+│   └── systemd.rs       # Systemd integration
+│
+├── health/              # Connection monitoring
+│   └── checker.rs       # Health checks
+│
+├── import/              # VPN config import
+│   ├── detector.rs      # WireGuard/OpenVPN detection
+│   ├── importer.rs      # nmcli import wrapper
+│   ├── types.rs         # Import types
+│   └── validator.rs     # Config validation
+│
+├── ipc/                 # Inter-process communication
+│   ├── client.rs        # Unix socket client
+│   ├── protocol.rs      # Command/response types
+│   └── server.rs        # Unix socket server
+│
+├── killswitch/          # Firewall rules
+│   ├── boot.rs          # Boot-time kill switch
+│   ├── cleanup.rs       # Rule cleanup
+│   ├── firewall.rs      # iptables/nftables rules
+│   ├── paths.rs         # Binary detection
+│   └── sudo_check.rs    # Privilege verification
+│
+├── nm/                  # NetworkManager
+│   ├── client.rs        # nmcli wrappers
+│   └── connections.rs   # Connection handling
+│
+├── state/               # State machine
+│   ├── machine.rs       # Transitions
+│   └── types.rs         # VpnState, Event enums
+│
+├── supervisor/          # Core event loop
+│   ├── event_loop.rs    # Main loop
+│   ├── handlers.rs      # Command handlers
+│   ├── reconnect.rs     # Reconnection logic
+│   └── state_sync.rs    # State synchronization
+│
+└── tray/                # System tray
+    ├── icons.rs         # Icon generation
+    └── service.rs       # Tray menu, ksni integration
 ```
 
 ---
 
-## Error Handling Pattern
+## The State Machine
 
-The application uses specific error types for each domain, leveraging the `thiserror` crate for structured error handling.
-
-| Module | Error Type | Description |
-|--------|------------|-------------|
-| `config` | `ConfigError` | Configuration loading, parsing, and saving errors |
-| `ipc` | `ClientError` | IPC client connection and communication errors |
-| `ipc` | `ServerError` | IPC server binding and acceptance errors |
-| `killswitch` | `KillSwitchError` | Firewall/iptables operation errors |
-| `nm` | `NmError` | NetworkManager interaction errors |
-
-Errors are propagated up to the `VpnSupervisor` or CLI handlers, where they are logged or displayed to the user.
-
----
-
-## Data Flow
-
-### Command Flow (User → VPN)
+This is the source of truth. If the state machine says you're connected, you're connected. If it says you're disconnected, you're disconnected. No guessing.
 
 ```
-┌────────────┐     VpnCommand      ┌──────────────┐
-│  Tray Menu │ ─────────────────► │  Supervisor  │
-└────────────┘    (mpsc channel)   └──────────────┘
+    Disconnected ──────► Connecting ──────► Connected
+         ▲                    │                 │
+         │                    │                 │
+         │                    ▼                 ▼
+         │                 Failed           Degraded
+         │                    │                 │
+         │                    │                 │
+         └────────────────────┴────► Reconnecting
                                           │
                                           ▼
-                                   ┌──────────────┐
-                                   │ StateMachine │
-                                   └──────────────┘
-                                          │
-                                          ▼
-                                   ┌──────────────┐
-                                   └──────────────┘
-
-
-```
-┌────────────┐     Config Path      ┌──────────────┐     nmcli import     ┌──────────────┐
-│    CLI     │ ───────────────────► │ Import Module│ ───────────────────► │ NetworkManager│
-│ shroud import│   (file/dir)       │ detector/    │   (wireguard/openvpn)│  connections  │
-└────────────┘                       │ validator    │                      └──────────────┘
+                                      Connected
 ```
 
-- Auto-detects WireGuard vs OpenVPN by extension + content
-- Validates required fields before import
-- Supports bulk directory imports (optional recursion)
-```
+### Transitions
 
-### Event Flow (NetworkManager → Supervisor)
+| From | Event | To | Why |
+|------|-------|-----|-----|
+| Disconnected | UserEnable | Connecting | User clicked connect |
+| Disconnected | NmVpnUp | Connected | External change (nm-applet, etc) |
+| Connecting | NmVpnUp | Connected | Connection established |
+| Connecting | Timeout | Reconnecting | Took too long |
+| Connecting | NmVpnDown | Reconnecting | Failed, try again |
+| Connected | HealthDegraded | Degraded | High latency or packet loss |
+| Connected | NmVpnDown | Reconnecting | Connection dropped |
+| Degraded | HealthDead | Reconnecting | Connection gone |
+| Degraded | HealthOk | Connected | Recovered |
+| Reconnecting | NmVpnUp | Connected | Back online |
+| Reconnecting | Timeout | Failed | Gave up |
+| Failed | UserEnable | Connecting | User retry |
+| Any | UserDisable | Disconnected | User clicked disconnect |
 
-```
-┌────────────────┐     NmEvent       ┌──────────────┐
-│  D-Bus Monitor │ ───────────────► │  Supervisor  │
-└────────────────┘   (mpsc channel)  └──────────────┘
-                                           │
-                                           ▼
-                                    ┌──────────────┐
-                                    │ StateMachine │
-                                    └──────────────┘
-                                           │
-                                           ▼
-                                    ┌──────────────┐
-                                    │ SharedState  │◄──── Tray reads this
-                                    └──────────────┘
-```
+Every transition is logged. Ambiguity is a bug.
 
 ---
 
-## State Machine
+## Kill Switch Rules
 
-### States
-
-```
-┌──────────────┐
-│ Disconnected │◄─────────────────────────────────────┐
-└──────────────┘                                      │
-       │                                              │
-       │ UserEnable                                   │
-       ▼                                              │
-┌──────────────┐                                      │
-│  Connecting  │────────────────┐                     │
-                                             limit rate 1/second log prefix "SHROUD-KS-DROP" drop
-       │                        │                     │
-       │ NmVpnUp                │ Timeout             │
-       ▼                        ▼                     │
-┌──────────────┐         ┌──────────────┐             │
-│  Connected   │────────►│ Reconnecting │─────────────┤
-└──────────────┘         └──────────────┘             │
-       │                        │                     │
-       │ HealthDegraded         │ Retries exhausted   │
-       ▼                        ▼                     │
-┌──────────────┐         ┌──────────────┐             │
-│   Degraded   │────────►│    Failed    │─────────────┘
-└──────────────┘         └──────────────┘
-       │                        │
-       │ HealthOk               │ UserEnable
-       ▼                        │
-┌──────────────┐                │
-│  Connected   │◄───────────────┘
-└──────────────┘
-```
-
-### Transition Table
-
-| Current State | Event | Next State | Reason |
-|---------------|-------|------------|--------|
-| Disconnected | UserEnable | Connecting | user_requested |
-| Disconnected | NmVpnUp | Connected | external_change |
-| Connecting | NmVpnUp | Connected | vpn_established |
-| Connecting | Timeout | Reconnecting | retrying |
-| Connecting | NmVpnDown | Reconnecting | retrying |
-| Connected | HealthDegraded | Degraded | health_check_failed |
-| Connected | NmVpnDown | Reconnecting | vpn_lost |
-| Degraded | HealthDead | Reconnecting | health_check_dead |
-| Degraded | HealthOk | Connected | vpn_reestablished |
-| Degraded | NmVpnDown | Reconnecting | vpn_lost |
-| Reconnecting | NmVpnUp | Connected | vpn_reestablished |
-| Reconnecting | Timeout | Failed | retries_exhausted |
-| Failed | UserEnable | Connecting | user_requested |
-| * | UserDisable | Disconnected | user_requested |
-
----
-
-## Kill Switch Architecture
-
-### OpenVPN vs WireGuard Behavior
-
-Shroud applies the same kill switch policy to both OpenVPN and WireGuard, but the tunnel interface and endpoint handling differ:
-
-- **OpenVPN (tun/tap)**
-       - Tunnel interfaces: `tun*` or `tap*`
-       - Kill switch allows traffic only through `tun*`/`tap*` plus the VPN server IP detected from NetworkManager
-- **WireGuard (wg)**
-       - Tunnel interfaces: `wg*`
-       - Kill switch allows traffic only through `wg*` plus the WireGuard endpoint IP detected from NetworkManager
-
-The rules are interface-driven, so the primary difference is which tunnel interface prefix is permitted (`tun*/tap*` vs `wg*`). Server/endpoint IP allowlisting uses NetworkManager-reported connection details for each VPN type.
-
-### iptables Chain Structure
-
-Shroud prefers iptables, but falls back to nftables and retries with
-iptables-legacy when the nft-based backend reports netlink/cache errors. Firewall
-binaries are discovered at runtime from `/usr/bin` and `/usr/sbin` to avoid
-distro-specific path issues.
+The kill switch creates an iptables chain that drops everything except what we explicitly allow:
 
 ```
 Chain SHROUD_KILLSWITCH (policy DROP)
-       # 1. Loopback - always allowed
-       -o lo -j ACCEPT
 
-       # 2. Established connections
-       -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    # 1. Loopback - always allowed
+    -o lo -j ACCEPT
 
-       # 3. VPN tunnel interfaces
-       -o tun+ -j ACCEPT
-       -o tap+ -j ACCEPT
-       -o wg+ -j ACCEPT
+    # 2. Established connections
+    -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
-       # 4. DHCP
-       -p udp --dport 67 -j ACCEPT
-       -p udp --sport 68 -j ACCEPT
-        
-       # 5. DNS (based on dns_mode)
-       # tunnel/strict: allow 53 only via tun*/tap*/wg*, drop other 53, block 853 (DoT)
-       # localhost: allow 127.0.0.0/8 and ::1, drop other 53, block 853
-       # any: allow 53 to any destination (legacy)
+    # 3. VPN tunnel interfaces
+    -o tun+ -j ACCEPT
+    -o tap+ -j ACCEPT
+    -o wg+ -j ACCEPT
 
-       # 5b. DoH blocking (optional)
-       # block_doh=true: drop TCP/443 to known DoH provider IPs
-        
-        # 6. Local network
-        ip daddr 192.168.0.0/16 accept
-        ip daddr 10.0.0.0/8 accept
-        ip daddr 172.16.0.0/12 accept
-        
-        # 7. VPN tunnel interfaces
-        oifname "tun*" accept
-        oifname "tap*" accept
-        oifname "wg*" accept
-        
-        # 8. VPN server IPs (auto-detected from NM)
-        ip daddr <VPN_SERVER_IP> accept
-        
-        # 9. Default drop with logging
-        limit rate 1/second log prefix "[SHROUD-KS DROP] " drop
-    }
-    
-    chain input {
-        type filter hook input priority 0; policy accept;
-        # Input is permissive - kill switch focuses on output leaks
-    }
-}
+    # 4. DHCP
+    -p udp --dport 67 -j ACCEPT
+    -p udp --sport 68 -j ACCEPT
+
+    # 5. Local network
+    -d 192.168.0.0/16 -j ACCEPT
+    -d 10.0.0.0/8 -j ACCEPT
+    -d 172.16.0.0/12 -j ACCEPT
+
+    # 6. VPN server IPs (auto-detected)
+    -d <VPN_SERVER_IP> -j ACCEPT
+
+    # 7. DNS rules (based on dns_mode)
+    # ...
+
+    # 8. Drop everything else
+    -j DROP
 ```
+
+Shroud prefers iptables, falls back to nftables if iptables has issues, and falls back to iptables-legacy if nftables fails. Binary paths are detected at runtime.
 
 ---
 
@@ -318,17 +237,16 @@ Chain SHROUD_KILLSWITCH (policy DROP)
 │  │   Main Task         │  │   D-Bus Monitor     │              │
 │  │   (VpnSupervisor)   │  │   (NmMonitor)       │              │
 │  │                     │  │                     │              │
-│  │  tokio::select! {   │  │  while let Some(    │              │
-│  │    rx.recv() =>     │  │    msg) = stream    │              │
-│  │    dbus_rx.recv() =>│◄─│    .next() {        │              │
-│  │    poll_tick =>     │  │      tx.send(event) │              │
-│  │    health_tick =>   │  │  }                  │              │
-│  │  }                  │  │                     │              │
-│  └─────────────────────┘  └─────────────────────┘              │
+│  │  tokio::select! {   │  │  Watches NM signals │              │
+│  │    command_rx =>    │◄─│  Sends events       │              │
+│  │    dbus_rx =>       │  │                     │              │
+│  │    poll_tick =>     │  └─────────────────────┘              │
+│  │    health_tick =>   │                                        │
+│  │  }                  │                                        │
+│  └─────────────────────┘                                        │
 │                                                                  │
 │  ┌─────────────────────┐                                        │
-│  │   Tray Thread       │  (separate OS thread for ksni)        │
-│  │   (std::thread)     │                                        │
+│  │   Tray Thread       │  (std::thread, not tokio)             │
 │  │                     │                                        │
 │  │  Reads SharedState  │                                        │
 │  │  via Arc<RwLock<>>  │                                        │
@@ -336,68 +254,119 @@ Chain SHROUD_KILLSWITCH (policy DROP)
 └────────────────────────────────────────────────────────────────┘
 ```
 
-### Synchronization Primitives
+The tray runs in a separate OS thread because ksni requires it. Communication happens through channels and shared state protected by locks.
 
-| Primitive | Purpose |
-|-----------|---------|
-| `mpsc::channel<VpnCommand>` | Tray → Supervisor commands |
-| `mpsc::channel<NmEvent>` | D-Bus monitor → Supervisor events |
-| `Arc<RwLock<SharedState>>` | Supervisor → Tray state sync |
-| `Arc<Mutex<TrayHandle>>` | Tray handle for updates |
+---
+
+## Data Flow
+
+### Commands: User → VPN
+
+```
+User clicks "Connect"
+        │
+        ▼
+┌───────────────┐     VpnCommand::Connect     ┌──────────────┐
+│   Tray Menu   │ ────────────────────────────►│  Supervisor  │
+└───────────────┘        (mpsc channel)        └──────────────┘
+                                                      │
+                                                      ▼
+                                               ┌──────────────┐
+                                               │ StateMachine │
+                                               └──────────────┘
+                                                      │
+                                                      ▼
+                                               ┌──────────────┐
+                                               │  nm::connect │
+                                               └──────────────┘
+                                                      │
+                                                      ▼
+                                               ┌──────────────┐
+                                               │   nmcli      │
+                                               └──────────────┘
+```
+
+### Events: NetworkManager → Supervisor
+
+```
+NM changes VPN state
+        │
+        ▼
+┌───────────────┐        NmEvent::VpnUp        ┌──────────────┐
+│   D-Bus       │ ────────────────────────────►│  Supervisor  │
+│   Monitor     │        (mpsc channel)        └──────────────┘
+└───────────────┘                                     │
+                                                      ▼
+                                               ┌──────────────┐
+                                               │ StateMachine │
+                                               └──────────────┘
+                                                      │
+                                                      ▼
+                                               ┌──────────────┐
+                                               │ SharedState  │◄── Tray reads this
+                                               └──────────────┘
+```
 
 ---
 
 ## File Locations
 
-| File | Path | Purpose |
-|------|------|---------|
-| Config | `~/.config/shroud/config.toml` | User preferences |
-| Lock | `$XDG_RUNTIME_DIR/shroud.lock` | Single instance lock |
-| Logs | `~/.local/share/shroud/` | Log files (when enabled) |
-| Autostart | `~/.config/autostart/shroud.desktop` | XDG autostart |
+| Purpose | Path |
+|---------|------|
+| Config | `~/.config/shroud/config.toml` |
+| Lock file | `$XDG_RUNTIME_DIR/shroud.lock` |
+| Socket | `$XDG_RUNTIME_DIR/shroud.sock` |
+| Logs | `~/.local/share/shroud/debug.log` |
+| Autostart | `~/.config/autostart/shroud.desktop` |
 
 ---
 
-## Key Design Decisions
+## Design Decisions
 
-### 1. nmcli over D-Bus for Commands
+These aren't accidents. They're choices.
 
-**Decision**: Use nmcli subprocess calls for VPN connect/disconnect, D-Bus only for events.
+### nmcli over D-Bus for commands
 
-**Rationale**: nmcli handles all the edge cases (secrets, prompts, plugins). D-Bus VPN control is complex and varies by plugin. Principle V: Complexity Is Debt.
+We use nmcli subprocess calls for VPN connect/disconnect, D-Bus only for events.
 
-### 2. Polling as Fallback
+**Why:** nmcli handles all the edge cases — secrets, prompts, plugins. D-Bus VPN control is complex and varies by plugin. Principle V: Complexity Is Debt.
 
-**Decision**: Poll NetworkManager state every 2 seconds even with D-Bus events.
+### Polling as fallback
 
-**Rationale**: D-Bus signals can be missed (race conditions, connection drops). Polling catches desync. Belt and suspenders.
+We poll NetworkManager every 2 seconds even with D-Bus events.
 
-### 3. Grace Period for Disconnects
+**Why:** D-Bus signals can be missed (race conditions, connection drops). Polling catches desync. Belt and suspenders.
 
-**Decision**: 5-second grace period after intentional disconnect before processing D-Bus events.
+### Kill switch stays on when VPN drops
 
-**Rationale**: Prevents false "connection dropped" detection when user deliberately disconnects.
+The kill switch remains active when VPN unexpectedly disconnects.
 
-### 4. Kill Switch Stays Enabled on VPN Drop
+**Why:** That's the whole point. Traffic should be blocked until VPN reconnects. User can manually disable if needed.
 
-**Decision**: Kill switch remains active when VPN unexpectedly disconnects.
+### Single binary
 
-**Rationale**: This IS the kill switch behavior. Traffic should be blocked until VPN reconnects. User can manually disable if needed.
+No daemon-client split. One process.
 
-### 5. Single Binary Architecture
+**Why:** Principle VIII. Simpler deployment, simpler debugging, fewer failure modes. The tray IS the application.
 
-**Decision**: No daemon, no IPC, single process.
+### Atomic config writes
 
-**Rationale**: Principle VIII. Simpler deployment, simpler debugging, fewer failure modes. The tray IS the application.
+Write config to temp file, then rename.
 
-### 6. Atomic Config Writes
+**Why:** Prevents corruption if crash occurs during write. Config is user data.
 
-**Decision**: Write config to temp file, then rename.
+### VPN server IP auto-detection
 
-**Rationale**: Prevents corruption if crash occurs during write. Config is precious user data.
+Parse VPN connections from NetworkManager to whitelist server IPs in kill switch.
 
-### 7. VPN Server IP Auto-Detection
+**Why:** VPN needs to reach its server even when kill switch is on. User shouldn't have to manually configure this.
 
-**Decision**: Parse all VPN connections from NetworkManager to whitelist server IPs in kill switch.
+---
 
-**Rationale**: Allows VPN to establish connection even when kill switch is enabled. User doesn't need to manually configure server IPs.
+## The Philosophy
+
+Architecture should be boring. Predictable. Understandable.
+
+If you can't trace a bug from symptom to cause by reading the code, the architecture has failed. Every component should do one thing. Every data flow should be obvious.
+
+We're not building a cathedral. We're building a lock shroud. It should be simple enough to trust.

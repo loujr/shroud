@@ -1,22 +1,43 @@
-# Shroud Headless Mode
+# Headless Mode
 
-Run Shroud as a system service on servers without a GUI.
+No GUI? No problem.
 
-## Overview
+Headless mode runs Shroud as a system service on servers, containers, or any system without a desktop. Same protection, no tray icon required.
 
-Headless mode provides:
-- **No GUI dependencies** — No tray icon, no desktop notifications
-- **Systemd integration** — Runs as a system service with watchdog support
-- **Auto-connect** — Connects to VPN automatically on boot
-- **Boot kill switch** — Blocks all traffic until VPN connects
-- **Infinite reconnect** — Never gives up trying to reconnect
+---
+
+## What You Get
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                      HEADLESS MODE                             │
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
+│   ✓ Systemd integration                                       │
+│     └─ Runs as a proper service. Starts on boot.              │
+│                                                                │
+│   ✓ Auto-connect on startup                                   │
+│     └─ VPN connects before anything else can leak.            │
+│                                                                │
+│   ✓ Boot kill switch                                          │
+│     └─ Traffic blocked until VPN is up. No window of exposure.│
+│                                                                │
+│   ✓ Infinite reconnect                                        │
+│     └─ Never gives up. Servers don't get to quit.             │
+│                                                                │
+│   ✓ Full CLI access                                           │
+│     └─ Everything works over SSH. No desktop needed.          │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+```
+
+---
 
 ## Quick Start
 
 ### 1. Install
 
 ```bash
-# Clone and build
 git clone https://github.com/loujr/shroud
 cd shroud
 cargo build --release
@@ -25,7 +46,7 @@ cargo build --release
 sudo ./setup.sh --headless
 ```
 
-### 2. Import VPN Connection
+### 2. Import a VPN Connection
 
 ```bash
 # OpenVPN
@@ -34,7 +55,7 @@ sudo nmcli connection import type openvpn file /path/to/your-vpn.ovpn
 # WireGuard
 sudo nmcli connection import type wireguard file /path/to/wg0.conf
 
-# List connections to find the name
+# Check the connection name
 nmcli connection show
 ```
 
@@ -45,136 +66,222 @@ Edit `/etc/shroud/config.toml`:
 ```toml
 [headless]
 auto_connect = true
-startup_server = "your-vpn-connection-name"  # <-- Change this!
+startup_server = "your-vpn-connection-name"  # ← Change this!
 kill_switch_on_boot = true
 
 [killswitch]
 allow_lan = true
 ```
 
+That `startup_server` value must match exactly what `nmcli connection show` displays.
+
 ### 4. Start
 
 ```bash
-# Enable and start
+# Enable and start the service
 sudo systemctl enable shroud
 sudo systemctl start shroud
 
-# Check status
+# Check it's working
 sudo systemctl status shroud
 shroud status
 ```
 
-## Configuration Reference
+You're done. The server is protected.
 
-### [headless] Section
+---
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `auto_connect` | `false` | Connect to VPN on startup |
-| `startup_server` | `null` | VPN connection name to connect to |
-| `max_reconnect_attempts` | `0` | Max retries (0 = infinite) |
-| `reconnect_delay_secs` | `5` | Initial delay between retries |
-| `kill_switch_on_boot` | `true` | Enable kill switch before VPN connects |
-| `require_kill_switch` | `true` | Fail startup if kill switch fails |
-| `persist_kill_switch` | `false` | Keep kill switch after Shroud exits |
+## How It Works
 
-### [killswitch] Section
+When Shroud starts in headless mode:
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `allow_lan` | `true` | Allow local network traffic |
+1. **Boot kill switch activates** — All traffic blocked except loopback and LAN
+2. **VPN connects** — Using the connection named in `startup_server`
+3. **Kill switch transfers** — Boot rules replaced with normal kill switch rules
+4. **Monitoring begins** — Health checks, auto-reconnect, the usual
+
+If the VPN drops, Shroud reconnects. If Shroud crashes, systemd restarts it. If the server reboots, everything comes back up automatically.
+
+The goal: you configure it once and forget about it.
+
+---
+
+## Configuration
+
+All headless options live in the `[headless]` section of your config:
+
+```toml
+[headless]
+# Connect to VPN when Shroud starts
+auto_connect = true
+
+# Which VPN to connect to
+startup_server = "mullvad-us1"
+
+# Block all traffic until VPN connects
+kill_switch_on_boot = true
+
+# Fail to start if kill switch can't be enabled
+require_kill_switch = true
+
+# Keep kill switch active even after Shroud exits
+persist_kill_switch = false
+
+# Never stop trying to reconnect (0 = infinite)
+max_reconnect_attempts = 0
+
+# Initial delay between reconnection attempts
+reconnect_delay_secs = 5
+```
+
+### Config Location
+
+| Mode | Path |
+|------|------|
+| Desktop | `~/.config/shroud/config.toml` |
+| Headless (root) | `/etc/shroud/config.toml` |
+
+---
 
 ## Systemd Commands
 
 ```bash
-# Start/stop/restart
+# Start the service
 sudo systemctl start shroud
+
+# Stop the service
 sudo systemctl stop shroud
+
+# Restart the service
 sudo systemctl restart shroud
 
-# Enable/disable auto-start
+# Enable auto-start on boot
 sudo systemctl enable shroud
+
+# Disable auto-start
 sudo systemctl disable shroud
 
-# View status
+# Check status
 sudo systemctl status shroud
-
-# View logs
-journalctl -u shroud -f           # Follow logs
-journalctl -u shroud --since today # Today's logs
-journalctl -u shroud -p err        # Errors only
 ```
+
+### Viewing Logs
+
+```bash
+# Follow logs live
+journalctl -u shroud -f
+
+# Today's logs
+journalctl -u shroud --since today
+
+# Errors only
+journalctl -u shroud -p err
+
+# Last 50 lines
+journalctl -u shroud -n 50
+```
+
+---
 
 ## CLI Commands
 
-All standard Shroud commands work in headless mode:
+Everything works over SSH. No GUI required.
 
 ```bash
-shroud status          # Connection status
-shroud connect <name>  # Connect to VPN
-shroud disconnect      # Disconnect
-shroud ks status       # Kill switch status
-shroud gateway on      # Enable gateway mode
-shroud doctor          # Diagnose issues
+shroud status              # Connection status
+shroud connect <name>      # Connect to VPN
+shroud disconnect          # Disconnect
+shroud switch <name>       # Switch VPNs
+shroud list                # Available VPNs
+shroud ks status           # Kill switch status
+shroud ks on               # Enable kill switch
+shroud ks off              # Disable kill switch
+shroud gateway on          # Enable gateway mode
+shroud doctor              # Run diagnostics
+shroud debug on            # Enable debug logging
+shroud debug tail          # Follow logs
 ```
+
+---
 
 ## Troubleshooting
 
 ### Service won't start
 
 ```bash
-# Check for errors
+# Check the logs
 journalctl -u shroud -n 50
 
 # Common issues:
-# - startup_server not set in config
-# - VPN connection doesn't exist (check: nmcli connection show)
+# - startup_server not set or misspelled
+# - VPN connection doesn't exist in NM
 # - NetworkManager not running
 ```
 
 ### VPN won't connect
 
 ```bash
-# Check NetworkManager
+# Is NetworkManager running?
 sudo systemctl status NetworkManager
 
-# Test connection manually
+# Does the connection exist?
+nmcli connection show | grep vpn
+
+# Test the connection directly
 nmcli connection up "your-vpn-name"
 
-# Check shroud logs
+# Check Shroud logs
 journalctl -u shroud -f
 ```
 
-### Kill switch blocking everything
+### Locked out by kill switch
 
+If the boot kill switch blocks SSH:
+
+**If you have console access:**
 ```bash
-# Check kill switch status
-shroud ks status
-
-# Disable temporarily
+# Disable the kill switch
 shroud ks off
 
-# Check if boot kill switch is stuck
-sudo iptables -L SHROUD_BOOT_KS
-
-# Manual cleanup if needed
+# Or manually
 sudo iptables -D OUTPUT -j SHROUD_BOOT_KS
 sudo iptables -F SHROUD_BOOT_KS
 sudo iptables -X SHROUD_BOOT_KS
 ```
 
-## Security Notes
+**Prevention:** Make sure `allow_lan = true` in your config so SSH over LAN keeps working.
 
-- Headless mode runs as root (required for iptables)
-- Boot kill switch blocks ALL traffic until VPN connects
-- If `persist_kill_switch = true`, traffic stays blocked after Shroud exits
-- Config file permissions should be 600 (owner read/write only)
+---
 
-## Uninstall
+## Security Considerations
+
+- **Runs as root** — Required for iptables. This is intentional.
+- **Boot kill switch** — Blocks ALL traffic until VPN connects. This includes SSH unless you're on the LAN.
+- **persist_kill_switch** — If set to `true`, traffic stays blocked even after Shroud exits. Use carefully.
+- **Config permissions** — Should be 600 (owner read/write only).
+
+---
+
+## Uninstalling
 
 ```bash
+# Stop and disable the service
+sudo systemctl stop shroud
+sudo systemctl disable shroud
+
+# Run uninstall
 sudo ./setup.sh --uninstall
 
 # Remove config and state (optional)
 sudo rm -rf /etc/shroud /var/lib/shroud
 ```
+
+---
+
+## The Philosophy
+
+A server VPN should be invisible. Configure it once, forget it exists, trust that it's working.
+
+If you're SSHing into your server to babysit the VPN, we've failed. Headless mode is designed so you never have to think about it.
+
+It connects. It stays connected. It reconnects if it falls. That's the whole job.

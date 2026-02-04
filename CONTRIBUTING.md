@@ -1,34 +1,50 @@
 # Contributing to Shroud
 
-Thank you for your interest in contributing to Shroud! This document provides guidelines for contributors.
+You want to help. We appreciate that.
 
-## Before You Start
+Before you write any code, read the [Principles](docs/PRINCIPLES.md). Every contribution should align with them. If your idea contradicts a principle, we should talk about it first — either the idea needs adjusting, or maybe the principle does.
 
-**Read [PRINCIPLES.md](docs/PRINCIPLES.md) first.** Every contribution must align with Shroud's core principles:
+---
 
-| Principle | Summary |
-|-----------|---------|
-| I. Wrap, Don't Replace | We enhance NetworkManager, not replace it |
-| II. Fail Loud, Recover Quiet | Errors visible, recovery graceful |
-| III. Leave No Trace | Clean up all firewall rules on exit |
-| IV. The User Is Not the Enemy | No telemetry, no phoning home |
-| V. Complexity Is Debt | Every dependency must justify itself |
-| VI. Speak the System's Language | Use systemd, D-Bus, XDG natively |
-| VII. State Is Sacred | State machine is the source of truth |
-| VIII. One Binary, One Purpose | Single binary for daemon and CLI |
-| IX. Respect the Disconnect | Don't auto-connect without permission |
-| X. Built for the Quiet Majority | Just works, no wiki required |
-| XI. Security Through Clarity | Auditable rules, explainable behavior |
-| XII. We Ship, Then Improve | Working code today beats perfect code never |
+## The Short Version
+
+1. Read the [Principles](docs/PRINCIPLES.md)
+2. Fork the repo
+3. Make your changes
+4. Run `cargo fmt && cargo clippy -- -D warnings && cargo test`
+5. Submit a PR
+
+---
+
+## The Principles, Summarized
+
+These aren't just nice words. They're the filter for every decision.
+
+| Principle | What It Means For Contributions |
+|-----------|--------------------------------|
+| **Wrap, Don't Replace** | Don't reinvent NetworkManager. Enhance it. |
+| **Fail Loud, Recover Quiet** | Errors must be visible. Recovery must be seamless. |
+| **Leave No Trace** | If Shroud stops, the system should be clean. |
+| **The User Is Not the Enemy** | No telemetry. No analytics. No phoning home. |
+| **Complexity Is Debt** | Every dependency needs a damn good reason. |
+| **Speak the System's Language** | Use systemd, D-Bus, XDG. Be a native citizen. |
+| **State Is Sacred** | The state machine is truth. Don't work around it. |
+| **One Binary, One Purpose** | Keep it simple. One executable. |
+| **Respect the Disconnect** | Sometimes the user wants to be offline. That's fine. |
+| **Built for the Quiet Majority** | Make it work for people who won't file bug reports. |
+| **Security Through Clarity** | Auditable. Explainable. No magic. |
+| **We Ship, Then Improve** | Working code today beats perfect code never. |
+
+---
 
 ## Development Setup
 
-### Prerequisites
+### Dependencies
 
-**Arch Linux:**
+**Arch:**
 ```bash
 sudo pacman -S networkmanager networkmanager-openvpn networkmanager-wireguard \
-    iptables nftables rust cargo
+    iptables nftables rust
 ```
 
 **Debian/Ubuntu:**
@@ -43,72 +59,110 @@ sudo dnf install NetworkManager NetworkManager-openvpn NetworkManager-wireguard 
     iptables nftables rust cargo
 ```
 
-### Build and Run
+### Build and Test
 
 ```bash
-# Clone
 git clone https://github.com/loujr/shroud.git
 cd shroud
 
-# Build
-cargo build
+cargo build           # Debug build
+cargo test            # Run tests
+cargo clippy          # Lint
+cargo fmt             # Format
 
-# Run tests
-cargo test
-
-# Run with debug logging
-RUST_LOG=debug cargo run
-
-# Build release
-cargo build --release
+RUST_LOG=debug cargo run   # Run with debug logging
 ```
 
-## Code Quality Requirements
+See [Development Setup](docs/DEVELOPMENT.md) for the full guide.
 
-All contributions must pass these checks:
+---
+
+## Before You Submit
+
+Every PR must pass:
 
 ```bash
-# Format code
-cargo fmt
-
-# No clippy warnings (required)
-cargo clippy -- -D warnings
-
-# All tests pass (required)
-cargo test
-
-# Security audit (recommended)
-cargo audit
+cargo fmt             # Format code
+cargo clippy -- -D warnings  # No lint warnings
+cargo test            # All tests pass
 ```
 
-## Pull Request Process
+We also recommend:
+
+```bash
+cargo audit           # Check for vulnerable dependencies
+```
+
+These run in CI. Save yourself the round trip.
+
+---
+
+## What We Want
+
+### Great Contributions
+
+- **Bug fixes** — Especially with tests
+- **Documentation** — Typos, clarity, examples
+- **Performance** — With benchmarks showing the improvement
+- **Cross-distro fixes** — Arch, Debian, Fedora, openSUSE
+- **Security hardening** — Always welcome
+
+### Discuss First
+
+Open an issue before implementing:
+
+- New CLI commands
+- New config options
+- New dependencies
+- Changes to the state machine
+- Architectural changes
+
+We want to make sure it fits before you invest time.
+
+### Out of Scope
+
+These are intentional limits. Don't try to "improve" Shroud by adding:
+
+| Feature | Why Not |
+|---------|---------|
+| macOS/Windows support | We're Linux-focused. That's the point. |
+| GUI application | We're CLI-first with a tray icon. |
+| Built-in VPN protocols | We wrap NM, we don't replace it. |
+| Telemetry/analytics | No phoning home. Ever. |
+| Auto-updates | User controls their system. |
+
+---
+
+## The PR Process
 
 1. **Fork** the repository
 2. **Create a branch** from `main`:
    ```bash
-   git checkout -b fix/issue-description
+   git checkout -b fix/describe-the-thing
    # or
-   git checkout -b feat/feature-name
+   git checkout -b feat/new-thing
    ```
-3. **Make changes** following code style guidelines
-4. **Add tests** for new functionality
-5. **Update documentation** if behavior changes
-6. **Run quality checks**:
+3. **Make your changes**
+4. **Add tests** if you're adding functionality
+5. **Update docs** if behavior changes
+6. **Run the checks**:
    ```bash
    cargo fmt && cargo clippy -- -D warnings && cargo test
    ```
-7. **Commit** with clear messages:
+7. **Commit** with a clear message:
    ```
-   fix: Correct kill switch cleanup on SIGTERM
+   fix: Kill switch cleanup on SIGTERM
    
-   The cleanup handler was not being called when receiving SIGTERM
-   in headless mode. Added signal handler registration in runtime.rs.
+   The cleanup handler wasn't being called when receiving SIGTERM
+   in headless mode. Added signal handler registration.
    
    Fixes #123
    ```
-8. **Push** and create a Pull Request
+8. **Push** and open a PR
 
-## Commit Message Format
+---
+
+## Commit Messages
 
 ```
 type: Short description (50 chars max)
@@ -123,97 +177,25 @@ Fixes #123
 - `fix` — Bug fixes
 - `feat` — New features
 - `docs` — Documentation only
-- `refactor` — Code change that neither fixes nor adds
-- `test` — Adding or updating tests
-- `chore` — Build, CI, or tooling changes
+- `refactor` — Code restructuring
+- `test` — Adding tests
+- `chore` — Build/CI/tooling
 
-## What We're Looking For
-
-### ✅ Great Contributions
-
-- Bug fixes with test coverage
-- Documentation improvements and typo fixes
-- Performance optimizations (with benchmarks)
-- Cross-distro compatibility fixes
-- Accessibility improvements
-- Security hardening
-
-### 💬 Discuss First
-
-Open an issue before implementing:
-
-- New CLI commands
-- New configuration options
-- New dependencies
-- Architectural changes
-- Changes to the state machine
-
-### ❌ Out of Scope
-
-These are intentionally not supported (see PRINCIPLES.md):
-
-- **Cross-platform (macOS, Windows)** — We're Linux-focused (Principle VI)
-- **GUI beyond tray icon** — CLI-first tool (Principle VIII)
-- **Built-in VPN protocols** — We wrap existing tools (Principle I)
-- **Telemetry or analytics** — No phoning home (Principle IV)
-- **Auto-update mechanism** — User controls updates (Principle IV)
-
-## Testing
-
-### Unit Tests
-
-```bash
-cargo test
-```
-
-### E2E Tests
-
-```bash
-# Non-privileged tests
-./tests/e2e/run-all.sh
-
-# Privileged tests (requires sudo)
-sudo ./tests/e2e/run-all.sh --privileged
-```
-
-### Manual Testing Checklist
-
-Before submitting a PR that affects core functionality:
-
-- [ ] Desktop mode: Tray icon appears and responds
-- [ ] `shroud connect <name>` connects successfully
-- [ ] `shroud disconnect` disconnects cleanly
-- [ ] `shroud ks on` enables kill switch
-- [ ] `shroud ks off` disables and removes rules
-- [ ] Kill switch survives VPN reconnect
-- [ ] Clean shutdown (`shroud quit`) removes all rules
-- [ ] Crash recovery: Rules cleaned on next start
-- [ ] Works on target distros (Arch, Debian, Fedora)
-
-### Headless/Gateway Testing
-
-For changes to headless or gateway mode:
-
-- [ ] `shroud --headless` starts without display
-- [ ] Systemd service starts and reports ready
-- [ ] Auto-connect works on startup
-- [ ] Gateway mode forwards traffic correctly
-- [ ] Gateway kill switch blocks leaks
+---
 
 ## Code Style
 
-### General
+### The Basics
 
-- Follow `rustfmt` conventions (run `cargo fmt`)
-- Use meaningful variable and function names
-- Prefer explicit over implicit
-- Handle all errors; no `unwrap()` in production code
-- Comment "why", not "what"
+- Run `cargo fmt`
+- Handle all errors explicitly
+- No `unwrap()` in production code
+- Comment *why*, not *what*
 
 ### Error Handling
 
 ```rust
-// ✅ Good: Explicit error handling
+// ✅ Good
 match connection.activate().await {
     Ok(()) => log::info!("Connected"),
     Err(e) => {
@@ -225,55 +207,68 @@ match connection.activate().await {
 // ❌ Bad: Silent failure
 let _ = connection.activate().await;
 
-// ❌ Bad: Panic in library code
+// ❌ Bad: Panic
 connection.activate().await.unwrap();
 ```
 
 ### Logging
 
 ```rust
-// Use appropriate log levels
-log::error!("Kill switch failed: {}", e);     // User must know
-log::warn!("Retrying connection...");          // User might care
-log::info!("Connected to {}", server);         // Normal operation
-log::debug!("Sending ping to {}", addr);       // Development
-log::trace!("Raw packet: {:?}", bytes);        // Deep debugging
+log::error!("...");   // User must know about this
+log::warn!("...");    // User might care
+log::info!("...");    // Normal operation
+log::debug!("...");   // Development details
+log::trace!("...");   // Deep debugging only
 ```
 
-### Documentation
+---
 
-```rust
-/// Brief one-line description.
-///
-/// Longer description if needed, explaining behavior,
-/// edge cases, and any important notes.
-///
-/// # Arguments
-///
-/// * `server` - The VPN server name to connect to
-///
-/// # Returns
-///
-/// Returns `Ok(())` on successful connection, or an error
-/// if the connection could not be established.
-///
-/// # Errors
-///
-/// Returns `ConnectionError::NotFound` if the server doesn't exist.
-/// Returns `ConnectionError::Timeout` if connection times out.
-pub async fn connect(&mut self, server: &str) -> Result<(), ConnectionError> {
-    // ...
-}
+## Testing
+
+### Unit Tests
+
+```bash
+cargo test
+./scripts/test-unit.sh
 ```
+
+### Integration Tests
+
+```bash
+./scripts/test-integration.sh
+```
+
+### Privileged Tests
+
+Kill switch tests need root:
+
+```bash
+./scripts/run-privileged-tests.sh
+```
+
+### Manual Testing Checklist
+
+Before submitting changes to core functionality:
+
+- [ ] Tray icon appears and works
+- [ ] `shroud connect <name>` connects
+- [ ] `shroud disconnect` disconnects cleanly
+- [ ] `shroud ks on` enables kill switch
+- [ ] `shroud ks off` removes all rules
+- [ ] `shroud quit` exits cleanly
+- [ ] Crash recovery cleans up rules
+- [ ] Works on Arch, Debian, Fedora
+
+---
 
 ## Questions?
 
 - **Bug?** Open an issue with reproduction steps
 - **Feature idea?** Open an issue to discuss first
-- **Question?** Check existing issues or open a new one
+- **Stuck?** Open an issue. We're friendly.
 
-Please be respectful and constructive in all interactions.
+Be respectful. Be constructive. We're all here because we want this to be good.
 
 ---
 
-*Thank you for helping make Shroud better!*
+*Thanks for helping make Shroud better. We mean it.*
