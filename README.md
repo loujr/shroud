@@ -89,6 +89,12 @@ Read the full [Principles](docs/PRINCIPLES.md) if you want to understand what we
 └──────────────────────────────────────────────────────────────────┘
 ```
 
+---
+
+## The Interface
+
+A system tray icon that stays out of your way. Left-click for the menu. That's it.
+
 <img width="313" alt="Shroud system tray menu" src="https://github.com/user-attachments/assets/7b00be8f-d97f-4b27-aabb-d4e56bb42a81" />
 
 ---
