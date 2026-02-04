@@ -91,6 +91,17 @@ Read the full [Principles](docs/PRINCIPLES.md) if you want to understand what we
 
 ---
 
+## Why Shroud is Fast
+- One lean Rust binary — no Electron, no heavyweight GUI stack.
+- No provider handshake — we talk straight to NetworkManager with your OpenVPN/WireGuard profiles.
+- Minimal background daemons — a single supervisor, no telemetry or auto-updaters.
+- Tight event loop — async Tokio + formal state machine keep connect/disconnect on the hot path.
+- In-process kill switch — iptables/nft rules applied/cleaned without extra helpers.
+
+Boot-to-VPN in ~2–4s after network is ready (with `auto_connect = true` + headless/systemd autostart).
+
+---
+
 ## The Interface
 
 A system tray icon that stays out of your way. Left-click for the menu. That's it.
