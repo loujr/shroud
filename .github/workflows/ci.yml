@@ -171,32 +171,42 @@ jobs:
 
       - name: Run E2E tests
         run: |
-          # Run tests with timeout, killing entire process group on timeout
+          # Start a background watchdog that will kill everything after 120s
+          (
+            sleep 120
+            echo "Watchdog: Killing all shroud and test processes"
+            pkill -9 -f shroud 2>/dev/null || true
+            pkill -9 -f "deps/e2e" 2>/dev/null || true
+          ) &
+          WATCHDOG_PID=$!
+          
+          # Run tests
           set +e
-          timeout --signal=KILL 180 cargo test --test e2e --all-features -- --test-threads=1
+          cargo test --test e2e --all-features -- --test-threads=1
           exit_code=$?
           set -e
           
-          # Force kill any remaining processes
-          pkill -9 -f "shroud" || true
-          pkill -9 -f "e2e-" || true
+          # Kill the watchdog
+          kill $WATCHDOG_PID 2>/dev/null || true
           
-          if [[ $exit_code -eq 137 ]] || [[ $exit_code -eq 124 ]]; then
-            echo "::warning::E2E tests were killed by timeout"
-          elif [[ $exit_code -ne 0 ]]; then
-            echo "::warning::Some E2E tests had issues (exit code: $exit_code)"
+          # Immediate aggressive cleanup
+          pkill -9 -f "shroud" 2>/dev/null || true
+          pkill -9 -f "deps/e2e" 2>/dev/null || true
+          
+          # Report result
+          if [[ $exit_code -ne 0 ]]; then
+            echo "::warning::E2E tests had issues (exit code: $exit_code)"
           fi
           
-          # Always succeed - E2E test failures are warnings in CI
+          # Always succeed
           exit 0
-        continue-on-error: true
+        timeout-minutes: 4
 
       - name: Post-cleanup
         if: always()
         run: |
           pkill -9 -f shroud 2>/dev/null || true
-          pkill -9 -f "target/debug/deps/e2e" 2>/dev/null || true
-          sleep 1
+          pkill -9 -f "deps/e2e" 2>/dev/null || true
 
   # ===========================================================================
   # MSRV Check

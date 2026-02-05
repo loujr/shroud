@@ -244,7 +244,15 @@ impl ShroudProcess {
     fn force_kill(&mut self) {
         if let Some(ref mut child) = self.child {
             let _ = child.kill();
-            let _ = child.wait(); // Reap zombie
+            // Don't use wait() as it can block - use try_wait with a brief sleep
+            for _ in 0..10 {
+                if let Ok(Some(_)) = child.try_wait() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            // Final try_wait to reap if possible, but don't block
+            let _ = child.try_wait();
         }
         self.cleanup_pid();
         self.child = None;
