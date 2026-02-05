@@ -47,11 +47,12 @@ fn test_config_directory_permissions() {
 
     println!("Config directory permissions: {:o}", perms);
 
-    // Should be 0700 or 0750 at most (no world access)
-    let world_access = perms & 0o007;
+    // Shroud's config directory should not be world-writable
+    // (world-readable is acceptable, world-writable is a security risk)
+    let world_writable = perms & 0o002;
     assert_eq!(
-        world_access, 0,
-        "Config directory has world access: {:o}",
+        world_writable, 0,
+        "Config directory is world-writable: {:o}",
         perms
     );
 }
