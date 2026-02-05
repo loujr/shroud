@@ -22,7 +22,7 @@ echo "════════════════════════�
 echo ""
 
 # Pre-flight
-source "$SCRIPT_DIR/pre-test.sh" 2>/dev/null || "$SCRIPT_DIR/pre-test.sh"
+source "$SCRIPT_DIR/../pre-test.sh" 2>/dev/null || "$SCRIPT_DIR/../pre-test.sh"
 
 # Get first VPN
 VPN=$(nmcli -t -f NAME,TYPE con show | grep vpn | head -1 | cut -d: -f1)
@@ -115,7 +115,7 @@ echo "  Result: $RESTORED_IP"
 # Cleanup
 echo ""
 kill $NEW_PID 2>/dev/null || true
-"$SCRIPT_DIR/post-test.sh"
+"$SCRIPT_DIR/../post-test.sh"
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════"

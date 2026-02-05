@@ -62,7 +62,8 @@ echo "✓ Traffic shaping rules removed"
 # 6. Check for residual rules
 echo ""
 echo "Residual Rule Check:"
-RESIDUAL=$(sudo iptables -S 2>/dev/null | grep -c SHROUD || echo "0")
+RESIDUAL=$(sudo iptables -S 2>/dev/null | grep -c SHROUD 2>/dev/null || true)
+RESIDUAL=${RESIDUAL:-0}
 if [[ "$RESIDUAL" -gt 0 ]]; then
     echo "  ⚠ WARNING: $RESIDUAL residual SHROUD rules found!"
     sudo iptables -S | grep SHROUD
