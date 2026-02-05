@@ -12,6 +12,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.0] - 2026-02-05
+
+### Added
+
+- **Stability Test Suite** - New `tests/stability.rs` with 22 tests covering race condition prevention patterns, event deduplication, debounce logic, and scopeguard cleanup verification.
+
+- **Health Check Suspension** - `HealthChecker::suspend(duration)` method to temporarily pause health checks during system events (wake from sleep). Prevents false positive "tunnel dead" alerts when network is briefly unavailable during wake.
+
+- **D-Bus Event Deduplication** - `NmMonitor` now tracks recent events with a 500ms deduplication window. Prevents processing the same VPN state change multiple times when NetworkManager emits duplicate signals.
+
+- **Reconnect Race Prevention** - Atomic `RECONNECT_IN_PROGRESS` flag prevents concurrent reconnection attempts. 5-second debounce period between reconnect starts prevents thrashing.
+
+- **Kill Switch Toggle Protection** - Atomic `TOGGLE_IN_PROGRESS` flag prevents concurrent enable/disable operations. 500ms cooldown between toggles prevents race conditions under rapid user input.
+
+- **scopeguard Dependency** - Added `scopeguard = "1"` for guaranteed cleanup of atomic flags on all exit paths (normal return, early return, panic).
+
+### Fixed
+
+- **Time Jump Detection Thrashing** - After resuming from sleep, the supervisor would emit multiple Wake events in rapid succession, causing state machine thrashing and duplicate notifications. Added 5-second cooldown (`TIME_JUMP_COOLDOWN_SECS`) between wake events and 2-second delay (`WAKE_EVENT_DELAY_MS`) before dispatch to let the system stabilize.
+
+- **Health Check False Positives During Wake** - Health checks would immediately fail after system wake (network not yet ready), triggering unnecessary reconnection attempts. Now suspends health checks for 10 seconds after wake events.
+
+- **Unknown VPN Disconnect Events** - D-Bus events for "unknown" VPN names (transient states during rapid connect/disconnect) would cause state corruption. Now filtered out in `should_process_event()`.
+
+- **Reconnect Race with Active VPN** - If a user manually connected a VPN during an auto-reconnect loop, both connections could race. Now checks actual NetworkManager state before each reconnect attempt.
+
+- **Kill Switch State Corruption** - Rapid enable/disable toggling (chaos testing) could leave iptables in an inconsistent state. Toggle lock and cooldown prevent concurrent operations.
+
+### Changed
+
+- **Time Jump Threshold** - Now uses explicit `TIME_JUMP_THRESHOLD_SECS` constant (6 seconds = 3× poll interval) instead of inline calculation for clarity.
+
+- **NmMonitor::run()** - Changed from `run(self)` to `run(mut self)` to support internal state mutation for event deduplication.
+
+- **Handler Method Signatures** - `handle_message()`, `handle_vpn_state_changed()`, and `handle_active_state_changed()` now take `&mut self` to support deduplication cache updates.
+
+### Technical Details
+
+#### New Constants
+
+| Constant | Value | Location | Purpose |
+|----------|-------|----------|----------|
+| `TIME_JUMP_THRESHOLD_SECS` | 6 | `event_loop.rs` | Threshold for detecting resume from sleep |
+| `TIME_JUMP_COOLDOWN_SECS` | 5 | `event_loop.rs` | Minimum seconds between wake events |
+| `WAKE_EVENT_DELAY_MS` | 2000 | `event_loop.rs` | Delay before dispatching wake event |
+| `EVENT_DEDUP_WINDOW_MS` | 500 | `monitor.rs` | D-Bus event deduplication window |
+| `RECONNECT_DEBOUNCE_SECS` | 5 | `reconnect.rs` | Minimum seconds between reconnect attempts |
+| `TOGGLE_COOLDOWN_MS` | 500 | `firewall.rs` | Minimum ms between kill switch toggles |
+
+#### New Struct Fields
+
+| Field | Type | Struct | Purpose |
+|-------|------|--------|----------|
+| `last_wake_event` | `Option<Instant>` | `VpnSupervisor` | Track last wake dispatch for cooldown |
+| `last_reconnect_time` | `Option<Instant>` | `VpnSupervisor` | Track last reconnect for debounce |
+| `suspended_until` | `Option<Instant>` | `HealthChecker` | When suspension expires |
+| `recent_events` | `HashMap<(String, String), Instant>` | `NmMonitor` | Event dedup cache |
+| `last_toggle_time` | `Option<Instant>` | `KillSwitch` | Track last toggle for cooldown |
+
+#### Static Atomics
+
+| Flag | Location | Purpose |
+|------|----------|----------|
+| `RECONNECT_IN_PROGRESS` | `reconnect.rs` | Prevent concurrent reconnect attempts |
+| `TOGGLE_IN_PROGRESS` | `firewall.rs` | Prevent concurrent kill switch toggles |
+
+---
+
 ## [1.8.9] - 2026-02-04
 
 ### Fixed
