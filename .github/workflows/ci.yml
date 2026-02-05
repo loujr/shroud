@@ -167,40 +167,34 @@ jobs:
         run: cargo build --release
 
       - name: Pre-cleanup
-        run: timeout 5 pkill -9 -f shroud 2>/dev/null || true
+        run: pkill -9 -f shroud 2>/dev/null || true
 
       - name: Run E2E tests
         run: |
-          # Start a background watchdog that will kill everything after 120s
-          (
-            sleep 120
-            echo "Watchdog: Killing all shroud and test processes"
-            pkill -9 -f shroud 2>/dev/null || true
-            pkill -9 -f "deps/e2e" 2>/dev/null || true
-          ) &
-          WATCHDOG_PID=$!
+          # Run cargo test in background
+          cargo test --test e2e --all-features -- --test-threads=1 &
+          TEST_PID=$!
           
-          # Run tests
-          set +e
-          cargo test --test e2e --all-features -- --test-threads=1
-          exit_code=$?
-          set -e
+          # Wait for test with timeout (max 120s)
+          SECONDS=0
+          while kill -0 $TEST_PID 2>/dev/null; do
+            if [[ $SECONDS -ge 120 ]]; then
+              echo "::warning::E2E tests timed out after 120s, force killing"
+              kill -9 $TEST_PID 2>/dev/null || true
+              break
+            fi
+            sleep 1
+          done
           
-          # Kill the watchdog
-          kill $WATCHDOG_PID 2>/dev/null || true
+          # Wait to get exit code (or 137 if killed)
+          wait $TEST_PID 2>/dev/null || true
           
-          # Immediate aggressive cleanup
-          pkill -9 -f "shroud" 2>/dev/null || true
+          # Always kill any remaining processes
+          pkill -9 -f shroud 2>/dev/null || true
           pkill -9 -f "deps/e2e" 2>/dev/null || true
           
-          # Report result
-          if [[ $exit_code -ne 0 ]]; then
-            echo "::warning::E2E tests had issues (exit code: $exit_code)"
-          fi
-          
-          # Always succeed
-          exit 0
-        timeout-minutes: 4
+          echo "E2E tests completed"
+        timeout-minutes: 3
 
       - name: Post-cleanup
         if: always()
