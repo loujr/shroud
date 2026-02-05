@@ -78,6 +78,10 @@ panic = "abort"
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { version = "1", features = ["full", "test-util"] }
+tokio-test = "0.4"
+nix = { version = "0.29", features = ["signal", "user"] }
+libc = "0.2"
 
 # ============================================================================
 # Test Targets
@@ -93,4 +97,17 @@ path = "tests/integration/mod.rs"
 name = "security"
 path = "tests/security/mod.rs"
 
-# Note: E2E tests are shell scripts in tests/e2e/ and are run separately
+# Regression tests - verify fixes remain in codebase
+[[test]]
+name = "regression"
+path = "tests/regression.rs"
+
+# End-to-end tests - full binary execution tests
+[[test]]
+name = "e2e"
+path = "tests/e2e.rs"
+
+# Chaos tests - resilience and failure mode testing
+[[test]]
+name = "chaos"
+path = "tests/chaos.rs"
