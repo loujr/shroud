@@ -2,6 +2,11 @@
 
 use tokio::process::Command;
 
+/// Get the nmcli command path (supports SHROUD_NMCLI env override for testing)
+fn nmcli_command() -> String {
+    std::env::var("SHROUD_NMCLI").unwrap_or_else(|_| "nmcli".to_string())
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct VpnConnection {
@@ -29,7 +34,7 @@ impl std::fmt::Display for VpnType {
 
 /// Get all VPN connections with their types
 pub async fn list_vpn_connections_with_types() -> Vec<VpnConnection> {
-    let output = Command::new("nmcli")
+    let output = Command::new(&nmcli_command())
         .args(["-t", "-f", "NAME,TYPE,UUID", "connection", "show"])
         .output()
         .await;
@@ -66,7 +71,7 @@ pub async fn list_vpn_connections_with_types() -> Vec<VpnConnection> {
 
 /// Get VPN type for a specific connection
 pub async fn get_vpn_type(name: &str) -> VpnType {
-    let output = Command::new("nmcli")
+    let output = Command::new(&nmcli_command())
         .args(["-t", "-f", "connection.type", "connection", "show", name])
         .output()
         .await;

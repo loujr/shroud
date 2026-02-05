@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+# Fake nmcli for testing Shroud without real NetworkManager
+#
+# This mock simulates NetworkManager responses for integration smoke tests.
+# It maintains state via files in /tmp/shroud-mock-nm/
+#
+# Usage:
+#   export SHROUD_NMCLI=/path/to/fake-nmcli
+#   shroud status  # Will use fake nmcli
+#
+# Supports:
+#   - connection show
+#   - connection show --active
+#   - connection up/down
+#   - connection import
+#   - general status
+
+set -euo pipefail
+
+MOCK_STATE_DIR="${SHROUD_NM_MOCK_DIR:-/tmp/shroud-mock-nm}"
+mkdir -p "$MOCK_STATE_DIR"
+
+# Initialize default VPN connections if not present
+init_connections() {
+    if [[ ! -f "$MOCK_STATE_DIR/connections" ]]; then
+        cat > "$MOCK_STATE_DIR/connections" << 'EOF'
+mock-vpn-us:vpn
+mock-vpn-eu:vpn
+mock-wg-server:wireguard
+EOF
+    fi
+    if [[ ! -f "$MOCK_STATE_DIR/active" ]]; then
+        echo "" > "$MOCK_STATE_DIR/active"
+    fi
+}
+
+init_connections
+
+# Parse command line
+CMD="${1:-}"
+shift || true
+
+case "$CMD" in
+    general)
+        SUBCMD="${1:-}"
+        case "$SUBCMD" in
+            status)
+                echo "STATE:connected"
+                echo "CONNECTIVITY:full"
+                exit 0
+                ;;
+        esac
+        ;;
+
+    connection|con)
+        SUBCMD="${1:-}"
+        shift || true
+
+        case "$SUBCMD" in
+            show)
+                # Parse flags
+                ACTIVE_ONLY=false
+                FORMAT=""
+                FIELDS=""
+                
+                while [[ $# -gt 0 ]]; do
+                    case "$1" in
+                        --active|-a) ACTIVE_ONLY=true; shift ;;
+                        -t) FORMAT="terse"; shift ;;
+                        -f) FIELDS="$2"; shift 2 ;;
+                        *) shift ;;
+                    esac
+                done
+
+                if $ACTIVE_ONLY; then
+                    # Show active connections
+                    ACTIVE_NAME=$(cat "$MOCK_STATE_DIR/active" 2>/dev/null | head -1)
+                    if [[ -n "$ACTIVE_NAME" ]]; then
+                        if [[ "$FIELDS" == "NAME,TYPE,STATE" ]]; then
+                            echo "${ACTIVE_NAME}:vpn:activated"
+                        elif [[ "$FIELDS" == "NAME,TYPE" ]]; then
+                            echo "${ACTIVE_NAME}:vpn"
+                        else
+                            echo "NAME         TYPE       STATE"
+                            echo "${ACTIVE_NAME}    vpn        activated"
+                        fi
+                    fi
+                else
+                    # Show all connections
+                    if [[ "$FIELDS" == "NAME,TYPE" ]]; then
+                        cat "$MOCK_STATE_DIR/connections"
+                    elif [[ "$FIELDS" == "UUID,NAME,TYPE" ]]; then
+                        while IFS=: read -r name type; do
+                            # Generate deterministic UUID from name
+                            uuid="$(echo -n "$name" | md5sum | sed 's/\(..\)/\1-/g; s/-$//' | cut -c1-36)"
+                            echo "${uuid}:${name}:${type}"
+                        done < "$MOCK_STATE_DIR/connections"
+                    else
+                        echo "NAME              UUID                                  TYPE"
+                        while IFS=: read -r name type; do
+                            uuid="$(echo -n "$name" | md5sum | cut -c1-36)"
+                            printf "%-17s %-37s %s\n" "$name" "$uuid" "$type"
+                        done < "$MOCK_STATE_DIR/connections"
+                    fi
+                fi
+                exit 0
+                ;;
+
+            up)
+                CONN_NAME="${1:-}"
+                if [[ -z "$CONN_NAME" ]]; then
+                    echo "Error: connection name required" >&2
+                    exit 1
+                fi
+                
+                # Check if connection exists
+                if ! grep -q "^${CONN_NAME}:" "$MOCK_STATE_DIR/connections" 2>/dev/null; then
+                    echo "Error: unknown connection '${CONN_NAME}'." >&2
+                    exit 1
+                fi
+                
+                # Simulate activation delay
+                sleep "${SHROUD_MOCK_DELAY:-0.1}"
+                
+                echo "$CONN_NAME" > "$MOCK_STATE_DIR/active"
+                echo "Connection successfully activated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/1)"
+                exit 0
+                ;;
+
+            down)
+                CONN_NAME="${1:-}"
+                ACTIVE_NAME=$(cat "$MOCK_STATE_DIR/active" 2>/dev/null | head -1)
+                
+                if [[ "$CONN_NAME" == "$ACTIVE_NAME" ]] || [[ -z "$CONN_NAME" ]]; then
+                    echo "" > "$MOCK_STATE_DIR/active"
+                    echo "Connection '${CONN_NAME:-$ACTIVE_NAME}' successfully deactivated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/1)"
+                    exit 0
+                else
+                    echo "Error: '${CONN_NAME}' is not an active connection." >&2
+                    exit 1
+                fi
+                ;;
+
+            import)
+                # Parse: nmcli connection import type <type> file <path>
+                TYPE=""
+                FILE=""
+                while [[ $# -gt 0 ]]; do
+                    case "$1" in
+                        type) TYPE="$2"; shift 2 ;;
+                        file) FILE="$2"; shift 2 ;;
+                        *) shift ;;
+                    esac
+                done
+                
+                if [[ -z "$TYPE" ]] || [[ -z "$FILE" ]]; then
+                    echo "Error: type and file required" >&2
+                    exit 1
+                fi
+                
+                # Extract name from filename
+                NAME="$(basename "$FILE" | sed 's/\.\(ovpn\|conf\)$//')"
+                
+                # Add to connections
+                echo "${NAME}:${TYPE}" >> "$MOCK_STATE_DIR/connections"
+                echo "Connection '${NAME}' successfully added."
+                exit 0
+                ;;
+
+            modify)
+                # nmcli connection modify <name> <property> <value>
+                # Just succeed silently
+                exit 0
+                ;;
+
+            delete)
+                CONN_NAME="${1:-}"
+                if grep -q "^${CONN_NAME}:" "$MOCK_STATE_DIR/connections" 2>/dev/null; then
+                    grep -v "^${CONN_NAME}:" "$MOCK_STATE_DIR/connections" > "$MOCK_STATE_DIR/connections.tmp"
+                    mv "$MOCK_STATE_DIR/connections.tmp" "$MOCK_STATE_DIR/connections"
+                    echo "Connection '${CONN_NAME}' deleted."
+                    exit 0
+                else
+                    echo "Error: unknown connection '${CONN_NAME}'." >&2
+                    exit 1
+                fi
+                ;;
+        esac
+        ;;
+
+    -t)
+        # Terse output - recurse with terse flag
+        exec "$0" "$@"
+        ;;
+
+    *)
+        echo "Mock nmcli: unknown command '$CMD'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

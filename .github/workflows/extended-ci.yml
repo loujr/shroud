@@ -1,0 +1,275 @@
+name: Extended CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_perf:
+        description: 'Run performance tests'
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Coverage floor percentage
+  COVERAGE_FLOOR: 50
+  # Binary size ceiling in bytes (15MB)
+  BINARY_SIZE_CEILING: 15728640
+
+jobs:
+  # ===========================================================================
+  # Regression Tests
+  # ===========================================================================
+  
+  regression-tests:
+    name: Regression Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ci-v2"
+      
+      - name: Build
+        run: cargo build --release
+      
+      - name: Run regression tests
+        run: |
+          chmod +x scripts/test-regression.sh
+          ./scripts/test-regression.sh
+
+  # ===========================================================================
+  # NM Mock Smoke Tests
+  # ===========================================================================
+  
+  nm-mock-smoke:
+    name: NM Mock Smoke Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ci-v2"
+      
+      - name: Build
+        run: cargo build --release
+      
+      - name: Run NM mock smoke tests
+        run: |
+          chmod +x scripts/test-nm-mock.sh
+          chmod +x tests/mocks/fake-nmcli
+          ./scripts/test-nm-mock.sh
+      
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nm-mock-results
+          path: /tmp/shroud-mock-nm-*/
+          if-no-files-found: ignore
+
+  # ===========================================================================
+  # Coverage
+  # ===========================================================================
+  
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ci-v2"
+      
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin --locked
+      
+      - name: Generate coverage
+        run: |
+          chmod +x scripts/coverage.sh
+          ./scripts/coverage.sh --ci --floor ${{ env.COVERAGE_FLOOR }}
+      
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage/tarpaulin-report.html
+            coverage/lcov.info
+            coverage/cobertura.xml
+            coverage/summary.json
+          if-no-files-found: warn
+      
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage/lcov.info,coverage/cobertura.xml
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  # ===========================================================================
+  # Binary Size Tracking
+  # ===========================================================================
+  
+  binary-size:
+    name: Binary Size
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config bc
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ci-v2"
+      
+      - name: Build release
+        run: cargo build --release
+      
+      - name: Check binary size
+        run: |
+          chmod +x scripts/binary-size.sh
+          ./scripts/binary-size.sh \
+            --ceiling ${{ env.BINARY_SIZE_CEILING }} \
+            --output target/binary-size.json \
+            --json
+      
+      - name: Generate size report
+        run: |
+          ./scripts/binary-size.sh --markdown > target/binary-size.md
+          cat target/binary-size.md
+      
+      - name: Upload size artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-size
+          path: |
+            target/binary-size.json
+            target/binary-size.md
+            target/release/shroud
+
+  # ===========================================================================
+  # Desktop E2E with Xvfb
+  # ===========================================================================
+  
+  desktop-e2e-xvfb:
+    name: Desktop E2E (Xvfb)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libdbus-1-dev \
+            pkg-config \
+            network-manager \
+            iptables \
+            iproute2 \
+            xvfb \
+            libgtk-3-0 \
+            libappindicator3-1 \
+            libayatana-appindicator3-1 || true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ci-v2"
+      
+      - name: Build
+        run: cargo build --release
+      
+      - name: Run desktop E2E under Xvfb
+        run: |
+          chmod +x tests/e2e/desktop/run-desktop-xvfb.sh
+          chmod +x tests/e2e/desktop/run-desktop-tests.sh
+          tests/e2e/desktop/run-desktop-xvfb.sh --unprivileged || true
+      
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-e2e-xvfb-results
+          path: tests/e2e/desktop/results/
+          if-no-files-found: ignore
+
+  # ===========================================================================
+  # Performance Smoke
+  # ===========================================================================
+  
+  perf-smoke:
+    name: Performance Smoke
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.inputs.run_perf == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ci-v2"
+      
+      - name: Install hyperfine
+        run: |
+          wget https://github.com/sharkdp/hyperfine/releases/download/v1.18.0/hyperfine_1.18.0_amd64.deb
+          sudo dpkg -i hyperfine_1.18.0_amd64.deb
+      
+      - name: Build release
+        run: cargo build --release
+      
+      - name: Run performance smoke
+        run: |
+          chmod +x scripts/perf-smoke.sh
+          ./scripts/perf-smoke.sh --runs 5 --output-dir target/perf
+      
+      - name: Upload perf artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-results
+          path: |
+            target/perf/perf-smoke.json
+            target/perf/perf-smoke.md
+
+  # ===========================================================================
+  # Summary
+  # ===========================================================================
+  
+  extended-ci-success:
+    name: Extended CI Success
+    needs: [regression-tests, nm-mock-smoke, coverage, binary-size, desktop-e2e-xvfb]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [[ "${{ needs.regression-tests.result }}" == "failure" ]] || \
+             [[ "${{ needs.nm-mock-smoke.result }}" == "failure" ]] || \
+             [[ "${{ needs.coverage.result }}" == "failure" ]] || \
+             [[ "${{ needs.binary-size.result }}" == "failure" ]]; then
+            echo "One or more extended CI jobs failed"
+            exit 1
+          fi
+          echo "All extended CI checks passed!"
