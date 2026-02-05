@@ -51,7 +51,9 @@ mod health_tests {
     fn test_health_result_variants() {
         let healthy = HealthResult::Healthy;
         let degraded = HealthResult::Degraded { latency_ms: 3000 };
-        let dead = HealthResult::Dead { reason: "timeout".to_string() };
+        let dead = HealthResult::Dead {
+            reason: "timeout".to_string(),
+        };
 
         assert_eq!(healthy, HealthResult::Healthy);
         assert_ne!(healthy, degraded);
@@ -117,12 +119,16 @@ mod health_tests {
 
     #[test]
     fn test_latency_edge_cases() {
-        let threshold = 5000u64;
+        // Test threshold comparison logic
+        fn is_degraded(latency: u64, threshold: u64) -> bool {
+            latency > threshold
+        }
 
-        assert!(!(5000u64 > threshold));
-        assert!(5001u64 > threshold);
-        assert!(!(4999u64 > threshold));
-        assert!(!(0u64 > threshold));
-        assert!(u64::MAX > threshold);
+        let threshold = 5000u64;
+        assert!(!is_degraded(5000, threshold));
+        assert!(is_degraded(5001, threshold));
+        assert!(!is_degraded(4999, threshold));
+        assert!(!is_degraded(0, threshold));
+        assert!(is_degraded(10000, threshold));
     }
 }

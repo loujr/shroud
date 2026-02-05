@@ -169,9 +169,7 @@ mod killswitch_tests {
 
         for iface in valid_interfaces {
             assert!(
-                iface.starts_with("tun")
-                    || iface.starts_with("wg")
-                    || iface.starts_with("tap"),
+                iface.starts_with("tun") || iface.starts_with("wg") || iface.starts_with("tap"),
                 "Interface {} should be valid VPN pattern",
                 iface
             );
@@ -226,7 +224,8 @@ mod killswitch_tests {
 
             for part in parts {
                 let octet: u8 = part.parse().expect("Should be valid octet");
-                assert!(octet <= 255);
+                // Octet is u8 so always 0-255, just verify it parsed
+                let _ = octet;
             }
         }
     }
@@ -305,11 +304,7 @@ mod killswitch_tests {
         // Cleanup should remove all rules added by kill switch
         // Order: remove jump rule, flush chain, delete chain
 
-        let cleanup_steps = [
-            "remove_jump_from_output",
-            "flush_chain",
-            "delete_chain",
-        ];
+        let cleanup_steps = ["remove_jump_from_output", "flush_chain", "delete_chain"];
 
         assert_eq!(cleanup_steps.len(), 3);
         assert!(cleanup_steps[0].contains("jump"));

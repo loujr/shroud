@@ -307,21 +307,48 @@ mod tests {
     #[test]
     fn test_vpn_state_name() {
         assert_eq!(VpnState::Disconnected.name(), "Disconnected");
-        assert_eq!(VpnState::Connecting { server: "s".into() }.name(), "Connecting");
-        assert_eq!(VpnState::Connected { server: "s".into() }.name(), "Connected");
+        assert_eq!(
+            VpnState::Connecting { server: "s".into() }.name(),
+            "Connecting"
+        );
+        assert_eq!(
+            VpnState::Connected { server: "s".into() }.name(),
+            "Connected"
+        );
         assert_eq!(VpnState::Degraded { server: "s".into() }.name(), "Degraded");
-        assert_eq!(VpnState::Reconnecting { server: "s".into(), attempt: 1, max_attempts: 5 }.name(), "Reconnecting");
-        assert_eq!(VpnState::Failed { server: "s".into(), reason: "r".into() }.name(), "Failed");
+        assert_eq!(
+            VpnState::Reconnecting {
+                server: "s".into(),
+                attempt: 1,
+                max_attempts: 5
+            }
+            .name(),
+            "Reconnecting"
+        );
+        assert_eq!(
+            VpnState::Failed {
+                server: "s".into(),
+                reason: "r".into()
+            }
+            .name(),
+            "Failed"
+        );
     }
 
     #[test]
     fn test_vpn_state_display() {
-        let state = VpnState::Connected { server: "my-vpn".into() };
+        let state = VpnState::Connected {
+            server: "my-vpn".into(),
+        };
         let display = format!("{}", state);
         assert!(display.contains("Connected"));
         assert!(display.contains("my-vpn"));
 
-        let state = VpnState::Reconnecting { server: "s".into(), attempt: 3, max_attempts: 10 };
+        let state = VpnState::Reconnecting {
+            server: "s".into(),
+            attempt: 3,
+            max_attempts: 10,
+        };
         let display = format!("{}", state);
         assert!(display.contains("3"));
         assert!(display.contains("10"));
@@ -329,7 +356,9 @@ mod tests {
 
     #[test]
     fn test_vpn_state_clone() {
-        let state = VpnState::Connected { server: "test".into() };
+        let state = VpnState::Connected {
+            server: "test".into(),
+        };
         let cloned = state.clone();
         assert_eq!(state, cloned);
     }
@@ -345,12 +374,16 @@ mod tests {
 
     #[test]
     fn test_event_display() {
-        let event = Event::UserEnable { server: "vpn".into() };
+        let event = Event::UserEnable {
+            server: "vpn".into(),
+        };
         let display = format!("{}", event);
         assert!(display.contains("UserEnable"));
         assert!(display.contains("vpn"));
 
-        let event = Event::ConnectionFailed { reason: "timeout".into() };
+        let event = Event::ConnectionFailed {
+            reason: "timeout".into(),
+        };
         let display = format!("{}", event);
         assert!(display.contains("ConnectionFailed"));
         assert!(display.contains("timeout"));
@@ -358,7 +391,9 @@ mod tests {
 
     #[test]
     fn test_event_clone() {
-        let event = Event::NmVpnUp { server: "test".into() };
+        let event = Event::NmVpnUp {
+            server: "test".into(),
+        };
         let cloned = event.clone();
         assert!(matches!(cloned, Event::NmVpnUp { server } if server == "test"));
     }

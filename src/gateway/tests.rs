@@ -42,9 +42,7 @@ mod gateway_tests {
 
         for iface in vpn_patterns {
             assert!(
-                iface.starts_with("tun")
-                    || iface.starts_with("wg")
-                    || iface.starts_with("tap"),
+                iface.starts_with("tun") || iface.starts_with("wg") || iface.starts_with("tap"),
                 "{} should match VPN pattern",
                 iface
             );
@@ -52,9 +50,7 @@ mod gateway_tests {
 
         for iface in non_vpn {
             assert!(
-                !iface.starts_with("tun")
-                    && !iface.starts_with("wg")
-                    && !iface.starts_with("tap"),
+                !iface.starts_with("tun") && !iface.starts_with("wg") && !iface.starts_with("tap"),
                 "{} should not match VPN pattern",
                 iface
             );
@@ -67,18 +63,16 @@ mod gateway_tests {
         let lan_patterns = ["eth0", "enp0s3", "ens3", "em1", "eno1"];
 
         for iface in lan_patterns {
-            let is_lan = iface.starts_with("eth")
-                || iface.starts_with("en")
-                || iface.starts_with("em");
+            let is_lan =
+                iface.starts_with("eth") || iface.starts_with("en") || iface.starts_with("em");
             assert!(is_lan, "{} should match LAN pattern", iface);
         }
 
         // Not LAN
         let not_lan = ["lo", "tun0", "wg0", "docker0", "virbr0"];
         for iface in not_lan {
-            let is_lan = iface.starts_with("eth")
-                || iface.starts_with("en")
-                || iface.starts_with("em");
+            let is_lan =
+                iface.starts_with("eth") || iface.starts_with("en") || iface.starts_with("em");
             assert!(!is_lan, "{} should not match LAN pattern", iface);
         }
     }
@@ -130,7 +124,14 @@ mod gateway_tests {
         // iptables -t nat -A POSTROUTING -o <vpn_iface> -j MASQUERADE
         let vpn_interface = "tun0";
         let expected_args = [
-            "-t", "nat", "-A", "POSTROUTING", "-o", vpn_interface, "-j", "MASQUERADE",
+            "-t",
+            "nat",
+            "-A",
+            "POSTROUTING",
+            "-o",
+            vpn_interface,
+            "-j",
+            "MASQUERADE",
         ];
 
         assert_eq!(expected_args[0], "-t");
@@ -299,7 +300,7 @@ mod gateway_tests {
         assert!(is_valid_interface_name("tun0"));
         assert!(is_valid_interface_name("enp0s3"));
         assert!(is_valid_interface_name("wg-tunnel"));
-        
+
         assert!(!is_valid_interface_name(""));
         assert!(!is_valid_interface_name("eth0; rm -rf /"));
         assert!(!is_valid_interface_name("a".repeat(20).as_str()));
@@ -312,18 +313,18 @@ mod gateway_tests {
             if parts.len() != 2 {
                 return false;
             }
-            
+
             let ip_parts: Vec<&str> = parts[0].split('.').collect();
             if ip_parts.len() != 4 {
                 return false;
             }
-            
+
             for part in ip_parts {
                 if part.parse::<u8>().is_err() {
                     return false;
                 }
             }
-            
+
             if let Ok(prefix) = parts[1].parse::<u8>() {
                 prefix <= 32
             } else {
@@ -334,7 +335,7 @@ mod gateway_tests {
         assert!(is_valid_ipv4_subnet("192.168.1.0/24"));
         assert!(is_valid_ipv4_subnet("10.0.0.0/8"));
         assert!(is_valid_ipv4_subnet("0.0.0.0/0"));
-        
+
         assert!(!is_valid_ipv4_subnet("not-a-subnet"));
         assert!(!is_valid_ipv4_subnet("192.168.1.0"));
         assert!(!is_valid_ipv4_subnet("192.168.1.0/33"));

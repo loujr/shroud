@@ -7,10 +7,19 @@ mod dbus_tests {
     #[test]
     fn test_nm_event_variants() {
         let events = vec![
-            NmEvent::VpnActivated { name: "test-vpn".to_string() },
-            NmEvent::VpnDeactivated { name: "test-vpn".to_string() },
-            NmEvent::VpnActivating { name: "test-vpn".to_string() },
-            NmEvent::VpnFailed { name: "test-vpn".to_string(), reason: "timeout".to_string() },
+            NmEvent::VpnActivated {
+                name: "test-vpn".to_string(),
+            },
+            NmEvent::VpnDeactivated {
+                name: "test-vpn".to_string(),
+            },
+            NmEvent::VpnActivating {
+                name: "test-vpn".to_string(),
+            },
+            NmEvent::VpnFailed {
+                name: "test-vpn".to_string(),
+                reason: "timeout".to_string(),
+            },
             NmEvent::ConnectivityChanged { connected: true },
         ];
 
@@ -32,10 +41,14 @@ mod dbus_tests {
 
     #[test]
     fn test_nm_event_clone() {
-        let event = NmEvent::VpnActivated { name: "my-vpn".to_string() };
+        let event = NmEvent::VpnActivated {
+            name: "my-vpn".to_string(),
+        };
         let cloned = event.clone();
 
-        if let (NmEvent::VpnActivated { name: a }, NmEvent::VpnActivated { name: b }) = (event, cloned) {
+        if let (NmEvent::VpnActivated { name: a }, NmEvent::VpnActivated { name: b }) =
+            (event, cloned)
+        {
             assert_eq!(a, b);
         }
     }
@@ -67,20 +80,41 @@ mod dbus_tests {
     fn test_vpn_state_to_event() {
         fn state_to_event(state: u32, vpn_name: &str) -> Option<NmEvent> {
             match state {
-                1 | 2 | 3 | 4 => Some(NmEvent::VpnActivating { name: vpn_name.to_string() }),
-                5 => Some(NmEvent::VpnActivated { name: vpn_name.to_string() }),
-                6 => Some(NmEvent::VpnFailed { name: vpn_name.to_string(), reason: "failed".to_string() }),
-                7 => Some(NmEvent::VpnDeactivated { name: vpn_name.to_string() }),
+                1..=4 => Some(NmEvent::VpnActivating {
+                    name: vpn_name.to_string(),
+                }),
+                5 => Some(NmEvent::VpnActivated {
+                    name: vpn_name.to_string(),
+                }),
+                6 => Some(NmEvent::VpnFailed {
+                    name: vpn_name.to_string(),
+                    reason: "failed".to_string(),
+                }),
+                7 => Some(NmEvent::VpnDeactivated {
+                    name: vpn_name.to_string(),
+                }),
                 _ => None,
             }
         }
 
         for state in [1, 2, 3, 4] {
-            assert!(matches!(state_to_event(state, "vpn"), Some(NmEvent::VpnActivating { .. })));
+            assert!(matches!(
+                state_to_event(state, "vpn"),
+                Some(NmEvent::VpnActivating { .. })
+            ));
         }
-        assert!(matches!(state_to_event(5, "vpn"), Some(NmEvent::VpnActivated { .. })));
-        assert!(matches!(state_to_event(6, "vpn"), Some(NmEvent::VpnFailed { .. })));
-        assert!(matches!(state_to_event(7, "vpn"), Some(NmEvent::VpnDeactivated { .. })));
+        assert!(matches!(
+            state_to_event(5, "vpn"),
+            Some(NmEvent::VpnActivated { .. })
+        ));
+        assert!(matches!(
+            state_to_event(6, "vpn"),
+            Some(NmEvent::VpnFailed { .. })
+        ));
+        assert!(matches!(
+            state_to_event(7, "vpn"),
+            Some(NmEvent::VpnDeactivated { .. })
+        ));
     }
 
     #[test]
@@ -107,7 +141,11 @@ mod dbus_tests {
         use tokio::sync::mpsc;
         let (tx, _rx) = mpsc::channel::<NmEvent>(32);
         for i in 0..10 {
-            tx.send(NmEvent::VpnActivating { name: format!("vpn-{}", i) }).await.unwrap();
+            tx.send(NmEvent::VpnActivating {
+                name: format!("vpn-{}", i),
+            })
+            .await
+            .unwrap();
         }
     }
 }

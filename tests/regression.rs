@@ -117,7 +117,10 @@ fn regression_killswitch_error_types() {
     let has_variants = content.contains("NotFound")
         || content.contains("Permission")
         || content.contains("Command");
-    assert!(has_variants, "KillSwitchError should have specific variants");
+    assert!(
+        has_variants,
+        "KillSwitchError should have specific variants"
+    );
 }
 
 /// Verify state machine has proper max retries
@@ -147,7 +150,10 @@ fn regression_health_checker_thresholds() {
 #[test]
 fn regression_dns_mode_exists() {
     let content = include_str!("../src/config/settings.rs");
-    assert!(content.contains("DnsMode"), "DnsMode configuration must exist");
+    assert!(
+        content.contains("DnsMode"),
+        "DnsMode configuration must exist"
+    );
 }
 
 /// Verify gateway config has safety defaults
@@ -170,7 +176,10 @@ fn regression_gateway_defaults_safe() {
 fn regression_vpn_state_has_traits() {
     let content = include_str!("../src/state/types.rs");
     // Should derive Debug and Clone at minimum
-    assert!(content.contains("#[derive(Debug"), "VpnState should derive Debug");
+    assert!(
+        content.contains("#[derive(Debug"),
+        "VpnState should derive Debug"
+    );
     assert!(content.contains("Clone"), "VpnState should derive Clone");
 }
 

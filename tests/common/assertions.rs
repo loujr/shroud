@@ -77,8 +77,8 @@ pub fn assert_interface_not_exists(iface: &str) {
 
 /// Assert IP forwarding is enabled
 pub fn assert_forwarding_enabled() {
-    let content =
-        std::fs::read_to_string("/proc/sys/net/ipv4/ip_forward").expect("Failed to read ip_forward");
+    let content = std::fs::read_to_string("/proc/sys/net/ipv4/ip_forward")
+        .expect("Failed to read ip_forward");
     assert_eq!(content.trim(), "1", "IP forwarding is not enabled");
 }
 

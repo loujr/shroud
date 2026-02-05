@@ -6,6 +6,9 @@
 //! - Assertions for system state
 //! - JSON result output for CI
 
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 pub mod assertions;
 pub mod context;
 pub mod process;
@@ -38,7 +41,7 @@ pub fn init() {
 pub fn shroud_binary() -> PathBuf {
     // First try the project's target directory
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    
+
     // Try release first, then debug
     let release = manifest_dir.join("target").join("release").join("shroud");
     if release.exists() {

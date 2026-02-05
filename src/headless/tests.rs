@@ -9,7 +9,10 @@ mod headless_tests {
         let config = HeadlessConfig::default();
         assert!(!config.auto_connect, "Auto-connect off by default");
         assert!(config.kill_switch_on_boot, "Boot kill switch on by default");
-        assert!(config.require_kill_switch, "Require kill switch true by default");
+        assert!(
+            config.require_kill_switch,
+            "Require kill switch true by default"
+        );
     }
 
     #[test]
@@ -25,19 +28,28 @@ mod headless_tests {
         let mut config = Config::default();
 
         // No servers configured
-        let server = config.headless.startup_server.clone()
+        let server = config
+            .headless
+            .startup_server
+            .clone()
             .or_else(|| config.last_server.clone());
         assert!(server.is_none());
 
         // Only last_server
         config.last_server = Some("last-vpn".to_string());
-        let server = config.headless.startup_server.clone()
+        let server = config
+            .headless
+            .startup_server
+            .clone()
             .or_else(|| config.last_server.clone());
         assert_eq!(server.as_deref(), Some("last-vpn"));
 
         // startup_server overrides
         config.headless.startup_server = Some("startup-vpn".to_string());
-        let server = config.headless.startup_server.clone()
+        let server = config
+            .headless
+            .startup_server
+            .clone()
             .or_else(|| config.last_server.clone());
         assert_eq!(server.as_deref(), Some("startup-vpn"));
     }

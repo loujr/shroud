@@ -51,8 +51,10 @@ mod tray_tests {
 
     #[test]
     fn test_shared_state_modification() {
-        let mut state = SharedState::default();
-        state.kill_switch = true;
+        let mut state = SharedState {
+            kill_switch: true,
+            ..Default::default()
+        };
         assert!(state.kill_switch);
         state.kill_switch = false;
         assert!(!state.kill_switch);
@@ -60,9 +62,11 @@ mod tray_tests {
 
     #[test]
     fn test_shared_state_clone() {
-        let mut state = SharedState::default();
-        state.kill_switch = true;
-        state.connections = vec!["vpn1".to_string()];
+        let state = SharedState {
+            kill_switch: true,
+            connections: vec!["vpn1".to_string()],
+            ..Default::default()
+        };
         let cloned = state.clone();
         assert_eq!(cloned.kill_switch, state.kill_switch);
         assert_eq!(cloned.connections.len(), 1);
@@ -77,8 +81,8 @@ mod tray_tests {
         fn compute_menu_state(is_connected: bool, has_vpns: bool) -> (bool, bool, bool) {
             (
                 !is_connected && has_vpns, // connect_enabled
-                is_connected,               // disconnect_enabled
-                !is_connected && has_vpns,  // vpn_list_visible
+                is_connected,              // disconnect_enabled
+                !is_connected && has_vpns, // vpn_list_visible
             )
         }
 

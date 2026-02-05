@@ -133,12 +133,7 @@ mod headless {
         // Multiple rapid status calls should all succeed
         for i in 0..10 {
             let status = shroud.status().await;
-            assert!(
-                status.is_ok(),
-                "Status call {} failed: {:?}",
-                i,
-                status
-            );
+            assert!(status.is_ok(), "Status call {} failed: {:?}", i, status);
         }
 
         shroud.stop().await.ok();
@@ -284,7 +279,10 @@ mod cleanup {
         let mut shroud = ShroudProcess::new(shroud_binary(), ctx.socket_path());
 
         shroud.start_headless().await.expect("Failed to start");
-        shroud.ks_enable().await.expect("Failed to enable killswitch");
+        shroud
+            .ks_enable()
+            .await
+            .expect("Failed to enable killswitch");
         assert_chain_exists("SHROUD_KILLSWITCH");
 
         // Graceful stop
@@ -305,7 +303,10 @@ mod cleanup {
         let mut shroud = ShroudProcess::new(shroud_binary(), ctx.socket_path());
 
         shroud.start_headless().await.expect("Failed to start");
-        shroud.ks_enable().await.expect("Failed to enable killswitch");
+        shroud
+            .ks_enable()
+            .await
+            .expect("Failed to enable killswitch");
         assert_chain_exists("SHROUD_KILLSWITCH");
 
         // Send SIGTERM
@@ -551,11 +552,14 @@ mod concurrency {
         let socket = ctx.socket_path();
 
         let mut shroud1 = ShroudProcess::new(shroud_binary(), &socket);
-        shroud1.start_headless().await.expect("First instance failed");
+        shroud1
+            .start_headless()
+            .await
+            .expect("First instance failed");
 
         // Try to start second instance
         let mut shroud2 = ShroudProcess::new(shroud_binary(), &socket);
-        let result = shroud2.start_headless().await;
+        let _result = shroud2.start_headless().await;
 
         // Second should fail to become ready (socket in use)
         // or exit quickly due to lock file

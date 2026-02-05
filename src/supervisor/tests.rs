@@ -8,20 +8,45 @@ mod supervisor_tests {
     fn test_supervisor_constants_reasonable() {
         use crate::supervisor::{
             CONNECTION_MONITOR_INTERVAL_MS, CONNECTION_MONITOR_MAX_ATTEMPTS,
-            DISCONNECT_VERIFY_INTERVAL_MS, DISCONNECT_VERIFY_MAX_ATTEMPTS,
-            MAX_CONNECT_ATTEMPTS, POST_DISCONNECT_GRACE_SECS,
-            RECONNECT_BASE_DELAY_SECS, RECONNECT_MAX_DELAY_SECS,
+            DISCONNECT_VERIFY_INTERVAL_MS, DISCONNECT_VERIFY_MAX_ATTEMPTS, MAX_CONNECT_ATTEMPTS,
+            POST_DISCONNECT_GRACE_SECS, RECONNECT_BASE_DELAY_SECS, RECONNECT_MAX_DELAY_SECS,
         };
 
-        assert!(RECONNECT_BASE_DELAY_SECS >= 1);
-        assert!(RECONNECT_MAX_DELAY_SECS >= RECONNECT_BASE_DELAY_SECS);
-        assert!(RECONNECT_MAX_DELAY_SECS <= 120);
-        assert!(POST_DISCONNECT_GRACE_SECS >= 1);
-        assert!(DISCONNECT_VERIFY_MAX_ATTEMPTS >= 5);
-        assert!(CONNECTION_MONITOR_MAX_ATTEMPTS >= 10);
-        assert!(CONNECTION_MONITOR_INTERVAL_MS >= 100);
-        assert!(DISCONNECT_VERIFY_INTERVAL_MS >= 100);
-        assert!(MAX_CONNECT_ATTEMPTS >= 2);
+        // Store in variables to prevent constant folding
+        let base_delay = RECONNECT_BASE_DELAY_SECS;
+        let max_delay = RECONNECT_MAX_DELAY_SECS;
+        let grace = POST_DISCONNECT_GRACE_SECS;
+        let dc_attempts = DISCONNECT_VERIFY_MAX_ATTEMPTS;
+        let mon_attempts = CONNECTION_MONITOR_MAX_ATTEMPTS;
+        let mon_interval = CONNECTION_MONITOR_INTERVAL_MS;
+        let dc_interval = DISCONNECT_VERIFY_INTERVAL_MS;
+        let connect_attempts = MAX_CONNECT_ATTEMPTS;
+
+        // Verify reasonable bounds
+        assert!(base_delay >= 1, "Base delay should be at least 1 second");
+        assert!(max_delay >= base_delay, "Max delay should be >= base delay");
+        assert!(max_delay <= 120, "Max delay should not exceed 2 minutes");
+        assert!(grace >= 1, "Grace period should be at least 1 second");
+        assert!(
+            dc_attempts >= 5,
+            "Should have at least 5 disconnect verify attempts"
+        );
+        assert!(
+            mon_attempts >= 10,
+            "Should have at least 10 monitor attempts"
+        );
+        assert!(
+            mon_interval >= 100,
+            "Monitor interval should be at least 100ms"
+        );
+        assert!(
+            dc_interval >= 100,
+            "Disconnect verify interval should be at least 100ms"
+        );
+        assert!(
+            connect_attempts >= 2,
+            "Should have at least 2 connect attempts"
+        );
     }
 
     #[test]
@@ -78,15 +103,17 @@ mod reconnect_tests {
     fn test_retry_reset_on_success() {
         let mut retries = 5;
         let success = true;
-        if success { retries = 0; }
+        if success {
+            retries = 0;
+        }
         assert_eq!(retries, 0);
     }
 }
 
 #[cfg(test)]
 mod handler_tests {
-    use crate::tray::VpnCommand;
     use crate::ipc::{IpcCommand, IpcResponse};
+    use crate::tray::VpnCommand;
 
     #[test]
     fn test_vpn_command_serialization() {
@@ -111,10 +138,14 @@ mod handler_tests {
     #[test]
     fn test_ipc_command_response_types() {
         let status_cmd = IpcCommand::Status;
-        let connect_cmd = IpcCommand::Connect { name: "my-vpn".to_string() };
+        let connect_cmd = IpcCommand::Connect {
+            name: "my-vpn".to_string(),
+        };
 
         let ok_response = IpcResponse::Ok;
-        let err_response = IpcResponse::Error { message: "Failed".to_string() };
+        let err_response = IpcResponse::Error {
+            message: "Failed".to_string(),
+        };
 
         match status_cmd {
             IpcCommand::Status => {}

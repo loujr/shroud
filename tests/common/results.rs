@@ -43,10 +43,13 @@ impl TestSuiteResult {
             skipped: 0,
             duration_ms: 0,
             tests: Vec::new(),
-            timestamp: format!("{}", std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()),
+            timestamp: format!(
+                "{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+            ),
         }
     }
 

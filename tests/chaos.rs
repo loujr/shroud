@@ -371,7 +371,10 @@ mod crash_recovery {
         let mut shroud = ShroudProcess::new(shroud_binary(), &socket);
 
         shroud.start_headless().await.expect("Failed to start");
-        shroud.ks_enable().await.expect("Failed to enable killswitch");
+        shroud
+            .ks_enable()
+            .await
+            .expect("Failed to enable killswitch");
 
         // SIGKILL - unrecoverable
         shroud.kill();
@@ -381,7 +384,11 @@ mod crash_recovery {
         let mut shroud2 = ShroudProcess::new(shroud_binary(), &socket);
         let result = shroud2.start_headless().await;
 
-        assert!(result.is_ok(), "Failed to recover after SIGKILL: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Failed to recover after SIGKILL: {:?}",
+            result
+        );
         assert!(shroud2.status().await.is_ok());
 
         shroud2.stop().await.ok();
@@ -498,7 +505,10 @@ mod killswitch_chaos {
         let mut shroud = ShroudProcess::new(shroud_binary(), ctx.socket_path());
 
         shroud.start_headless().await.expect("Failed to start");
-        shroud.ks_enable().await.expect("Failed to enable killswitch");
+        shroud
+            .ks_enable()
+            .await
+            .expect("Failed to enable killswitch");
 
         // External process flushes our chain
         let _ = std::process::Command::new("sudo")
