@@ -52,6 +52,7 @@ jobs:
       
       - name: Generate coverage
         run: |
+          mkdir -p coverage
           timeout 600 cargo tarpaulin \
             --bins \
             --out xml --out html \

@@ -25,28 +25,26 @@ pub fn cleanup_all_shroud_processes() {
 
     // Use pkill directly (don't spawn timeout subprocess which can cause issues)
     // These are fire-and-forget - we don't wait for them
-    let _ = Command::new("pkill")
+    if let Ok(mut child) = Command::new("pkill")
         .args(["-9", "-f", "shroud --headless"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .and_then(|mut c| {
-            // Give it 500ms max then forget about it
-            std::thread::sleep(Duration::from_millis(100));
-            let _ = c.try_wait();
-            Ok(())
-        });
+    {
+        // Give it 100ms max then forget about it
+        std::thread::sleep(Duration::from_millis(100));
+        let _ = child.try_wait();
+    }
 
-    let _ = Command::new("pkill")
+    if let Ok(mut child) = Command::new("pkill")
         .args(["-9", "-x", "shroud"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .and_then(|mut c| {
-            std::thread::sleep(Duration::from_millis(100));
-            let _ = c.try_wait();
-            Ok(())
-        });
+    {
+        std::thread::sleep(Duration::from_millis(100));
+        let _ = child.try_wait();
+    }
 }
 
 /// Managed shroud daemon process for testing
