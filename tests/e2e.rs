@@ -11,17 +11,8 @@ mod common;
 use common::*;
 use std::time::Duration;
 
-// Cleanup any orphans from previous runs on test binary startup
-#[ctor::ctor]
-fn test_init() {
-    cleanup_all_shroud_processes();
-}
-
-// Cleanup on exit
-#[ctor::dtor]
-fn test_cleanup() {
-    cleanup_all_shroud_processes();
-}
+// Note: We removed ctor/dtor hooks as they can cause hangs in some CI environments.
+// Each test now handles its own cleanup via CleanupGuard.
 
 // ============================================================================
 // Headless Mode Tests

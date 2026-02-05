@@ -17,10 +17,10 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 cd "$PROJECT_ROOT"
 
-# Cleanup function - kill any orphaned processes
+# Cleanup function - kill any orphaned processes (with timeout to prevent hanging)
 cleanup() {
-    pkill -9 -f shroud 2>/dev/null || true
-    pkill -9 -f tarpaulin 2>/dev/null || true
+    timeout 5 pkill -9 -f shroud 2>/dev/null || true
+    timeout 5 pkill -9 -f tarpaulin 2>/dev/null || true
 }
 trap cleanup EXIT
 

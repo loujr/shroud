@@ -10,50 +10,34 @@ use tokio::time::{sleep, timeout};
 static SPAWNED_PIDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 
 /// Kill ALL shroud processes (global cleanup)
+/// This function is designed to be fast and never hang
 pub fn cleanup_all_shroud_processes() {
-    // Kill tracked PIDs first
+    // Kill tracked PIDs first (fast, direct)
     if let Ok(pids) = SPAWNED_PIDS.lock() {
         for pid in pids.iter() {
+            // Use direct syscall - never hangs
             unsafe {
                 libc::kill(*pid as i32, libc::SIGKILL);
             }
         }
     }
 
-    // Kill shroud daemon processes only (not the test runner)
-    // Use pgrep to find daemon PIDs, then kill them specifically
-    if let Ok(output) = Command::new("pgrep")
-        .args(["-f", "shroud --headless"])
-        .output()
-    {
-        if output.status.success() {
-            let pids_str = String::from_utf8_lossy(&output.stdout);
-            for pid_str in pids_str.lines() {
-                if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                    unsafe {
-                        libc::kill(pid, libc::SIGKILL);
-                    }
-                }
-            }
-        }
-    }
+    // Use timeout-based pkill which is more reliable than pgrep + kill
+    // timeout ensures we never hang even if pkill has issues
+    let _ = Command::new("timeout")
+        .args(["1", "pkill", "-9", "-f", "shroud --headless"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 
-    // Also try to find any orphaned shroud binaries (not test processes)
-    if let Ok(output) = Command::new("pgrep").args(["-x", "shroud"]).output() {
-        if output.status.success() {
-            let pids_str = String::from_utf8_lossy(&output.stdout);
-            for pid_str in pids_str.lines() {
-                if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                    unsafe {
-                        libc::kill(pid, libc::SIGKILL);
-                    }
-                }
-            }
-        }
-    }
+    let _ = Command::new("timeout")
+        .args(["1", "pkill", "-9", "-x", "shroud"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 
-    // Wait briefly for processes to die
-    std::thread::sleep(Duration::from_millis(100));
+    // Brief wait for processes to die (but don't hang)
+    std::thread::sleep(Duration::from_millis(50));
 }
 
 /// Managed shroud daemon process for testing

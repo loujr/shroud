@@ -47,11 +47,11 @@ warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 info() { echo -e "${BLUE}[INFO]${NC} $*"; }
 
-# Cleanup function
+# Cleanup function (with timeout to prevent hanging)
 cleanup() {
     log "Cleaning up..."
-    pkill -9 -f "shroud --headless" 2>/dev/null || true
-    pkill -9 -x shroud 2>/dev/null || true
+    timeout 5 pkill -9 -f "shroud --headless" 2>/dev/null || true
+    timeout 5 pkill -9 -x shroud 2>/dev/null || true
     rm -f /tmp/shroud*.sock 2>/dev/null || true
 }
 
