@@ -22,6 +22,9 @@ mod handlers;
 mod reconnect;
 mod state_sync;
 
+#[cfg(test)]
+mod tests;
+
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{mpsc, RwLock};

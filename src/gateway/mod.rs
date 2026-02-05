@@ -14,6 +14,9 @@ pub mod forwarding;
 pub mod nat;
 pub mod status;
 
+#[cfg(test)]
+mod tests;
+
 use crate::config::GatewayConfig;
 use log::{debug, info};
 use std::sync::atomic::{AtomicBool, Ordering};

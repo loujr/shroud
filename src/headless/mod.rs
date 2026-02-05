@@ -10,6 +10,9 @@
 pub mod runtime;
 pub mod systemd;
 
+#[cfg(test)]
+mod tests;
+
 pub use runtime::run_headless;
 
 // Re-export systemd functions for external use

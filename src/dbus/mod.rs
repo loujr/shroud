@@ -5,4 +5,7 @@
 
 pub mod monitor;
 
+#[cfg(test)]
+mod tests;
+
 pub use monitor::{NmEvent, NmMonitor};

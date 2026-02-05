@@ -9,6 +9,9 @@ pub mod firewall;
 pub mod paths;
 pub mod sudo_check;
 
+#[cfg(test)]
+mod tests;
+
 pub use cleanup::{cleanup_stale_on_startup, cleanup_with_fallback, CleanupResult};
 
 // Re-export cleanup_all for headless mode
