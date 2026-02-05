@@ -12,32 +12,41 @@ static SPAWNED_PIDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 /// Kill ALL shroud processes (global cleanup)
 /// This function is designed to be fast and never hang
 pub fn cleanup_all_shroud_processes() {
-    // Kill tracked PIDs first (fast, direct)
+    // Kill tracked PIDs first (fast, direct syscall - never hangs)
     if let Ok(pids) = SPAWNED_PIDS.lock() {
         for pid in pids.iter() {
-            // Use direct syscall - never hangs
             unsafe {
                 libc::kill(*pid as i32, libc::SIGKILL);
+                // Also try to reap zombie immediately
+                libc::waitpid(*pid as i32, std::ptr::null_mut(), libc::WNOHANG);
             }
         }
     }
 
-    // Use timeout-based pkill which is more reliable than pgrep + kill
-    // timeout ensures we never hang even if pkill has issues
-    let _ = Command::new("timeout")
-        .args(["1", "pkill", "-9", "-f", "shroud --headless"])
+    // Use pkill directly (don't spawn timeout subprocess which can cause issues)
+    // These are fire-and-forget - we don't wait for them
+    let _ = Command::new("pkill")
+        .args(["-9", "-f", "shroud --headless"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status();
+        .spawn()
+        .and_then(|mut c| {
+            // Give it 500ms max then forget about it
+            std::thread::sleep(Duration::from_millis(100));
+            let _ = c.try_wait();
+            Ok(())
+        });
 
-    let _ = Command::new("timeout")
-        .args(["1", "pkill", "-9", "-x", "shroud"])
+    let _ = Command::new("pkill")
+        .args(["-9", "-x", "shroud"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status();
-
-    // Brief wait for processes to die (but don't hang)
-    std::thread::sleep(Duration::from_millis(50));
+        .spawn()
+        .and_then(|mut c| {
+            std::thread::sleep(Duration::from_millis(100));
+            let _ = c.try_wait();
+            Ok(())
+        });
 }
 
 /// Managed shroud daemon process for testing

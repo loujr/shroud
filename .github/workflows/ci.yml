@@ -171,19 +171,32 @@ jobs:
 
       - name: Run E2E tests
         run: |
-          timeout 240 cargo test --test e2e --all-features -- --test-threads=1 2>&1 || {
-            exit_code=$?
-            if [[ $exit_code -eq 124 ]]; then
-              echo "E2E tests timed out"
-            fi
-            echo "Some E2E tests had issues (expected in CI without full D-Bus)"
-          }
+          # Run tests with timeout, killing entire process group on timeout
+          set +e
+          timeout --signal=KILL 180 cargo test --test e2e --all-features -- --test-threads=1
+          exit_code=$?
+          set -e
+          
+          # Force kill any remaining processes
+          pkill -9 -f "shroud" || true
+          pkill -9 -f "e2e-" || true
+          
+          if [[ $exit_code -eq 137 ]] || [[ $exit_code -eq 124 ]]; then
+            echo "::warning::E2E tests were killed by timeout"
+          elif [[ $exit_code -ne 0 ]]; then
+            echo "::warning::Some E2E tests had issues (exit code: $exit_code)"
+          fi
+          
+          # Always succeed - E2E test failures are warnings in CI
+          exit 0
         continue-on-error: true
 
       - name: Post-cleanup
         if: always()
         run: |
-          timeout 5 pkill -9 -f shroud 2>/dev/null || true
+          pkill -9 -f shroud 2>/dev/null || true
+          pkill -9 -f "target/debug/deps/e2e" 2>/dev/null || true
+          sleep 1
 
   # ===========================================================================
   # MSRV Check
