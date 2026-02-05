@@ -111,6 +111,13 @@ impl StateMachine {
                     server: server.clone(),
                 })
             }
+            (VpnState::Connecting { .. }, Event::ConnectionFailed { reason: _ }) => {
+                // Definitive failure - VPN doesn't exist, invalid config, etc.
+                // Go directly to Disconnected, not Reconnecting
+                self.retries = 0;
+                reason = TransitionReason::ConnectionFailed;
+                Some(VpnState::Disconnected)
+            }
             (VpnState::Connecting { server }, Event::Timeout) => {
                 self.retries += 1;
                 if self.retries >= self.config.max_retries {
@@ -206,6 +213,13 @@ impl StateMachine {
                 Some(VpnState::Connected {
                     server: server.clone(),
                 })
+            }
+            (VpnState::Reconnecting { .. }, Event::ConnectionFailed { reason: _ }) => {
+                // Definitive failure - VPN doesn't exist, invalid config, etc.
+                // Go directly to Disconnected
+                self.retries = 0;
+                reason = TransitionReason::ConnectionFailed;
+                Some(VpnState::Disconnected)
             }
             (
                 VpnState::Reconnecting {

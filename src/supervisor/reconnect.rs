@@ -90,7 +90,10 @@ impl super::VpnSupervisor {
                 "Reconnect Failed",
                 &format!("VPN '{}' not found", connection_name),
             );
-            self.dispatch(Event::NmVpnDown);
+            // Use ConnectionFailed to go directly to Disconnected
+            self.dispatch(Event::ConnectionFailed {
+                reason: format!("VPN '{}' no longer exists", connection_name),
+            });
             self.sync_shared_state().await;
             self.update_tray();
             // Refresh connection list to update the tray menu

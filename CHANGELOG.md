@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.8] - 2026-02-04
+
+### Fixed
+
+- **Invalid VPN State Bug** - When connecting to a non-existent VPN, the state machine incorrectly transitioned to `Reconnecting` instead of `Disconnected`, causing status to show "Connected to: nonexistent-vpn" when not connected. Now properly transitions to `Disconnected` with reason `connection_failed`. Discovered via chaos testing.
+
+### Added
+
+- **ConnectionFailed Event** - New state machine event for definitive connection failures (VPN doesn't exist, invalid config, etc.) that transitions directly to `Disconnected` rather than triggering reconnection attempts.
+
+---
+
 ## [1.8.7] - 2026-02-03
 
 ### Fixed

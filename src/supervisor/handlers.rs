@@ -682,7 +682,11 @@ impl super::VpnSupervisor {
                 "Failed to connect to {} after {} attempts",
                 connection_name, MAX_CONNECT_ATTEMPTS
             );
-            self.dispatch(Event::Timeout);
+            // Use ConnectionFailed to transition directly to Disconnected
+            // (not Timeout, which would go to Reconnecting)
+            self.dispatch(Event::ConnectionFailed {
+                reason: format!("Failed to connect after {} attempts", MAX_CONNECT_ATTEMPTS),
+            });
             self.sync_shared_state().await;
             self.update_tray();
             self.show_notification(

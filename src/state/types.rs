@@ -143,6 +143,8 @@ pub enum Event {
     // Internal events
     /// Connection/reconnection attempt timed out
     Timeout,
+    /// Connection definitively failed (VPN doesn't exist, invalid config, etc.)
+    ConnectionFailed { reason: String },
     /// Endpoint/server failed, should try another
     EndpointFailed { reason: String },
 }
@@ -162,6 +164,7 @@ impl fmt::Display for Event {
             Event::Sleep => write!(f, "Sleep"),
             Event::Wake => write!(f, "Wake"),
             Event::Timeout => write!(f, "Timeout"),
+            Event::ConnectionFailed { reason } => write!(f, "ConnectionFailed({})", reason),
             Event::EndpointFailed { reason } => write!(f, "EndpointFailed({})", reason),
         }
     }
@@ -189,6 +192,8 @@ pub enum TransitionReason {
     Retrying,
     /// All retries exhausted
     RetriesExhausted,
+    /// Connection definitively failed (invalid VPN, doesn't exist, etc.)
+    ConnectionFailed,
     /// System wake from sleep
     WakeResync,
     /// External VPN change detected
@@ -209,6 +214,7 @@ impl fmt::Display for TransitionReason {
             TransitionReason::Timeout => "timeout",
             TransitionReason::Retrying => "retrying",
             TransitionReason::RetriesExhausted => "retries_exhausted",
+            TransitionReason::ConnectionFailed => "connection_failed",
             TransitionReason::WakeResync => "wake_resync",
             TransitionReason::ExternalChange => "external_change",
             TransitionReason::Unknown => "unknown",
