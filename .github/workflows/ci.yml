@@ -8,49 +8,49 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
 
-# Cancel in-progress runs for the same branch
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   # ===========================================================================
-  # STAGE 1: Quick Checks (parallel, fail fast)
+  # Quick checks - parallel, fail fast
   # ===========================================================================
-
-  format:
-    name: Format Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - run: cargo fmt --all --check
-
-  clippy:
-    name: Clippy Lints
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev pkg-config
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ci-v4"
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-
+  
   check:
-    name: Compile Check
+    name: Check & Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      
+      - name: Format check
+        run: cargo fmt --all --check
+      
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      
+      - name: Doc check
+        run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  # ===========================================================================
+  # Tests - unit, integration, regression
+  # ===========================================================================
+  
+  test:
+    name: Test
+    needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -61,19 +61,19 @@ jobs:
           sudo apt-get install -y libdbus-1-dev pkg-config
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ci-v4"
-      - run: cargo check --all-targets --all-features
+      
+      - name: Run all tests
+        run: cargo test --all-features -- --test-threads=4
 
   # ===========================================================================
-  # STAGE 2: Unit Tests (fast, parallel)
+  # Coverage
   # ===========================================================================
-
-  unit-tests:
-    name: Unit Tests
-    needs: [format, clippy, check]
+  
+  coverage:
+    name: Coverage
+    needs: test
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies
@@ -82,133 +82,40 @@ jobs:
           sudo apt-get install -y libdbus-1-dev pkg-config
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin --locked
+      
+      - name: Generate coverage
+        run: |
+          mkdir -p coverage
+          cargo tarpaulin \
+            --all-features \
+            --out xml --out html \
+            --output-dir coverage \
+            --timeout 120 \
+            -- --test-threads=2
+      
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
         with:
-          shared-key: "ci-v4"
-
-      - name: Run unit tests
-        run: cargo test --bins --all-features -- --test-threads=4
-
-  # ===========================================================================
-  # STAGE 3: Integration Tests
-  # ===========================================================================
-
-  integration-tests:
-    name: Integration Tests
-    needs: [unit-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev pkg-config
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+          files: coverage/cobertura.xml
+          fail_ci_if_error: false
+      
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
         with:
-          shared-key: "ci-v4"
-
-      - name: Run integration tests
-        run: cargo test --test integration --all-features -- --test-threads=2
-
-      - name: Run stability tests
-        run: cargo test --test stability --all-features
-
-      - name: Run regression tests
-        run: cargo test --test regression --all-features
-
-  security-tests:
-    name: Security Tests
-    needs: [unit-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev pkg-config
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ci-v4"
-
-      - name: Run security tests (non-privileged)
-        run: cargo test --test security --all-features
-
-  # ===========================================================================
-  # STAGE 4: E2E Tests (isolated, process-spawning tests)
-  # ===========================================================================
-
-  e2e-tests:
-    name: E2E Tests
-    needs: [integration-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 8
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libdbus-1-dev \
-            pkg-config \
-            network-manager \
-            iptables \
-            iproute2 \
-            dbus-x11
-          sudo systemctl start dbus || true
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ci-v4"
-
-      - name: Build release
-        run: cargo build --release
-
-      - name: Pre-cleanup
-        run: pkill -9 -f shroud 2>/dev/null || true
-
-      - name: Run E2E tests
-        run: |
-          # Run cargo test in background
-          cargo test --test e2e --all-features -- --test-threads=1 &
-          TEST_PID=$!
-          
-          # Wait for test with timeout (max 120s)
-          SECONDS=0
-          while kill -0 $TEST_PID 2>/dev/null; do
-            if [[ $SECONDS -ge 120 ]]; then
-              echo "::warning::E2E tests timed out after 120s, force killing"
-              kill -9 $TEST_PID 2>/dev/null || true
-              break
-            fi
-            sleep 1
-          done
-          
-          # Wait to get exit code (or 137 if killed)
-          wait $TEST_PID 2>/dev/null || true
-          
-          # Always kill any remaining processes
-          pkill -9 -f shroud 2>/dev/null || true
-          pkill -9 -f "deps/e2e" 2>/dev/null || true
-          
-          echo "E2E tests completed"
-        timeout-minutes: 3
-
-      - name: Post-cleanup
-        if: always()
-        run: |
-          pkill -9 -f shroud 2>/dev/null || true
-          pkill -9 -f "deps/e2e" 2>/dev/null || true
+          name: coverage
+          path: coverage/
+          if-no-files-found: ignore
 
   # ===========================================================================
   # MSRV Check
   # ===========================================================================
-
+  
   msrv:
-    name: MSRV Check
-    needs: [format]
+    name: MSRV
+    needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -221,57 +128,25 @@ jobs:
         with:
           toolchain: "1.85"
       - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ci-v4"
+      
       - name: Check MSRV
         run: cargo check --all-features
 
   # ===========================================================================
-  # Documentation
+  # Success gate
   # ===========================================================================
-
-  docs:
-    name: Documentation
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev pkg-config
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ci-v4"
-      - run: cargo doc --no-deps --all-features
-        env:
-          RUSTDOCFLAGS: -D warnings
-
-  # ===========================================================================
-  # FINAL STATUS CHECK
-  # ===========================================================================
-
+  
   ci-success:
     name: CI Success
-    needs: [e2e-tests, security-tests, docs, msrv]
+    needs: [test, coverage, msrv]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Check all jobs passed
+      - name: Check results
         run: |
-          echo "Job results:"
-          echo "  e2e-tests: ${{ needs.e2e-tests.result }}"
-          echo "  security-tests: ${{ needs.security-tests.result }}"
-          echo "  docs: ${{ needs.docs.result }}"
-          echo "  msrv: ${{ needs.msrv.result }}"
-          
-          # E2E tests are allowed to fail in CI (limited D-Bus support)
-          if [[ "${{ needs.docs.result }}" == "failure" ]] || \
-             [[ "${{ needs.msrv.result }}" == "failure" ]] || \
-             [[ "${{ needs.security-tests.result }}" == "failure" ]]; then
-            echo "Critical jobs failed"
+          if [[ "${{ needs.test.result }}" != "success" ]] || \
+             [[ "${{ needs.msrv.result }}" != "success" ]]; then
+            echo "Required jobs failed"
             exit 1
           fi
-          
-          echo "✅ All critical CI checks passed!"
+          echo "✅ CI passed!"

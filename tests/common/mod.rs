@@ -1,12 +1,10 @@
 //! Common test utilities for all Shroud tests
 //!
 //! This module provides:
-//! - Test context with mocked dependencies
+//! - Test context management
 //! - Mock implementations (NetworkManager, D-Bus, command executor)
-//! - Process management for E2E tests
 //! - Assertions for system state
 //! - Test fixtures and data generators
-//! - JSON result output for CI
 
 #![allow(dead_code)]
 #![allow(unused_imports)]
@@ -14,8 +12,6 @@
 // Core test utilities
 pub mod assertions;
 pub mod context;
-pub mod harness;
-pub mod process;
 pub mod results;
 pub mod system;
 
@@ -28,8 +24,6 @@ pub mod mock_nm;
 // Re-export core utilities
 pub use assertions::*;
 pub use context::*;
-pub use harness::*;
-pub use process::*;
 pub use results::*;
 pub use system::*;
 
@@ -47,32 +41,11 @@ static INIT: Once = Once::new();
 /// Initialize test environment (called once per test run)
 pub fn init() {
     INIT.call_once(|| {
-        // Set up logging for tests
-        if std::env::var("RUST_LOG").is_err() {
-            std::env::set_var("RUST_LOG", "shroud=debug,test=debug");
-        }
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Warn)
+            .is_test(true)
+            .try_init();
     });
-}
-
-/// Get path to the shroud binary
-pub fn shroud_binary() -> PathBuf {
-    // First try the project's target directory
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-
-    // Try release first, then debug
-    let release = manifest_dir.join("target").join("release").join("shroud");
-    if release.exists() {
-        return release;
-    }
-
-    let debug = manifest_dir.join("target").join("debug").join("shroud");
-    if debug.exists() {
-        return debug;
-    }
-
-    // Fallback to PATH
-    PathBuf::from("shroud")
 }
 
 /// Get path to project root

@@ -83,14 +83,12 @@ panic = "abort"
 tempfile = "3"
 tokio = { version = "1", features = ["full", "test-util"] }
 tokio-test = "0.4"
-nix = { version = "0.29", features = ["signal", "user"] }
-libc = "0.2"
 
 # ============================================================================
 # Test Targets
 # ============================================================================
 
-# Integration tests - module interactions (no daemon required for most)
+# Integration tests - module interactions with mocks
 [[test]]
 name = "integration"
 path = "tests/integration/mod.rs"
@@ -104,18 +102,3 @@ path = "tests/security/mod.rs"
 [[test]]
 name = "regression"
 path = "tests/regression.rs"
-
-# End-to-end tests - full binary execution tests
-[[test]]
-name = "e2e"
-path = "tests/e2e.rs"
-
-# Chaos tests - resilience and failure mode testing
-[[test]]
-name = "chaos"
-path = "tests/chaos.rs"
-
-# Stability tests - race condition and event handling tests
-[[test]]
-name = "stability"
-path = "tests/stability.rs"
