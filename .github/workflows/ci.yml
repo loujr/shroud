@@ -163,11 +163,12 @@ jobs:
   # ===========================================================================
   # STAGE 4: E2E Tests (Rust-based)
   # ===========================================================================
-  
+
   e2e-tests:
     name: E2E Tests
     needs: [integration-tests]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies
@@ -186,19 +187,32 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "ci-v2"
-      
+
       - name: Build
         run: cargo build --release
-      
+
+      - name: Pre-cleanup
+        run: pkill -9 -f shroud || true
+
       - name: Run E2E tests
         run: |
           # E2E tests that require running daemon may fail in CI
           # due to D-Bus unavailability - don't fail the build
           cargo test --test e2e --all-features -- --test-threads=1 2>&1 || echo "Some E2E tests failed (expected in CI without D-Bus)"
+        timeout-minutes: 5
         continue-on-error: true
-      
+
+      - name: Post-cleanup E2E
+        if: always()
+        run: pkill -9 -f shroud || true
+
       - name: Run Stability tests
         run: cargo test --test stability --all-features
+        timeout-minutes: 2
+
+      - name: Final cleanup
+        if: always()
+        run: pkill -9 -f shroud || true
 
   # ===========================================================================
   # MSRV Check

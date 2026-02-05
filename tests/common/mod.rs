@@ -11,12 +11,14 @@
 
 pub mod assertions;
 pub mod context;
+pub mod harness;
 pub mod process;
 pub mod results;
 pub mod system;
 
 pub use assertions::*;
 pub use context::*;
+pub use harness::*;
 pub use process::*;
 pub use results::*;
 pub use system::*;

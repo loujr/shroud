@@ -2,14 +2,67 @@
 
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
+
+// Track all spawned PIDs for cleanup
+static SPAWNED_PIDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+/// Kill ALL shroud processes (global cleanup)
+pub fn cleanup_all_shroud_processes() {
+    // Kill tracked PIDs first
+    if let Ok(pids) = SPAWNED_PIDS.lock() {
+        for pid in pids.iter() {
+            unsafe {
+                libc::kill(*pid as i32, libc::SIGKILL);
+            }
+        }
+    }
+
+    // Kill shroud daemon processes only (not the test runner)
+    // Use pgrep to find daemon PIDs, then kill them specifically
+    if let Ok(output) = Command::new("pgrep")
+        .args(["-f", "shroud --headless"])
+        .output()
+    {
+        if output.status.success() {
+            let pids_str = String::from_utf8_lossy(&output.stdout);
+            for pid_str in pids_str.lines() {
+                if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                    unsafe {
+                        libc::kill(pid, libc::SIGKILL);
+                    }
+                }
+            }
+        }
+    }
+
+    // Also try to find any orphaned shroud binaries (not test processes)
+    if let Ok(output) = Command::new("pgrep").args(["-x", "shroud"]).output() {
+        if output.status.success() {
+            let pids_str = String::from_utf8_lossy(&output.stdout);
+            for pid_str in pids_str.lines() {
+                if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                    unsafe {
+                        libc::kill(pid, libc::SIGKILL);
+                    }
+                }
+            }
+        }
+    }
+
+    // Wait briefly for processes to die
+    std::thread::sleep(Duration::from_millis(100));
+}
 
 /// Managed shroud daemon process for testing
 pub struct ShroudProcess {
     child: Option<Child>,
     socket_path: String,
     binary_path: String,
+    start_timeout: Duration,
+    stop_timeout: Duration,
 }
 
 impl ShroudProcess {
@@ -18,7 +71,16 @@ impl ShroudProcess {
             child: None,
             socket_path: socket.as_ref().to_string_lossy().to_string(),
             binary_path: binary.as_ref().to_string_lossy().to_string(),
+            start_timeout: Duration::from_secs(10),
+            stop_timeout: Duration::from_secs(5),
         }
+    }
+
+    /// Set shorter timeouts for CI
+    pub fn with_ci_timeouts(mut self) -> Self {
+        self.start_timeout = Duration::from_secs(5);
+        self.stop_timeout = Duration::from_secs(2);
+        self
     }
 
     /// Start the daemon and wait for it to be ready
@@ -32,14 +94,32 @@ impl ShroudProcess {
         cmd.args(args)
             .env("SHROUD_SOCKET", &self.socket_path)
             .env("SHROUD_TEST_MODE", "1")
+            .env("SHROUD_LOG_LEVEL", "warn")
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
 
         let child = cmd.spawn().map_err(|e| format!("Failed to start: {}", e))?;
+
+        // Track PID for cleanup
+        let pid = child.id();
+        if let Ok(mut pids) = SPAWNED_PIDS.lock() {
+            pids.push(pid);
+        }
+
         self.child = Some(child);
 
-        // Wait for daemon to be ready
-        self.wait_ready(Duration::from_secs(10)).await
+        // Wait for daemon to be ready with timeout
+        match timeout(self.start_timeout, self.wait_ready_internal()).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => {
+                self.force_kill();
+                Err(format!("Daemon failed to start: {}", e))
+            }
+            Err(_) => {
+                self.force_kill();
+                Err("Daemon start timed out".to_string())
+            }
+        }
     }
 
     /// Start in headless mode
@@ -47,18 +127,35 @@ impl ShroudProcess {
         self.start_with_args(&["--headless"]).await
     }
 
-    /// Wait for daemon to respond to ping
-    pub async fn wait_ready(&self, max_wait: Duration) -> Result<(), String> {
-        let start = std::time::Instant::now();
-
-        while start.elapsed() < max_wait {
-            if self.ping().await.is_ok() {
+    /// Internal wait ready (no timeout - caller handles it)
+    async fn wait_ready_internal(&self) -> Result<(), String> {
+        for _ in 0..50 {
+            if self.ping_sync() {
                 return Ok(());
             }
             sleep(Duration::from_millis(100)).await;
         }
+        Err("Daemon not responding".to_string())
+    }
 
-        Err("Daemon did not become ready".to_string())
+    /// Synchronous ping check
+    fn ping_sync(&self) -> bool {
+        Command::new(&self.binary_path)
+            .args(["status"])
+            .env("SHROUD_SOCKET", &self.socket_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    /// Wait for daemon to respond to ping
+    pub async fn wait_ready(&self, max_wait: Duration) -> Result<(), String> {
+        match timeout(max_wait, self.wait_ready_internal()).await {
+            Ok(result) => result,
+            Err(_) => Err("Daemon did not become ready".to_string()),
+        }
     }
 
     /// Send ping command
@@ -66,18 +163,26 @@ impl ShroudProcess {
         self.run_command(&["status"]).await.map(|_| ())
     }
 
-    /// Run a shroud command
+    /// Run a shroud command with timeout
     pub async fn run_command(&self, args: &[&str]) -> Result<String, String> {
-        let output = Command::new(&self.binary_path)
-            .args(args)
-            .env("SHROUD_SOCKET", &self.socket_path)
-            .output()
-            .map_err(|e| e.to_string())?;
+        let result = timeout(Duration::from_secs(5), async {
+            let output = Command::new(&self.binary_path)
+                .args(args)
+                .env("SHROUD_SOCKET", &self.socket_path)
+                .output()
+                .map_err(|e| e.to_string())?;
 
-        if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout).to_string())
-        } else {
-            Err(String::from_utf8_lossy(&output.stderr).to_string())
+            if output.status.success() {
+                Ok(String::from_utf8_lossy(&output.stdout).to_string())
+            } else {
+                Err(String::from_utf8_lossy(&output.stderr).to_string())
+            }
+        })
+        .await;
+
+        match result {
+            Ok(r) => r,
+            Err(_) => Err("Command timed out".to_string()),
         }
     }
 
@@ -108,26 +213,35 @@ impl ShroudProcess {
 
     /// Stop the daemon gracefully
     pub async fn stop(&mut self) -> Result<(), String> {
+        if self.child.is_none() {
+            return Ok(());
+        }
+
         // First try graceful quit command
         let _ = self.run_command(&["quit"]).await;
 
         if let Some(ref mut child) = self.child {
             // Wait for exit with timeout
-            match timeout(Duration::from_secs(5), async {
+            match timeout(self.stop_timeout, async {
                 loop {
                     match child.try_wait() {
-                        Ok(Some(_)) => break,
-                        Ok(None) => sleep(Duration::from_millis(100)).await,
-                        Err(_) => break,
+                        Ok(Some(_)) => break Ok(()),
+                        Ok(None) => sleep(Duration::from_millis(50)).await,
+                        Err(e) => break Err(e.to_string()),
                     }
                 }
             })
             .await
             {
-                Ok(_) => {}
-                Err(_) => {
-                    // Force kill if graceful shutdown failed
-                    let _ = child.kill();
+                Ok(Ok(())) => {
+                    self.cleanup_pid();
+                    self.child = None;
+                    return Ok(());
+                }
+                _ => {
+                    // Force kill
+                    self.force_kill();
+                    return Err("Had to force kill daemon".to_string());
                 }
             }
         }
@@ -135,12 +249,29 @@ impl ShroudProcess {
         Ok(())
     }
 
-    /// Kill the daemon immediately (for crash recovery tests)
-    pub fn kill(&mut self) {
+    /// Force kill the daemon immediately
+    fn force_kill(&mut self) {
         if let Some(ref mut child) = self.child {
             let _ = child.kill();
+            let _ = child.wait(); // Reap zombie
         }
+        self.cleanup_pid();
         self.child = None;
+    }
+
+    /// Remove our PID from the tracked list
+    fn cleanup_pid(&self) {
+        if let Some(ref child) = self.child {
+            let pid = child.id();
+            if let Ok(mut pids) = SPAWNED_PIDS.lock() {
+                pids.retain(|&p| p != pid);
+            }
+        }
+    }
+
+    /// Kill the daemon immediately (for crash recovery tests)
+    pub fn kill(&mut self) {
+        self.force_kill();
     }
 
     /// Check if daemon is running
@@ -160,10 +291,11 @@ impl ShroudProcess {
 
 impl Drop for ShroudProcess {
     fn drop(&mut self) {
-        if let Some(ref mut child) = self.child {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+        // ALWAYS force kill on drop
+        self.force_kill();
+
+        // Also clean up socket
+        let _ = std::fs::remove_file(&self.socket_path);
     }
 }
 

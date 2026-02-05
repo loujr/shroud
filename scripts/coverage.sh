@@ -17,6 +17,16 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 cd "$PROJECT_ROOT"
 
+# Cleanup function - kill any orphaned processes
+cleanup() {
+    pkill -9 -f shroud 2>/dev/null || true
+    pkill -9 -f tarpaulin 2>/dev/null || true
+}
+trap cleanup EXIT
+
+# Pre-cleanup
+cleanup
+
 OPEN_REPORT=false
 HTML_ONLY=false
 LCOV=false
@@ -78,16 +88,33 @@ fi
 # unreliable in CI/coverage environments and can hang or panic
 EXCLUDE_ARGS="--exclude-files tests/e2e.rs --exclude-files tests/chaos.rs"
 
-cargo tarpaulin \
-    --verbose \
-    --all-features \
-    --workspace \
-    --timeout 300 \
-    $OUTPUT_ARGS \
-    $EXCLUDE_ARGS \
-    --skip-clean \
-    --engine llvm \
-    2>&1 | tee coverage/tarpaulin.log || echo "Tarpaulin completed with warnings"
+# For CI mode, use more restrictive options to prevent hangs
+if $CI_MODE; then
+    echo "Running coverage in CI mode (restricted)"
+    cargo tarpaulin \
+        --out html --out xml \
+        --output-dir coverage \
+        --skip-clean \
+        --timeout 60 \
+        $EXCLUDE_ARGS \
+        --ignore-tests \
+        -- --test-threads=1 \
+        2>&1 | head -500 | tee coverage/tarpaulin.log || echo "Tarpaulin completed with warnings"
+else
+    cargo tarpaulin \
+        --verbose \
+        --all-features \
+        --workspace \
+        --timeout 300 \
+        $OUTPUT_ARGS \
+        $EXCLUDE_ARGS \
+        --skip-clean \
+        --engine llvm \
+        2>&1 | tee coverage/tarpaulin.log || echo "Tarpaulin completed with warnings"
+fi
+
+# Post-cleanup
+cleanup
 
 echo ""
 echo "✓ Coverage report generated in coverage/"
