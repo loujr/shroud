@@ -8,7 +8,6 @@ pub mod manager;
 #[allow(dead_code)]
 pub mod types;
 
-#[allow(unused_imports)]
 pub use manager::NotificationManager;
 #[allow(unused_imports)]
 pub use types::{Notification, NotificationAction, NotificationCategory, Urgency};

@@ -40,9 +40,7 @@ COMMANDS:
     quit                 Stop the daemon gracefully
     restart              Restart the daemon
     reload               Reload configuration without restart
-    audit                Check dependencies for vulnerabilities
     doctor               Diagnose configuration issues
-    update               Build, install, and restart (dev workflow)
     version              Show version information
     help <COMMAND>       Show help for a command
 
@@ -62,10 +60,7 @@ EXAMPLES:
     shroud --headless               Run in headless server mode
     shroud cleanup                  Remove old systemd service and stale files
     shroud reload                   Reload configuration from disk
-    shroud audit                    Check dependencies for vulnerabilities
     shroud doctor                   Diagnose configuration issues
-    shroud update                   Build, install, and restart
-    shroud version --check          Check if rebuild is needed
 
 ALIASES:
     ls                   Alias for 'list'
@@ -340,19 +335,6 @@ CONFIGURATION:
 For more: https://github.com/loujr/shroud/blob/main/docs/GATEWAY.md"#
         ),
 
-        "audit" => println!(
-            r#"Audit dependencies for vulnerabilities
-
-USAGE:
-    shroud audit
-
-Runs cargo-audit against the project dependencies. Installs cargo-audit
-if missing and reports known vulnerabilities from RustSec.
-
-EXAMPLES:
-    shroud audit"#
-        ),
-
         "debug" => println!(
             r#"Manage debug logging
 
@@ -430,34 +412,14 @@ Reloads config from disk and applies it live without restarting
 the daemon."#
         ),
 
-        "update" => println!(
-            r#"Build, install, and restart (development workflow)
-
-USAGE:
-    shroud update [OPTIONS]
-
-OPTIONS:
-    -y, --yes     Skip confirmation prompt
-    --debug       Build in debug mode (default: release)
-
-EXAMPLES:
-    shroud update
-    shroud update --yes
-    shroud update --debug"#
-        ),
-
         "version" => println!(
             r#"Show version information
 
 USAGE:
-    shroud version [--check]
-
-OPTIONS:
-    --check    Check if source is newer than the installed binary
+    shroud version
 
 EXAMPLES:
-    shroud version
-    shroud version --check"#
+    shroud version"#
         ),
 
         _ => println!("No help available for '{}'", command),

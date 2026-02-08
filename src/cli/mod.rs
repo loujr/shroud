@@ -6,6 +6,7 @@ pub mod args;
 pub mod handlers;
 pub mod help;
 pub mod import;
+#[allow(dead_code)]
 pub mod install;
 #[allow(dead_code)]
 pub mod output;

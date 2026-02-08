@@ -4,9 +4,6 @@
 //! with the daemon over IPC.
 
 use log::{error, info};
-use std::io::{IsTerminal, Write};
-use std::path::PathBuf;
-use std::time::Instant;
 
 use super::args::{Args, DebugAction, GatewayAction, ParsedCommand, ToggleAction};
 use super::help;
@@ -36,14 +33,8 @@ pub async fn run_client_mode(args: &Args) -> i32 {
         ParsedCommand::Cleanup => {
             return handle_cleanup_command(args).await;
         }
-        ParsedCommand::Update { yes, debug } => {
-            return handle_update_command(*yes, *debug).await;
-        }
-        ParsedCommand::Version { check } => {
-            return handle_version_command(*check).await;
-        }
-        ParsedCommand::Audit => {
-            return handle_audit_command();
+        ParsedCommand::Version => {
+            return handle_version_command().await;
         }
         ParsedCommand::Doctor => {
             return handle_doctor_command();
@@ -211,64 +202,12 @@ fn args_to_command(cmd: &ParsedCommand) -> Option<IpcCommand> {
         ParsedCommand::Quit => Some(IpcCommand::Quit),
         ParsedCommand::Restart => Some(IpcCommand::Restart),
         ParsedCommand::Reload => Some(IpcCommand::Reload),
-        ParsedCommand::Update { .. } => None,
-        ParsedCommand::Version { .. } => None,
-        ParsedCommand::Audit => None,
+        ParsedCommand::Version => None,
         ParsedCommand::Doctor => None,
         ParsedCommand::Gateway { .. } => None,
         ParsedCommand::Import { .. } => None,
 
         ParsedCommand::Help { .. } => None, // Handled locally
-    }
-}
-
-/// Run cargo-audit on the project.
-pub fn handle_audit_command() -> i32 {
-    use std::process::Command;
-
-    println!("Checking dependencies for known vulnerabilities...\n");
-
-    let check = Command::new("cargo").args(["audit", "--version"]).output();
-
-    if check.is_err() || !check.as_ref().unwrap().status.success() {
-        println!("cargo-audit not installed. Installing...\n");
-        let install = Command::new("cargo")
-            .args(["install", "cargo-audit"])
-            .status();
-
-        if install.is_err() || !install.unwrap().success() {
-            eprintln!("Failed to install cargo-audit");
-            return 1;
-        }
-    }
-
-    let project_dir = match find_project_directory() {
-        Ok(dir) => dir,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            eprintln!("Run this command from the shroud project directory");
-            return 1;
-        }
-    };
-
-    let status = Command::new("cargo")
-        .arg("audit")
-        .current_dir(&project_dir)
-        .status();
-
-    match status {
-        Ok(s) if s.success() => {
-            println!("\n✓ No known vulnerabilities found");
-            0
-        }
-        Ok(_) => {
-            println!("\n⚠ Vulnerabilities detected! See above for details.");
-            1
-        }
-        Err(e) => {
-            eprintln!("Failed to run cargo audit: {}", e);
-            1
-        }
     }
 }
 
@@ -720,282 +659,19 @@ async fn is_daemon_running() -> bool {
     send_command(IpcCommand::Ping).await.is_ok()
 }
 
-async fn handle_update_command(skip_confirm: bool, debug_mode: bool) -> i32 {
-    match try_handle_update_command(skip_confirm, debug_mode).await {
-        Ok(()) => 0,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            1
-        }
-    }
-}
-
-async fn try_handle_update_command(
-    skip_confirm: bool,
-    debug_mode: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let project_dir = find_project_directory()?;
-
-    println!("Project directory: {}", project_dir.display());
-
-    let git_status = std::process::Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(&project_dir)
-        .output()?;
-
-    let has_changes = !git_status.stdout.is_empty();
-    if has_changes {
-        println!("⚠ Warning: You have uncommitted changes");
-        let changes = String::from_utf8_lossy(&git_status.stdout);
-        for line in changes.lines().take(5) {
-            println!("  {}", line);
-        }
-        let total = changes.lines().count();
-        if total > 5 {
-            println!("  ... and {} more", total - 5);
-        }
-    }
-
-    if !skip_confirm {
-        print!("Build and install shroud? [Y/n] ");
-        std::io::stdout().flush()?;
-
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        let input = input.trim().to_lowercase();
-
-        if !input.is_empty() && input != "y" && input != "yes" {
-            println!("Cancelled");
-            return Ok(());
-        }
-    }
-
-    // Use cargo install which builds and installs in one step
-    // (no need for separate cargo build since install does its own build)
-    let install_args = if debug_mode {
-        vec!["install", "--path", ".", "--force", "--debug"]
-    } else {
-        vec!["install", "--path", ".", "--force"]
-    };
-
-    println!("\n📦 Building and installing...");
-    let install_status = run_with_progress("Building", || {
-        let mut command = std::process::Command::new("cargo");
-        command.args(&install_args).current_dir(&project_dir);
-        command
-    })?;
-
-    if !install_status.success() {
-        return Err("Build/install failed".into());
-    }
-    println!("✓ Installed to ~/.cargo/bin/shroud");
-
-    println!("\n🔄 Restarting daemon...");
-    match send_command(IpcCommand::Restart).await {
-        Ok(IpcResponse::OkMessage { message }) => {
-            println!("✓ {}", message);
-        }
-        Ok(_) | Err(_) => {
-            println!("ℹ Daemon not running or already stopped");
-        }
-    }
-
-    std::thread::sleep(std::time::Duration::from_millis(200));
-
-    let local_path = dirs::home_dir()
-        .map(|h| h.join(".local/bin/shroud"))
-        .filter(|p| p.exists() || p.parent().map(|p| p.exists()).unwrap_or(false));
-
-    if let Some(local_path) = local_path {
-        let cargo_bin = dirs::home_dir()
-            .ok_or("Failed to resolve home directory")?
-            .join(".cargo/bin/shroud");
-
-        if !cargo_bin.exists() {
-            return Err(format!("Source binary not found at {}", cargo_bin.display()).into());
-        }
-
-        if let Some(parent) = local_path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent)?;
-            }
-        }
-
-        if crate::cli::install::is_same_file(&cargo_bin, &local_path) {
-            println!("✓ Binary already up to date at {}", local_path.display());
-        } else {
-            match crate::cli::install::install_binary_atomic(&cargo_bin, &local_path) {
-                Ok(()) => {
-                    println!("✓ Installed to {}", local_path.display());
-                }
-                Err(e) => {
-                    println!("⚠ Installation failed: {}", e);
-                    println!();
-                    println!("  Manual installation:");
-                    println!("    cp {} {}", cargo_bin.display(), local_path.display());
-                    println!();
-                    println!("  Or use move (works on busy files):");
-                    println!("    mv {} {}", cargo_bin.display(), local_path.display());
-                    return Err("Installation failed".into());
-                }
-            }
-        }
-    }
-
-    println!("\n✅ Update complete!");
-    let version_output = std::process::Command::new("shroud")
-        .arg("--version")
-        .output()?;
-
-    if version_output.status.success() {
-        let version = String::from_utf8_lossy(&version_output.stdout);
-        println!("   Installed version: {}", version.trim());
-    }
-
-    Ok(())
-}
-
-fn run_with_progress(
-    label: &str,
-    make_command: impl FnOnce() -> std::process::Command,
-) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
-    let mut command = make_command();
-    let is_tty = std::io::stdout().is_terminal();
-
-    if is_tty {
-        command
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-    }
-
-    let mut child = command.spawn()?;
-    let start = Instant::now();
-
-    if !is_tty {
-        return Ok(child.wait()?);
-    }
-
-    let bar_width = 24usize;
-    let mut tick = 0usize;
-
-    loop {
-        if let Some(status) = child.try_wait()? {
-            let elapsed = start.elapsed().as_secs();
-            let bar = "█".repeat(bar_width);
-            print!("\r==> {} [{}] {}s\n", label, bar, elapsed);
-            std::io::stdout().flush()?;
-            return Ok(status);
-        }
-
-        let phase = tick % (bar_width * 2);
-        let filled = if phase < bar_width {
-            phase + 1
-        } else {
-            bar_width * 2 - phase
-        };
-        let bar = format!("{}{}", "█".repeat(filled), "░".repeat(bar_width - filled));
-        let elapsed = start.elapsed().as_secs();
-        print!("\r==> {} [{}] {}s", label, bar, elapsed);
-        std::io::stdout().flush()?;
-
-        std::thread::sleep(std::time::Duration::from_millis(250));
-        tick += 1;
-    }
-}
-
-async fn handle_version_command(check: bool) -> i32 {
-    match try_handle_version_command(check).await {
-        Ok(()) => 0,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            1
-        }
-    }
-}
-
-async fn try_handle_version_command(check: bool) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_version_command() -> i32 {
     let version = env!("CARGO_PKG_VERSION");
     println!("shroud {}", version);
 
-    if check {
-        match find_project_directory() {
-            Ok(project_dir) => {
-                let exe_path = std::env::current_exe()?;
-                let exe_mtime = std::fs::metadata(&exe_path)?.modified()?;
-
-                let src_dir = project_dir.join("src");
-                let newest_src = walkdir::WalkDir::new(&src_dir)
-                    .into_iter()
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.path().extension().is_some_and(|ext| ext == "rs"))
-                    .filter_map(|e| e.metadata().ok()?.modified().ok())
-                    .max();
-
-                let cargo_mtime = std::fs::metadata(project_dir.join("Cargo.toml"))?.modified()?;
-
-                let newest_source = newest_src
-                    .map(|src| std::cmp::max(src, cargo_mtime))
-                    .unwrap_or(cargo_mtime);
-
-                if newest_source > exe_mtime {
-                    println!("\n⚠ Update available: source files are newer than binary");
-                    println!("  Run 'shroud update' to rebuild and install");
-                } else {
-                    println!("\n✓ Binary is up to date with source");
-                }
-            }
-            Err(_) => {
-                println!("\nℹ Cannot check for updates: project directory not found");
-            }
-        }
-    }
-
     if let Ok(response) = send_command(IpcCommand::Ping).await {
         if let IpcResponse::Pong | IpcResponse::Ok = response {
-            println!("\n✓ Daemon is running");
+            println!("Daemon is running");
         }
     } else {
-        println!("\nℹ Daemon is not running");
+        println!("Daemon is not running");
     }
 
-    Ok(())
-}
-
-fn find_project_directory() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    if let Ok(dir) = std::env::var("SHROUD_PROJECT_DIR") {
-        let path = PathBuf::from(dir);
-        if path.join("Cargo.toml").exists() {
-            return Ok(path);
-        }
-    }
-
-    let current = std::env::current_dir()?;
-    if current.join("Cargo.toml").exists() {
-        let cargo_toml = std::fs::read_to_string(current.join("Cargo.toml"))?;
-        if cargo_toml.contains("name = \"shroud\"") {
-            return Ok(current);
-        }
-    }
-
-    if let Some(home) = dirs::home_dir() {
-        let path = home.join("src/shroud");
-        if path.join("Cargo.toml").exists() {
-            return Ok(path);
-        }
-    }
-
-    let mut dir = current;
-    while let Some(parent) = dir.parent() {
-        if parent.join("Cargo.toml").exists() {
-            let cargo_toml = std::fs::read_to_string(parent.join("Cargo.toml"))?;
-            if cargo_toml.contains("name = \"shroud\"") {
-                return Ok(parent.to_path_buf());
-            }
-        }
-        dir = parent.to_path_buf();
-    }
-
-    Err("Could not find shroud project directory. Set SHROUD_PROJECT_DIR or run from project directory.".into())
+    0
 }
 
 #[cfg(test)]
@@ -1017,13 +693,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_version_returns_zero() {
-        let exit_code = handle_version_command(false).await;
-        assert_eq!(exit_code, 0);
-    }
-
-    #[tokio::test]
-    async fn test_handle_version_with_check_returns_zero() {
-        let exit_code = handle_version_command(true).await;
+        let exit_code = handle_version_command().await;
         assert_eq!(exit_code, 0);
     }
 
@@ -1086,14 +756,6 @@ mod tests {
         let args = default_args();
         let exit_code = handle_cleanup_command(&args).await;
         assert_eq!(exit_code, 0);
-    }
-
-    #[test]
-    fn test_find_project_directory_from_repo() {
-        let result = find_project_directory();
-        if let Ok(path) = result {
-            assert!(path.join("Cargo.toml").exists());
-        }
     }
 
     #[tokio::test]
@@ -1331,13 +993,7 @@ mod tests {
             })
             .is_none());
             assert!(args_to_command(&ParsedCommand::Cleanup).is_none());
-            assert!(args_to_command(&ParsedCommand::Update {
-                yes: false,
-                debug: false
-            })
-            .is_none());
-            assert!(args_to_command(&ParsedCommand::Version { check: false }).is_none());
-            assert!(args_to_command(&ParsedCommand::Audit).is_none());
+            assert!(args_to_command(&ParsedCommand::Version).is_none());
             assert!(args_to_command(&ParsedCommand::Doctor).is_none());
             assert!(args_to_command(&ParsedCommand::Gateway {
                 action: GatewayAction::Status

@@ -8,7 +8,6 @@
 //! - NetworkManager (source of truth)
 
 use log::{debug, info, warn};
-use notify_rust::Notification;
 
 use crate::nm::get_active_vpn as nm_get_active_vpn;
 use crate::state::{Event, TransitionReason, VpnState};
@@ -84,17 +83,39 @@ impl super::VpnSupervisor {
         });
     }
 
-    /// Show a desktop notification
-    pub(crate) fn show_notification(&self, title: &str, body: &str) {
-        let title = title.to_string();
-        let body = body.to_string();
-        std::thread::spawn(move || {
-            let _ = Notification::new()
-                .summary(&title)
-                .body(&body)
-                .timeout(5000)
-                .show();
-        });
+    /// Show a desktop notification (legacy compatibility wrapper).
+    ///
+    /// Prefer using `self.notification_manager` methods directly for
+    /// new code — they provide categorized, throttled notifications.
+    pub(crate) fn show_notification(&mut self, title: &str, body: &str) {
+        use crate::notifications::{Notification, NotificationCategory};
+
+        // Infer category from title for backward compatibility
+        let category = match title.to_lowercase().as_str() {
+            t if t.contains("connected") && !t.contains("dis") && !t.contains("re") => {
+                NotificationCategory::Connected
+            }
+            t if t.contains("disconnected") => NotificationCategory::Disconnected,
+            t if t.contains("reconnect") => NotificationCategory::Reconnected,
+            t if t.contains("connection lost") => NotificationCategory::ConnectionLost,
+            t if t.contains("kill switch") => {
+                if body.to_lowercase().contains("enabled")
+                    || body.to_lowercase().contains("blocked")
+                {
+                    NotificationCategory::KillSwitchEnabled
+                } else {
+                    NotificationCategory::KillSwitchDisabled
+                }
+            }
+            t if t.contains("health") || t.contains("degraded") || t.contains("recovered") => {
+                NotificationCategory::HealthDegraded
+            }
+            t if t.contains("error") || t.contains("failed") => NotificationCategory::Error,
+            _ => NotificationCategory::Connected, // fallback
+        };
+
+        self.notification_manager
+            .show(Notification::new(category, title, body));
     }
 
     /// Sync internal state with NetworkManager reality

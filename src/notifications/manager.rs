@@ -6,7 +6,8 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 /// User-facing notification configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct NotificationConfig {
     /// Master enable/disable for all notifications.
     pub enabled: bool,

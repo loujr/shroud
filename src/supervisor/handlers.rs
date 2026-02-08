@@ -1061,7 +1061,7 @@ impl super::VpnSupervisor {
     }
 
     /// Open the log file in the default viewer
-    pub(crate) fn open_log_file(&self) {
+    pub(crate) fn open_log_file(&mut self) {
         match logging::open_log_file() {
             Ok(()) => {
                 debug!("Opened log file");

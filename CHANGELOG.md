@@ -12,6 +12,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.11.0] - 2026-02-07
+
+### Changed
+
+- **Notifications wired into supervisor** — The `notifications` module is now integrated into the VPN supervisor. All 37 `show_notification()` calls now route through `NotificationManager` with automatic category inference, per-category throttling, configurable urgency levels, and category-specific icons/timeouts. The old hardcoded 5-second `notify_rust::Notification` calls are replaced.
+
+- **NotificationConfig added to Config** — New `[notifications]` section in `config.toml` with 11 fields: master enable, per-category toggles (connection, disconnection, reconnection, kill switch, error, health, first-run tips), throttle interval, timeout, and critical sound. All fields use `#[serde(default)]` for backward compatibility with existing configs.
+
+### Removed
+
+- **`shroud audit` command** — Moved to `scripts/audit.sh`. This was a developer tool (`cargo audit`) inside the user-facing binary, violating Principle VIII (One Binary, One Purpose).
+
+- **`shroud update` command** — Moved to `scripts/update.sh`. This was a development workflow (`cargo install --path .`) baked into the production binary.
+
+- **`shroud version --check` flag** — Removed source-vs-binary mtime comparison. `shroud version` now simply shows the version and daemon status.
+
+- **`cli::install` module** — Marked `#[allow(dead_code)]` as its only consumer (`update` command) was removed.
+
+---
+
 ## [1.10.1] - 2026-02-07
 
 ### Fixed

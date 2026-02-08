@@ -305,6 +305,9 @@ pub struct Config {
     /// Gateway configuration
     #[serde(default)]
     pub gateway: GatewayConfig,
+    /// Notification settings
+    #[serde(default)]
+    pub notifications: crate::notifications::manager::NotificationConfig,
 }
 
 fn default_block_doh() -> bool {
@@ -328,6 +331,7 @@ impl Default for Config {
             headless: HeadlessConfig::default(),
             killswitch: KillSwitchConfig::default(),
             gateway: GatewayConfig::default(),
+            notifications: Default::default(),
         }
     }
 }
@@ -687,6 +691,7 @@ mod tests {
             headless: HeadlessConfig::default(),
             killswitch: KillSwitchConfig::default(),
             gateway: GatewayConfig::default(),
+            notifications: Default::default(),
         };
 
         let toml_str = toml::to_string(&config).unwrap();
@@ -866,6 +871,7 @@ mod tests {
             headless: HeadlessConfig::default(),
             killswitch: KillSwitchConfig::default(),
             gateway: GatewayConfig::default(),
+            notifications: Default::default(),
         };
 
         manager.save(&original).unwrap();

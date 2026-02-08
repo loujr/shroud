@@ -42,6 +42,7 @@ use crate::dbus::NmEvent;
 use crate::health::HealthChecker;
 use crate::ipc::{IpcCommand, IpcResponse};
 use crate::killswitch::KillSwitch;
+use crate::notifications::NotificationManager;
 use crate::state::{StateMachine, StateMachineConfig};
 use crate::tray::{SharedState, VpnCommand, VpnTray};
 
@@ -128,6 +129,8 @@ pub struct VpnSupervisor {
     pub(crate) should_exit: bool,
     /// Reason for exit (restart/shutdown)
     pub(crate) exit_reason: Option<String>,
+    /// Notification manager for categorized, throttled desktop notifications
+    pub(crate) notification_manager: NotificationManager,
 }
 
 impl VpnSupervisor {
@@ -170,6 +173,8 @@ impl VpnSupervisor {
             info!("Kill switch rules detected from previous session");
         }
 
+        let notification_manager = NotificationManager::new(app_config.notifications.clone());
+
         Self {
             machine: StateMachine::with_config(sm_config),
             shared_state,
@@ -193,6 +198,7 @@ impl VpnSupervisor {
             is_first_run,
             should_exit: false,
             exit_reason: None,
+            notification_manager,
         }
     }
 }
