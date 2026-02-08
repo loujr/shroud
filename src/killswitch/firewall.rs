@@ -1974,3 +1974,369 @@ mod security_tests {
         println!("  format!(\"iptables -A OUTPUT -d {{}} -j ACCEPT\", ip)");
     }
 }
+
+// =========================================================================
+// nftables ruleset tests
+// =========================================================================
+
+#[cfg(test)]
+mod nft_tests {
+    use super::*;
+
+    #[test]
+    fn test_nft_ruleset_basic_structure() {
+        let ks = KillSwitch::new();
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(rules.contains("table inet shroud_killswitch"));
+        assert!(rules.contains("chain output"));
+        assert!(rules.contains("policy drop"));
+        assert!(rules.contains("oifname \"lo\" accept"));
+        assert!(rules.contains("ct state established,related accept"));
+    }
+
+    #[test]
+    fn test_nft_ruleset_vpn_interfaces() {
+        let ks = KillSwitch::new();
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(rules.contains("oifname \"tun*\" accept"));
+        assert!(rules.contains("oifname \"tap*\" accept"));
+        assert!(rules.contains("oifname \"wg*\" accept"));
+    }
+
+    #[test]
+    fn test_nft_ruleset_local_network() {
+        let ks = KillSwitch::new();
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(rules.contains("192.168.0.0/16"));
+        assert!(rules.contains("10.0.0.0/8"));
+        assert!(rules.contains("172.16.0.0/12"));
+    }
+
+    #[test]
+    fn test_nft_ruleset_dhcp() {
+        let ks = KillSwitch::new();
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(rules.contains("udp dport 67 accept"));
+        assert!(rules.contains("udp sport 68 accept"));
+    }
+
+    #[test]
+    fn test_nft_ruleset_ipv6_block() {
+        let ks = KillSwitch::with_config(DnsMode::Tunnel, Ipv6Mode::Block, true, Vec::new());
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(rules.contains("meta nfproto ipv6 drop"));
+    }
+
+    #[test]
+    fn test_nft_ruleset_ipv6_tunnel() {
+        let ks = KillSwitch::with_config(DnsMode::Tunnel, Ipv6Mode::Tunnel, true, Vec::new());
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(rules.contains("fe80::/10 accept"));
+        assert!(!rules.contains("meta nfproto ipv6 drop"));
+    }
+
+    #[test]
+    fn test_nft_ruleset_ipv6_off() {
+        let ks = KillSwitch::with_config(DnsMode::Tunnel, Ipv6Mode::Off, true, Vec::new());
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(!rules.contains("meta nfproto ipv6 drop"));
+        assert!(rules.contains("fe80::/10 accept"));
+    }
+
+    #[test]
+    fn test_nft_dns_tunnel_mode() {
+        let ks = KillSwitch::with_config(DnsMode::Tunnel, Ipv6Mode::Block, true, Vec::new());
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(rules.contains("oifname \"tun*\" udp dport 53 accept"));
+        assert!(rules.contains("oifname \"wg*\" udp dport 53 accept"));
+        assert!(rules.contains("udp dport 53 drop"));
+        assert!(rules.contains("tcp dport 53 drop"));
+        assert!(rules.contains("tcp dport 853 drop"));
+    }
+
+    #[test]
+    fn test_nft_dns_localhost_mode() {
+        let ks = KillSwitch::with_config(DnsMode::Localhost, Ipv6Mode::Off, true, Vec::new());
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(rules.contains("ip daddr 127.0.0.0/8 udp dport 53 accept"));
+        assert!(rules.contains("ip daddr 127.0.0.53 udp dport 53 accept"));
+        assert!(rules.contains("udp dport 53 drop"));
+    }
+
+    #[test]
+    fn test_nft_dns_localhost_with_ipv6() {
+        let ks = KillSwitch::with_config(DnsMode::Localhost, Ipv6Mode::Tunnel, true, Vec::new());
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(rules.contains("ip6 daddr ::1 udp dport 53 accept"));
+    }
+
+    #[test]
+    fn test_nft_dns_localhost_without_ipv6() {
+        let ks = KillSwitch::with_config(DnsMode::Localhost, Ipv6Mode::Block, true, Vec::new());
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(!rules.contains("ip6 daddr ::1"));
+    }
+
+    #[test]
+    fn test_nft_dns_any_mode() {
+        let ks = KillSwitch::with_config(DnsMode::Any, Ipv6Mode::Block, false, Vec::new());
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(rules.contains("udp dport 53 accept"));
+        assert!(rules.contains("tcp dport 53 accept"));
+        assert!(!rules.contains("udp dport 53 drop"));
+    }
+
+    #[test]
+    fn test_nft_doh_blocking() {
+        let ks = KillSwitch::with_config(DnsMode::Strict, Ipv6Mode::Block, true, Vec::new());
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(rules.contains("ip daddr 1.1.1.1 tcp dport 443 drop"));
+        assert!(rules.contains("ip daddr 8.8.8.8 tcp dport 443 drop"));
+        assert!(rules.contains("ip daddr 9.9.9.9 tcp dport 443 drop"));
+    }
+
+    #[test]
+    fn test_nft_doh_blocking_disabled() {
+        let ks = KillSwitch::with_config(DnsMode::Tunnel, Ipv6Mode::Block, false, Vec::new());
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(!rules.contains("tcp dport 443 drop"));
+    }
+
+    #[test]
+    fn test_nft_custom_doh_blocklist() {
+        let custom = vec!["100.100.100.100".into(), "200.200.200.200".into()];
+        let ks = KillSwitch::with_config(DnsMode::Strict, Ipv6Mode::Block, true, custom);
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(rules.contains("ip daddr 100.100.100.100 tcp dport 443 drop"));
+        assert!(rules.contains("ip daddr 200.200.200.200 tcp dport 443 drop"));
+    }
+
+    #[test]
+    fn test_nft_vpn_server_ips() {
+        let ks = KillSwitch::new();
+        let server_ip: IpAddr = "203.0.113.50".parse().unwrap();
+        let rules = ks.build_nft_ruleset(&[server_ip]);
+        assert!(rules.contains("ip daddr 203.0.113.50 accept"));
+    }
+
+    #[test]
+    fn test_nft_vpn_server_ipv6() {
+        let ks = KillSwitch::with_config(DnsMode::Tunnel, Ipv6Mode::Tunnel, true, Vec::new());
+        let server_ip: IpAddr = "2001:db8::1".parse().unwrap();
+        let rules = ks.build_nft_ruleset(&[server_ip]);
+        assert!(rules.contains("ip6 daddr 2001:db8::1 accept"));
+    }
+
+    #[test]
+    fn test_nft_vpn_server_ipv6_blocked_when_block_mode() {
+        let ks = KillSwitch::with_config(DnsMode::Tunnel, Ipv6Mode::Block, true, Vec::new());
+        let server_ip: IpAddr = "2001:db8::1".parse().unwrap();
+        let rules = ks.build_nft_ruleset(&[server_ip]);
+        assert!(!rules.contains("ip6 daddr 2001:db8::1 accept"));
+    }
+
+    #[test]
+    fn test_nft_configured_vpn_server_ip() {
+        let mut ks = KillSwitch::new();
+        let ip: IpAddr = "198.51.100.1".parse().unwrap();
+        ks.set_vpn_server(Some(ip));
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(rules.contains("ip daddr 198.51.100.1 accept"));
+    }
+
+    #[test]
+    fn test_nft_log_prefix() {
+        let ks = KillSwitch::new();
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(rules.contains("SHROUD-KS-DROP"));
+    }
+
+    #[test]
+    fn test_nft_input_chain() {
+        let ks = KillSwitch::new();
+        let rules = ks.build_nft_ruleset(&[]);
+        assert!(rules.contains("chain input"));
+        assert!(rules.contains("policy accept"));
+    }
+}
+
+// =========================================================================
+// KillSwitch struct tests (expanded)
+// =========================================================================
+
+#[cfg(test)]
+mod ks_expanded_tests {
+    use super::*;
+
+    #[test]
+    fn test_kill_switch_error_display() {
+        let err = KillSwitchError::NotFound;
+        assert!(err.to_string().contains("iptables"));
+
+        let err = KillSwitchError::Permission;
+        assert!(err.to_string().contains("sudo"));
+
+        let err = KillSwitchError::Command("test error".into());
+        assert!(err.to_string().contains("test error"));
+    }
+
+    #[test]
+    fn test_kill_switch_status_variants() {
+        assert_eq!(KillSwitchStatus::Disabled, KillSwitchStatus::Disabled);
+        assert_ne!(KillSwitchStatus::Disabled, KillSwitchStatus::Active);
+        assert_ne!(KillSwitchStatus::Active, KillSwitchStatus::Error);
+    }
+
+    #[test]
+    fn test_kill_switch_new_defaults() {
+        let ks = KillSwitch::new();
+        assert!(!ks.enabled);
+        assert!(ks.vpn_server_ip.is_none());
+        assert!(ks.vpn_interface.is_none());
+        assert_eq!(ks.dns_mode, DnsMode::Tunnel);
+        assert!(ks.block_doh);
+        assert!(ks.custom_doh_blocklist.is_empty());
+        assert_eq!(ks.ipv6_mode, Ipv6Mode::Block);
+        assert!(ks.last_toggle_time.is_none());
+    }
+
+    #[test]
+    fn test_set_vpn_server_and_clear() {
+        let mut ks = KillSwitch::new();
+        let ip: IpAddr = "1.2.3.4".parse().unwrap();
+        ks.set_vpn_server(Some(ip));
+        assert_eq!(ks.vpn_server_ip, Some(ip));
+
+        ks.set_vpn_server(None);
+        assert!(ks.vpn_server_ip.is_none());
+    }
+
+    #[test]
+    fn test_set_config_updates_all_fields() {
+        let mut ks = KillSwitch::new();
+        let custom = vec!["1.1.1.1".into()];
+        ks.set_config(DnsMode::Any, Ipv6Mode::Off, false, custom.clone());
+        assert_eq!(ks.dns_mode, DnsMode::Any);
+        assert_eq!(ks.ipv6_mode, Ipv6Mode::Off);
+        assert!(!ks.block_doh);
+        assert_eq!(ks.custom_doh_blocklist, custom);
+    }
+
+    #[test]
+    fn test_build_complete_script_with_vpn_ips() {
+        let ks = KillSwitch::new();
+        let ip: IpAddr = "203.0.113.50".parse().unwrap();
+        let script = ks.build_complete_script(&[ip]);
+        assert!(script.contains("203.0.113.50"));
+        assert!(script.contains("-j ACCEPT"));
+    }
+
+    #[test]
+    fn test_build_complete_script_ipv6_block() {
+        let ks = KillSwitch::with_config(DnsMode::Tunnel, Ipv6Mode::Block, true, Vec::new());
+        let script = ks.build_complete_script(&[]);
+        assert!(script.contains(ip6tables()));
+        assert!(script.contains("-j DROP"));
+    }
+
+    #[test]
+    fn test_build_complete_script_ipv6_tunnel() {
+        let ks = KillSwitch::with_config(DnsMode::Tunnel, Ipv6Mode::Tunnel, true, Vec::new());
+        let script = ks.build_complete_script(&[]);
+        assert!(script.contains("fe80::/10"));
+        assert!(script.contains("-o tun+"));
+    }
+
+    #[test]
+    fn test_build_complete_script_ipv6_off() {
+        let ks = KillSwitch::with_config(DnsMode::Tunnel, Ipv6Mode::Off, true, Vec::new());
+        let script = ks.build_complete_script(&[]);
+        // Should not contain any ip6tables rules
+        assert!(!script.contains(ip6tables()));
+    }
+
+    #[test]
+    fn test_build_complete_script_lan_allowed() {
+        let ks = KillSwitch::new();
+        let script = ks.build_complete_script(&[]);
+        assert!(script.contains("192.168.0.0/16"));
+        assert!(script.contains("10.0.0.0/8"));
+        assert!(script.contains("172.16.0.0/12"));
+    }
+
+    #[test]
+    fn test_build_complete_script_dhcp() {
+        let ks = KillSwitch::new();
+        let script = ks.build_complete_script(&[]);
+        assert!(script.contains("--dport 67"));
+        assert!(script.contains("--sport 68"));
+    }
+
+    #[test]
+    fn test_build_complete_script_logging() {
+        let ks = KillSwitch::new();
+        let script = ks.build_complete_script(&[]);
+        assert!(script.contains("SHROUD-KS-DROP"));
+        assert!(script.contains("--log-prefix"));
+    }
+
+    #[test]
+    fn test_strict_mode_doh_rules() {
+        let ks = KillSwitch::with_config(DnsMode::Strict, Ipv6Mode::Block, true, Vec::new());
+        let rules = ks.build_rules_preview(&[]);
+        // Should have both DNS tunnel rules AND DoH blocking
+        assert!(rules.contains("-o tun+ -p udp --dport 53 -j ACCEPT"));
+        assert!(rules.contains("-d 1.1.1.1 -p tcp --dport 443 -j DROP"));
+    }
+
+    #[test]
+    fn test_custom_doh_in_iptables() {
+        let custom = vec!["100.100.100.100".into()];
+        let ks = KillSwitch::with_config(DnsMode::Strict, Ipv6Mode::Block, true, custom);
+        let rules = ks.build_rules_preview(&[]);
+        assert!(rules.contains("100.100.100.100"));
+    }
+
+    #[test]
+    fn test_doh_providers_list_not_empty() {
+        assert!(
+            !DOH_PROVIDER_IPS.is_empty(),
+            "DoH provider list should not be empty"
+        );
+        let count = DOH_PROVIDER_IPS.len();
+        assert!(
+            count >= 10,
+            "Should have at least 10 DoH providers, got {}",
+            count
+        );
+    }
+
+    #[test]
+    fn test_doh_providers_are_valid_ips() {
+        for ip_str in DOH_PROVIDER_IPS {
+            let parsed: Result<IpAddr, _> = ip_str.parse();
+            assert!(
+                parsed.is_ok(),
+                "DoH provider '{}' is not a valid IP",
+                ip_str
+            );
+        }
+    }
+
+    #[test]
+    fn test_chain_name_constant() {
+        assert_eq!(CHAIN_NAME, "SHROUD_KILLSWITCH");
+    }
+
+    #[test]
+    fn test_nft_table_constant() {
+        assert_eq!(NFT_TABLE, "shroud_killswitch");
+    }
+
+    #[test]
+    fn test_toggle_cooldown_constant() {
+        let cooldown = TOGGLE_COOLDOWN_MS;
+        assert!(cooldown >= 100, "Cooldown too short: {}", cooldown);
+        assert!(cooldown <= 5000, "Cooldown too long: {}", cooldown);
+    }
+}

@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.9] - 2026-02-07
+
+### Added
+
+- **Test Coverage Push (895 → 935 unit tests)** — Added 40 new unit tests targeting `killswitch/firewall.rs`, the largest file at 24% coverage.
+
+- **New nftables Ruleset Tests** — 22 tests covering `build_nft_ruleset()`: basic structure, VPN interfaces, local network, DHCP, IPv6 modes (block/tunnel/off), DNS modes (tunnel/localhost/any), DoH blocking (on/off/custom), VPN server IP allowlist (IPv4/IPv6), configured server IP, log prefix, input chain. Previously 0% coverage on this ~100-line pure function.
+
+- **Expanded Kill Switch Tests** — 18 tests: `KillSwitchError` Display for all variants, `KillSwitchStatus` equality, `KillSwitch::new()` defaults, `set_vpn_server` set/clear, `set_config` field updates, `build_complete_script` with VPN IPs/IPv6 modes/LAN/DHCP/logging, strict mode DoH, custom DoH IPs in iptables, `DOH_PROVIDER_IPS` validation (count and valid IPs), constants (`CHAIN_NAME`, `NFT_TABLE`, `TOGGLE_COOLDOWN_MS`).
+
+---
+
 ## [1.9.8] - 2026-02-07
 
 ### Added
