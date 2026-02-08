@@ -291,7 +291,9 @@ async fn ensure_sudo_access(backend: &Backend) -> Result<(), String> {
 }
 
 async fn fetch_iptables_snapshot() -> Result<IptablesSnapshot, String> {
-    let ks_chain = run_sudo_capture(iptables(), &["-t", "filter", "-S", CHAIN_NAME]).await?;
+    let ks_chain =
+        run_sudo_capture_allow_missing_chain(iptables(), &["-t", "filter", "-S", CHAIN_NAME])
+            .await?;
     let output_chain = run_sudo_capture(iptables(), &["-t", "filter", "-S", "OUTPUT"]).await?;
     let ip6_output = run_sudo_capture(ip6tables(), &["-t", "filter", "-S", "OUTPUT"])
         .await
@@ -308,6 +310,12 @@ async fn fetch_nft_snapshot() -> Result<NftSnapshot, String> {
     Ok(NftSnapshot { table_output })
 }
 
+fn is_missing_chain_error(stderr: &str) -> bool {
+    stderr.contains("No chain/target/match by that name")
+        || stderr.contains("No such file or directory")
+        || stderr.contains("does not exist")
+}
+
 async fn run_sudo_capture(cmd: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new("sudo")
         .arg("-n")
@@ -322,6 +330,14 @@ async fn run_sudo_capture(cmd: &str, args: &[&str]) -> Result<String, String> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+async fn run_sudo_capture_allow_missing_chain(cmd: &str, args: &[&str]) -> Result<String, String> {
+    match run_sudo_capture(cmd, args).await {
+        Ok(s) => Ok(s),
+        Err(e) if is_missing_chain_error(&e) => Ok(String::new()),
+        Err(e) => Err(e),
+    }
 }
 
 async fn check_chain_exists_iptables(snap: &IptablesSnapshot, verbose: bool) -> CheckResult {
@@ -1006,6 +1022,19 @@ mod tests {
         assert_eq!(
             check_no_rogue_rules_iptables(&snap, false).verdict,
             Verdict::Pass
+        );
+    }
+
+    #[tokio::test]
+    async fn test_iptables_chain_missing() {
+        let snap = IptablesSnapshot {
+            ks_chain: String::new(),
+            output_chain: String::new(),
+            ip6_output: String::new(),
+        };
+        assert_eq!(
+            check_chain_exists_iptables(&snap, false).await.verdict,
+            Verdict::Fail
         );
     }
 

@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.11.7] - 2026-02-08
+
+### Fixed
+
+- **`verify-killswitch`**: No longer errors when kill switch is disabled/missing; reports FAIL with details instead of exiting with iptables error.
+- **`verify-killswitch`**: Added tests for missing-chain handling.
+
+---
+
 ## [1.11.6] - 2026-02-08
 
 ### Fixed
