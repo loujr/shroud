@@ -342,22 +342,28 @@ For more: https://github.com/loujr/shroud/blob/main/docs/GATEWAY.md"#
             r#"Manage debug logging
 
 USAGE:
-    shroud debug <ACTION>
+    shroud debug <ACTION> [OPTIONS]
 
 ACTIONS:
     on, enable      Enable debug logging to file
     off, disable    Disable debug logging
     log-path        Show the debug log file path
-    tail            Follow the debug log file (like tail -f)
+    tail            Follow the log file (INFO+ only, filtered)
+    tail -v         Follow the log file (all levels including DEBUG)
     dump            Dump current internal state as JSON
 
 The debug log is written to ~/.local/share/shroud/debug.log
 with automatic rotation (10MB max, 3 files kept).
 
+'tail' auto-enables debug logging if not already on.
+Default output filters out DEBUG-level noise (NM polling,
+health checks). Use -v/--verbose for the full firehose.
+
 EXAMPLES:
     shroud debug on
-    shroud debug tail
-    shroud debug dump --json"#
+    shroud debug tail            # INFO, WARN, ERROR only
+    shroud debug tail -v         # All levels including DEBUG
+    shroud debug dump"#
         ),
 
         "ping" => println!(

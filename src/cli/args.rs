@@ -149,7 +149,7 @@ pub enum DebugAction {
     On,
     Off,
     LogPath,
-    Tail,
+    Tail { verbose: bool },
     Dump,
 }
 
@@ -282,10 +282,7 @@ fn parse_command(argv: &[String]) -> Result<ParsedCommand, String> {
             let action = parse_toggle_action(argv.get(1).map(|s| s.as_str()))?;
             Ok(ParsedCommand::AutoReconnect { action })
         }
-        "debug" => {
-            let action = parse_debug_action(argv.get(1).map(|s| s.as_str()))?;
-            Ok(ParsedCommand::Debug { action })
-        }
+        "debug" => parse_debug_args(&argv[1..]),
         "autostart" | "startup" => {
             let action = parse_toggle_action(argv.get(1).map(|s| s.as_str()))?;
             Ok(ParsedCommand::Autostart { action })
@@ -332,16 +329,24 @@ fn parse_toggle_action(arg: Option<&str>) -> Result<ToggleAction, String> {
 }
 
 /// Parse a debug action argument
-fn parse_debug_action(arg: Option<&str>) -> Result<DebugAction, String> {
-    match arg {
-        Some("on") | Some("enable") => Ok(DebugAction::On),
-        Some("off") | Some("disable") => Ok(DebugAction::Off),
-        Some("log-path") | Some("logpath") | Some("path") => Ok(DebugAction::LogPath),
-        Some("tail") | Some("follow") | Some("f") => Ok(DebugAction::Tail),
-        Some("dump") | Some("state") => Ok(DebugAction::Dump),
-        None => Err("debug requires an action: on/off/log-path/tail/dump".to_string()),
-        Some(other) => Err(format!("Unknown debug action: '{}'", other)),
+fn parse_debug_args(argv: &[String]) -> Result<ParsedCommand, String> {
+    if argv.is_empty() {
+        return Err("debug requires an action: on/off/log-path/tail/dump".to_string());
     }
+
+    let action = match argv[0].as_str() {
+        "on" | "enable" => DebugAction::On,
+        "off" | "disable" => DebugAction::Off,
+        "log-path" | "logpath" | "path" => DebugAction::LogPath,
+        "tail" | "follow" | "f" => {
+            let verbose = argv[1..].iter().any(|a| a == "-v" || a == "--verbose");
+            DebugAction::Tail { verbose }
+        }
+        "dump" | "state" => DebugAction::Dump,
+        other => return Err(format!("Unknown debug action: '{}'", other)),
+    };
+
+    Ok(ParsedCommand::Debug { action })
 }
 
 /// Parse a gateway action argument

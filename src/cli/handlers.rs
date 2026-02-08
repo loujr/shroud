@@ -64,12 +64,11 @@ pub async fn run_client_mode(args: &Args) -> i32 {
             return 0;
         }
         ParsedCommand::Debug {
-            action: DebugAction::Tail,
+            action: DebugAction::Tail { verbose },
         } => {
             // Auto-enable debug logging if not already on
             let log_path = logging::default_log_path();
             if !logging::is_debug_logging_enabled() {
-                // Send IPC to daemon to enable debug logging
                 match send_command(IpcCommand::Debug { enable: true }).await {
                     Ok(_) => {
                         eprintln!("Debug logging enabled: {}", log_path.display());
@@ -79,20 +78,44 @@ pub async fn run_client_mode(args: &Args) -> i32 {
                     }
                 }
             }
-            eprintln!("Tailing {}  (Ctrl+C to stop)", log_path.display());
-            // Ensure the file exists (touch it)
+
+            if *verbose {
+                eprintln!(
+                    "Tailing {} (all levels, Ctrl+C to stop)",
+                    log_path.display()
+                );
+            } else {
+                eprintln!(
+                    "Tailing {} (INFO+, use -v for DEBUG, Ctrl+C to stop)",
+                    log_path.display()
+                );
+            }
+
+            // Ensure the file exists
             if !log_path.exists() {
                 if let Some(parent) = log_path.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
                 let _ = std::fs::File::create(&log_path);
             }
-            let status = std::process::Command::new("tail")
-                .arg("-f")
-                .arg("-n")
-                .arg("50")
-                .arg(&log_path)
-                .status();
+
+            let status = if *verbose {
+                // Full firehose — all log levels
+                std::process::Command::new("tail")
+                    .args(["-f", "-n", "50"])
+                    .arg(&log_path)
+                    .status()
+            } else {
+                // INFO and above — filter out DEBUG noise (polling, health checks)
+                std::process::Command::new("bash")
+                    .arg("-c")
+                    .arg(format!(
+                        "tail -f -n 50 '{}' | grep --line-buffered -v '\\[DEBUG\\]'",
+                        log_path.display()
+                    ))
+                    .status()
+            };
+
             match status {
                 Ok(s) => return s.code().unwrap_or(1),
                 Err(e) => {
@@ -217,7 +240,7 @@ fn args_to_command(cmd: &ParsedCommand) -> Option<IpcCommand> {
             DebugAction::Off => Some(IpcCommand::Debug { enable: false }),
             DebugAction::Dump => Some(IpcCommand::DebugDump),
             DebugAction::LogPath => Some(IpcCommand::DebugLogPath),
-            DebugAction::Tail => None, // Handled locally
+            DebugAction::Tail { .. } => None, // Handled locally
         },
 
         ParsedCommand::Ping => Some(IpcCommand::Ping),
@@ -1050,7 +1073,7 @@ mod tests {
         #[test]
         fn test_debug_tail_is_local() {
             let cmd = ParsedCommand::Debug {
-                action: DebugAction::Tail,
+                action: DebugAction::Tail { verbose: false },
             };
             assert!(args_to_command(&cmd).is_none());
         }
