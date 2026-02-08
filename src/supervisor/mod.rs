@@ -26,6 +26,8 @@ mod handlers;
 mod reconnect;
 #[allow(dead_code)]
 pub mod reconnect_logic;
+#[allow(dead_code)]
+pub mod response_builder;
 mod state_sync;
 
 #[cfg(test)]

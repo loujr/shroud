@@ -12,6 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.5] - 2026-02-07
+
+### Added
+
+- **Test Coverage Push (693 → 741 unit tests)** — Added 48 new unit tests targeting 0%-coverage files: supervisor handlers, killswitch cleanup, and gateway status.
+
+- **New Module: `supervisor::response_builder`** — Pure IPC response construction: `build_status_response()` for all 6 VpnState variants, `build_list_response()` with active markers, `needs_disconnect_first()`, `validate_connect()`, and `classify_nm_event()` mapping NmEvents to StateActions. 28 tests across 5 submodules.
+
+- **New Module: `killswitch::cleanup_logic`** — Pure cleanup command builders: `build_remove_jump()`, `build_flush_chain()`, `build_delete_chain()`, `build_chain_cleanup()`, `chain_exists_in_output()` for iptables output parsing, `find_shroud_rules()`, and `manual_cleanup_instructions()`. 12 tests.
+
+- **New Module: `gateway::status_fmt`** — `GatewaySnapshot` struct with `Display` impl for human-readable gateway status output, covering enabled/disabled, interfaces, IPs, kill switch, and FORWARD rules. 8 tests.
+
+---
+
 ## [1.9.4] - 2026-02-07
 
 ### Added

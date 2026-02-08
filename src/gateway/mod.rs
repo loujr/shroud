@@ -14,6 +14,8 @@ pub mod forwarding;
 pub mod nat;
 pub mod status;
 #[allow(dead_code)]
+pub mod status_fmt;
+#[allow(dead_code)]
 pub mod validation;
 
 #[cfg(test)]

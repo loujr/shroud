@@ -5,6 +5,8 @@
 
 pub mod boot;
 pub mod cleanup;
+#[allow(dead_code)]
+pub mod cleanup_logic;
 pub mod firewall;
 pub mod paths;
 #[allow(dead_code)]
