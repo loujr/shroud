@@ -10,6 +10,7 @@ use super::help;
 use super::import as import_command;
 use crate::ipc::client::{send_command, ClientError};
 use crate::ipc::protocol::{IpcCommand, IpcResponse};
+use crate::killswitch::verify;
 use crate::logging;
 
 /// Run the CLI in client mode.
@@ -41,6 +42,11 @@ pub async fn run_client_mode(args: &Args) -> i32 {
         }
         ParsedCommand::Doctor => {
             return handle_doctor_command();
+        }
+        ParsedCommand::VerifyKillswitch { json, verbose } => {
+            let json_flag = *json || args.json_output;
+            return handle_verify_killswitch_command(json_flag, *verbose || args.verbose >= 2)
+                .await;
         }
         ParsedCommand::Gateway { action } => {
             return handle_gateway_command(*action).await;
@@ -259,6 +265,7 @@ fn args_to_command(cmd: &ParsedCommand) -> Option<IpcCommand> {
         ParsedCommand::Version { .. } => None,
         ParsedCommand::Update => None,
         ParsedCommand::Doctor => None,
+        ParsedCommand::VerifyKillswitch { .. } => None,
         ParsedCommand::Gateway { .. } => None,
         ParsedCommand::Import { .. } => None,
 
@@ -370,6 +377,70 @@ fn handle_doctor_command() -> i32 {
         println!("  ✗ Found {} issue(s) that need attention.", issues);
         println!("\n  Quick fix: ./setup.sh --install-sudoers");
         1
+    }
+}
+
+async fn handle_verify_killswitch_command(json: bool, verbose: bool) -> i32 {
+    match verify::run_verification(verbose).await {
+        Ok(report) => {
+            if json {
+                match serde_json::to_string_pretty(&report) {
+                    Ok(body) => println!("{}", body),
+                    Err(e) => {
+                        eprintln!("Failed to serialize report: {}", e);
+                        return 2;
+                    }
+                }
+            } else {
+                print_human_verification_report(&report, verbose);
+            }
+
+            match report.overall {
+                verify::Verdict::Pass | verify::Verdict::Warn => 0,
+                verify::Verdict::Fail => 1,
+            }
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            2
+        }
+    }
+}
+
+fn print_human_verification_report(report: &verify::VerificationReport, verbose: bool) {
+    println!("=== Kill Switch Verification ===\n");
+    println!("Backend: {}\n", report.backend);
+
+    for check in &report.checks {
+        let sym = match check.verdict {
+            verify::Verdict::Pass => "✓",
+            verify::Verdict::Warn => "⚠",
+            verify::Verdict::Fail => "✗",
+        };
+        println!("{} {} {}", sym, check.description, check.detail);
+        if verbose {
+            if let Some(raw) = &check.raw {
+                for line in raw.lines() {
+                    println!("│ {}", line);
+                }
+            }
+        }
+    }
+
+    println!(
+        "\nResult: {} ({})",
+        match report.overall {
+            verify::Verdict::Pass => "PASS",
+            verify::Verdict::Warn => "WARN",
+            verify::Verdict::Fail => "FAIL",
+        },
+        report.summary
+    );
+
+    match report.overall {
+        verify::Verdict::Pass => println!("\nYour kill switch is working. Non-VPN traffic is blocked."),
+        verify::Verdict::Warn => println!("\nKill switch protections are in place, but there are warnings."),
+        verify::Verdict::Fail => println!("\n⚠ WARNING: Your kill switch is NOT protecting you.\nTraffic may be leaking outside the VPN tunnel.\n\nTo fix: shroud killswitch on"),
     }
 }
 

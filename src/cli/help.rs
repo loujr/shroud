@@ -41,6 +41,7 @@ COMMANDS:
     restart              Restart the daemon
     reload               Reload configuration without restart
     doctor               Diagnose configuration issues
+    verify-killswitch    Verify kill switch rules are working correctly
     update               Build, install, and restart
     version              Show version information
     help <COMMAND>       Show help for a command
@@ -298,6 +299,40 @@ Checks for:
     - User group membership
 
 Run this command if the kill switch is not working."#
+        ),
+
+        "verify-killswitch" | "verify-ks" => println!(
+            r#"Verify kill switch rules are working
+
+USAGE:
+    shroud verify-killswitch [OPTIONS]
+
+OPTIONS:
+    --json   Output results as JSON
+    -v       Show detailed rule output
+
+ALIASES:
+    verify-ks
+
+Runs read-only checks to verify the kill switch is correctly configured
+and actively protecting against traffic leaks. No rules are modified.
+
+CHECKS:
+1. SHROUD_KILLSWITCH chain exists in iptables/nftables
+2. OUTPUT chain has jump rule to SHROUD_KILLSWITCH
+3. Default policy is DROP (non-VPN traffic blocked)
+4. Loopback traffic is allowed
+5. VPN tunnel interfaces (tun+/wg+/tap+) are allowed
+6. DHCP traffic is allowed
+7. IPv6 leak protection is in place
+8. DNS leak protection matches configured mode
+9. No conflicting/rogue rules exist in OUTPUT
+10. State machine agrees kill switch is active
+
+EXAMPLES:
+    shroud verify-killswitch
+    shroud verify-ks --json
+    shroud verify-ks -v"#
         ),
 
         "gateway" | "gw" => println!(

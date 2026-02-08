@@ -12,6 +12,7 @@ pub mod paths;
 #[allow(dead_code)]
 pub mod rules;
 pub mod sudo_check;
+pub mod verify;
 
 #[cfg(test)]
 mod tests;

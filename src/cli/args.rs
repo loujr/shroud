@@ -115,6 +115,11 @@ pub enum ParsedCommand {
     // Development/maintenance
     Doctor,
 
+    VerifyKillswitch {
+        json: bool,
+        verbose: bool,
+    },
+
     // Gateway
     Gateway {
         action: GatewayAction,
@@ -295,6 +300,18 @@ fn parse_command(argv: &[String]) -> Result<ParsedCommand, String> {
         "reload" => Ok(ParsedCommand::Reload),
         "import" => parse_import_args(&argv[1..]),
         "doctor" => Ok(ParsedCommand::Doctor),
+        "verify-killswitch" | "verify-ks" => {
+            let mut json = false;
+            let mut verbose = false;
+            for arg in &argv[1..] {
+                match arg.as_str() {
+                    "--json" => json = true,
+                    "-v" | "--verbose" => verbose = true,
+                    other => return Err(format!("Unknown verify-killswitch option: '{}'", other)),
+                }
+            }
+            Ok(ParsedCommand::VerifyKillswitch { json, verbose })
+        }
         "gateway" | "gw" => {
             let action = parse_gateway_action(argv.get(1).map(|s| s.as_str()))?;
             Ok(ParsedCommand::Gateway { action })
@@ -661,6 +678,30 @@ mod tests {
     fn test_doctor_command() {
         let result = parse_args_from(&args("doctor")).unwrap();
         assert!(matches!(result.command, Some(ParsedCommand::Doctor)));
+    }
+
+    #[test]
+    fn test_verify_killswitch_command() {
+        let result = parse_args_from(&args("verify-killswitch")).unwrap();
+        assert!(matches!(
+            result.command,
+            Some(ParsedCommand::VerifyKillswitch {
+                json: false,
+                verbose: false
+            })
+        ));
+    }
+
+    #[test]
+    fn test_verify_ks_alias() {
+        let result = parse_args_from(&args("verify-ks --json")).unwrap();
+        assert!(matches!(
+            result.command,
+            Some(ParsedCommand::VerifyKillswitch {
+                json: true,
+                verbose: false
+            })
+        ));
     }
 }
 

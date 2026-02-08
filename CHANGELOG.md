@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.11.5] - 2026-02-08
+
+### Added
+
+- **`shroud verify-killswitch`** — Read-only verification command that inspects live iptables/nftables to ensure the kill switch is active and correctly configured. Produces PASS/WARN/FAIL verdicts, supports `--json`, and `-v` to show raw rules.
+
+### Security
+
+- Verifies kill switch reality matches state machine belief (Principle VII) and exposes all rules for auditability (Principle XI).
+
+---
+
 ## [1.11.4] - 2026-02-08
 
 ### Fixed
