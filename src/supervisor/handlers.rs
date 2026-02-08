@@ -1394,9 +1394,50 @@ impl super::VpnSupervisor {
                     },
                 }
             }
-            _ => IpcResponse::Error {
-                message: "Command not implemented".to_string(),
-            },
+            IpcCommand::DebugLogPath => {
+                let path = crate::logging::default_log_path();
+                IpcResponse::DebugInfo {
+                    log_path: Some(path.to_string_lossy().to_string()),
+                    debug_enabled: crate::logging::is_debug_logging_enabled(),
+                }
+            }
+            IpcCommand::DebugDump => {
+                let state = self.shared_state.read().await;
+                let machine_state = self.machine.state.name();
+                let server = self.machine.state.server_name().map(|s| s.to_string());
+                let kill_switch = self.kill_switch.is_enabled();
+                let auto_reconnect = state.auto_reconnect;
+                let debug_logging = crate::logging::is_debug_logging_enabled();
+                let connections = state.connections.clone();
+                let switching = self.switching_in_progress;
+                let retries = self.machine.retries();
+                drop(state);
+
+                let dump = serde_json::json!({
+                    "state": machine_state,
+                    "server": server,
+                    "kill_switch_enabled": kill_switch,
+                    "auto_reconnect": auto_reconnect,
+                    "debug_logging": debug_logging,
+                    "connections": connections,
+                    "switching_in_progress": switching,
+                    "reconnect_retries": retries,
+                    "reconnect_cancelled": self.reconnect_cancelled,
+                    "is_first_run": self.is_first_run,
+                    "config": {
+                        "max_reconnect_attempts": self.app_config.max_reconnect_attempts,
+                        "health_check_interval_secs": self.app_config.health_check_interval_secs,
+                        "dns_mode": format!("{}", self.app_config.dns_mode),
+                        "ipv6_mode": format!("{:?}", self.app_config.ipv6_mode),
+                        "block_doh": self.app_config.block_doh,
+                    },
+                });
+
+                IpcResponse::OkMessage {
+                    message: serde_json::to_string_pretty(&dump)
+                        .unwrap_or_else(|_| "{}".to_string()),
+                }
+            }
         };
 
         let _ = response_tx.send(response).await;

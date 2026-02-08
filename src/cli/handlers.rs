@@ -63,11 +63,31 @@ pub async fn run_client_mode(args: &Args) -> i32 {
         ParsedCommand::Debug {
             action: DebugAction::Tail,
         } => {
-            // Tail is a local command
-            // We assume logging module is available via crate root
-            let log_path = logging::log_directory().join("debug.log");
+            // Auto-enable debug logging if not already on
+            let log_path = logging::default_log_path();
+            if !logging::is_debug_logging_enabled() {
+                // Send IPC to daemon to enable debug logging
+                match send_command(IpcCommand::Debug { enable: true }).await {
+                    Ok(_) => {
+                        eprintln!("Debug logging enabled: {}", log_path.display());
+                    }
+                    Err(_) => {
+                        eprintln!("Note: daemon not running, tailing existing log file");
+                    }
+                }
+            }
+            eprintln!("Tailing {}  (Ctrl+C to stop)", log_path.display());
+            // Ensure the file exists (touch it)
+            if !log_path.exists() {
+                if let Some(parent) = log_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::File::create(&log_path);
+            }
             let status = std::process::Command::new("tail")
                 .arg("-f")
+                .arg("-n")
+                .arg("50")
                 .arg(&log_path)
                 .status();
             match status {
