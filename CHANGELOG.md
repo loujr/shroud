@@ -12,6 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.11.1] - 2026-02-08
+
+### Fixed
+
+- **`shroud debug dump` now works** — Previously returned "Command not implemented" because the `IpcCommand::DebugDump` handler was missing from the supervisor. Now returns a JSON snapshot of daemon internal state: state machine status, connected server, kill switch, auto-reconnect, available connections, switching status, reconnect retries, and config settings.
+
+- **`shroud debug log-path` now works** — Same issue — `IpcCommand::DebugLogPath` had no handler. Now returns the log file path and whether debug logging is enabled.
+
+- **`shroud debug tail` auto-enables logging** — Previously required running `shroud debug on` first, otherwise `tail -f` would hang on a nonexistent file. Now auto-enables debug logging on the daemon via IPC, creates the log file if missing, shows the last 50 lines immediately, and displays the file path.
+
+- **Removed unreachable IPC catch-all** — All 20 `IpcCommand` variants are now explicitly handled in the supervisor, so the `_ => "Command not implemented"` fallback was dead code.
+
+---
+
 ## [1.11.0] - 2026-02-07
 
 ### Changed
