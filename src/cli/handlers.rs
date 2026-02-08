@@ -1100,4 +1100,388 @@ mod tests {
     async fn test_is_daemon_running_returns_bool() {
         let _ = is_daemon_running().await;
     }
+
+    // --- args_to_command mapping ---
+
+    mod args_to_command_tests {
+        use super::*;
+        use crate::cli::args::*;
+
+        #[test]
+        fn test_connect() {
+            let cmd = ParsedCommand::Connect {
+                name: "vpn1".into(),
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert!(matches!(ipc, IpcCommand::Connect { name } if name == "vpn1"));
+        }
+
+        #[test]
+        fn test_disconnect() {
+            let ipc = args_to_command(&ParsedCommand::Disconnect).unwrap();
+            assert_eq!(ipc, IpcCommand::Disconnect);
+        }
+
+        #[test]
+        fn test_reconnect() {
+            let ipc = args_to_command(&ParsedCommand::Reconnect).unwrap();
+            assert_eq!(ipc, IpcCommand::Reconnect);
+        }
+
+        #[test]
+        fn test_switch() {
+            let cmd = ParsedCommand::Switch {
+                name: "vpn2".into(),
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert!(matches!(ipc, IpcCommand::Switch { name } if name == "vpn2"));
+        }
+
+        #[test]
+        fn test_status() {
+            let ipc = args_to_command(&ParsedCommand::Status).unwrap();
+            assert_eq!(ipc, IpcCommand::Status);
+        }
+
+        #[test]
+        fn test_list_no_filter() {
+            let cmd = ParsedCommand::List {
+                vpn_type: None,
+                json: false,
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert!(matches!(ipc, IpcCommand::List { vpn_type: None }));
+        }
+
+        #[test]
+        fn test_list_with_filter() {
+            let cmd = ParsedCommand::List {
+                vpn_type: Some("wireguard".into()),
+                json: false,
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert!(matches!(
+                ipc,
+                IpcCommand::List {
+                    vpn_type: Some(t)
+                } if t == "wireguard"
+            ));
+        }
+
+        #[test]
+        fn test_killswitch_on() {
+            let cmd = ParsedCommand::KillSwitch {
+                action: ToggleAction::On,
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert_eq!(ipc, IpcCommand::KillSwitch { enable: true });
+        }
+
+        #[test]
+        fn test_killswitch_off() {
+            let cmd = ParsedCommand::KillSwitch {
+                action: ToggleAction::Off,
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert_eq!(ipc, IpcCommand::KillSwitch { enable: false });
+        }
+
+        #[test]
+        fn test_killswitch_toggle() {
+            let cmd = ParsedCommand::KillSwitch {
+                action: ToggleAction::Toggle,
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert_eq!(ipc, IpcCommand::KillSwitchToggle);
+        }
+
+        #[test]
+        fn test_killswitch_status() {
+            let cmd = ParsedCommand::KillSwitch {
+                action: ToggleAction::Status,
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert_eq!(ipc, IpcCommand::KillSwitchStatus);
+        }
+
+        #[test]
+        fn test_auto_reconnect_on() {
+            let cmd = ParsedCommand::AutoReconnect {
+                action: ToggleAction::On,
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert_eq!(ipc, IpcCommand::AutoReconnect { enable: true });
+        }
+
+        #[test]
+        fn test_auto_reconnect_off() {
+            let cmd = ParsedCommand::AutoReconnect {
+                action: ToggleAction::Off,
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert_eq!(ipc, IpcCommand::AutoReconnect { enable: false });
+        }
+
+        #[test]
+        fn test_auto_reconnect_toggle() {
+            let cmd = ParsedCommand::AutoReconnect {
+                action: ToggleAction::Toggle,
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert_eq!(ipc, IpcCommand::AutoReconnectToggle);
+        }
+
+        #[test]
+        fn test_auto_reconnect_status() {
+            let cmd = ParsedCommand::AutoReconnect {
+                action: ToggleAction::Status,
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert_eq!(ipc, IpcCommand::AutoReconnectStatus);
+        }
+
+        #[test]
+        fn test_debug_on() {
+            let cmd = ParsedCommand::Debug {
+                action: DebugAction::On,
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert_eq!(ipc, IpcCommand::Debug { enable: true });
+        }
+
+        #[test]
+        fn test_debug_off() {
+            let cmd = ParsedCommand::Debug {
+                action: DebugAction::Off,
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert_eq!(ipc, IpcCommand::Debug { enable: false });
+        }
+
+        #[test]
+        fn test_debug_dump() {
+            let cmd = ParsedCommand::Debug {
+                action: DebugAction::Dump,
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert_eq!(ipc, IpcCommand::DebugDump);
+        }
+
+        #[test]
+        fn test_debug_log_path() {
+            let cmd = ParsedCommand::Debug {
+                action: DebugAction::LogPath,
+            };
+            let ipc = args_to_command(&cmd).unwrap();
+            assert_eq!(ipc, IpcCommand::DebugLogPath);
+        }
+
+        #[test]
+        fn test_debug_tail_is_local() {
+            let cmd = ParsedCommand::Debug {
+                action: DebugAction::Tail,
+            };
+            assert!(args_to_command(&cmd).is_none());
+        }
+
+        #[test]
+        fn test_ping() {
+            assert_eq!(
+                args_to_command(&ParsedCommand::Ping).unwrap(),
+                IpcCommand::Ping
+            );
+        }
+
+        #[test]
+        fn test_refresh() {
+            assert_eq!(
+                args_to_command(&ParsedCommand::Refresh).unwrap(),
+                IpcCommand::Refresh
+            );
+        }
+
+        #[test]
+        fn test_quit() {
+            assert_eq!(
+                args_to_command(&ParsedCommand::Quit).unwrap(),
+                IpcCommand::Quit
+            );
+        }
+
+        #[test]
+        fn test_restart() {
+            assert_eq!(
+                args_to_command(&ParsedCommand::Restart).unwrap(),
+                IpcCommand::Restart
+            );
+        }
+
+        #[test]
+        fn test_reload() {
+            assert_eq!(
+                args_to_command(&ParsedCommand::Reload).unwrap(),
+                IpcCommand::Reload
+            );
+        }
+
+        #[test]
+        fn test_local_commands_return_none() {
+            assert!(args_to_command(&ParsedCommand::Autostart {
+                action: ToggleAction::On
+            })
+            .is_none());
+            assert!(args_to_command(&ParsedCommand::Cleanup).is_none());
+            assert!(args_to_command(&ParsedCommand::Update {
+                yes: false,
+                debug: false
+            })
+            .is_none());
+            assert!(args_to_command(&ParsedCommand::Version { check: false }).is_none());
+            assert!(args_to_command(&ParsedCommand::Audit).is_none());
+            assert!(args_to_command(&ParsedCommand::Doctor).is_none());
+            assert!(args_to_command(&ParsedCommand::Gateway {
+                action: GatewayAction::Status
+            })
+            .is_none());
+            assert!(args_to_command(&ParsedCommand::Help { command: None }).is_none());
+        }
+    }
+
+    // --- handle_response formatting ---
+
+    mod handle_response_tests {
+        use super::*;
+
+        #[test]
+        fn test_ok_response() {
+            let args = default_args();
+            assert_eq!(handle_response(IpcResponse::Ok, &args), 0);
+        }
+
+        #[test]
+        fn test_error_response() {
+            let args = default_args();
+            let resp = IpcResponse::Error {
+                message: "fail".into(),
+            };
+            assert_eq!(handle_response(resp, &args), 1);
+        }
+
+        #[test]
+        fn test_pong_response() {
+            let args = default_args();
+            assert_eq!(handle_response(IpcResponse::Pong, &args), 0);
+        }
+
+        #[test]
+        fn test_status_response_disconnected() {
+            let args = default_args();
+            let resp = IpcResponse::Status {
+                connected: false,
+                vpn_name: None,
+                vpn_type: None,
+                state: "Disconnected".into(),
+                kill_switch_enabled: false,
+            };
+            assert_eq!(handle_response(resp, &args), 0);
+        }
+
+        #[test]
+        fn test_status_response_connected() {
+            let args = default_args();
+            let resp = IpcResponse::Status {
+                connected: true,
+                vpn_name: Some("my-vpn".into()),
+                vpn_type: Some("wireguard".into()),
+                state: "Connected".into(),
+                kill_switch_enabled: true,
+            };
+            assert_eq!(handle_response(resp, &args), 0);
+        }
+
+        #[test]
+        fn test_connections_response() {
+            let args = default_args();
+            let resp = IpcResponse::Connections {
+                connections: vec![
+                    crate::ipc::protocol::VpnConnectionInfo {
+                        name: "vpn1".into(),
+                        vpn_type: "wireguard".into(),
+                        status: "active".into(),
+                    },
+                    crate::ipc::protocol::VpnConnectionInfo {
+                        name: "vpn2".into(),
+                        vpn_type: "openvpn".into(),
+                        status: "available".into(),
+                    },
+                ],
+            };
+            assert_eq!(handle_response(resp, &args), 0);
+        }
+
+        #[test]
+        fn test_ok_message_response() {
+            let args = default_args();
+            let resp = IpcResponse::OkMessage {
+                message: "done".into(),
+            };
+            assert_eq!(handle_response(resp, &args), 0);
+        }
+
+        #[test]
+        fn test_ks_status_response() {
+            let args = default_args();
+            assert_eq!(
+                handle_response(IpcResponse::KillSwitchStatus { enabled: true }, &args),
+                0
+            );
+            assert_eq!(
+                handle_response(IpcResponse::KillSwitchStatus { enabled: false }, &args),
+                0
+            );
+        }
+
+        #[test]
+        fn test_ar_status_response() {
+            let args = default_args();
+            assert_eq!(
+                handle_response(IpcResponse::AutoReconnectStatus { enabled: true }, &args),
+                0
+            );
+        }
+
+        #[test]
+        fn test_debug_info_response() {
+            let args = default_args();
+            let resp = IpcResponse::DebugInfo {
+                log_path: Some("/tmp/debug.log".into()),
+                debug_enabled: true,
+            };
+            assert_eq!(handle_response(resp, &args), 0);
+        }
+
+        #[test]
+        fn test_json_output_ok() {
+            let args = args_with_json();
+            assert_eq!(handle_response(IpcResponse::Ok, &args), 0);
+        }
+
+        #[test]
+        fn test_json_output_error() {
+            let args = args_with_json();
+            let resp = IpcResponse::Error {
+                message: "fail".into(),
+            };
+            assert_eq!(handle_response(resp, &args), 1);
+        }
+
+        #[test]
+        fn test_quiet_ok() {
+            let args = Args {
+                quiet: true,
+                ..Default::default()
+            };
+            assert_eq!(handle_response(IpcResponse::Ok, &args), 0);
+        }
+    }
 }

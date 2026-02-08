@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.8] - 2026-02-07
+
+### Added
+
+- **Test Coverage Push (844 → 895 unit tests)** — Added 51 new unit tests targeting cli and dbus, the two largest remaining coverage gaps.
+
+- **Expanded CLI Handler Tests** — 40 new tests in `cli/handlers.rs`: complete `args_to_command()` mapping coverage (all 30 `ParsedCommand` → `IpcCommand` conversions including Connect, Disconnect, Reconnect, Switch, Status, List, KillSwitch, AutoReconnect, Debug variants, Ping, Refresh, Quit, Restart, Reload, and all local-only commands returning `None`). 13 `handle_response()` tests covering all `IpcResponse` variants (Ok, Error, Pong, Status connected/disconnected, Connections, OkMessage, KillSwitchStatus, AutoReconnectStatus, DebugInfo, JSON mode, quiet mode).
+
+- **Expanded D-Bus Monitor Tests** — 11 new tests in `dbus/monitor.rs`: full `vpn_failure_reason()` coverage for all 11 reason codes, `NmEvent` clone/debug, and 6 `should_process_event()` dedup tests (unknown VPN filtering, first event acceptance, same-event within-window rejection, different-event-type acceptance, different-VPN acceptance, after-window acceptance).
+
+---
+
 ## [1.9.7] - 2026-02-07
 
 ### Added

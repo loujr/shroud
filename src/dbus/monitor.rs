@@ -450,6 +450,8 @@ fn vpn_failure_reason(reason: u32) -> String {
 mod tests {
     use super::*;
 
+    // --- vpn_failure_reason ---
+
     #[test]
     fn test_vpn_failure_reason() {
         assert_eq!(vpn_failure_reason(5), "Connect timeout");
@@ -461,5 +463,124 @@ mod tests {
     fn test_vpn_failure_reason_basic_codes() {
         assert_eq!(vpn_failure_reason(0), "Unknown");
         assert_eq!(vpn_failure_reason(1), "Not provided");
+    }
+
+    #[test]
+    fn test_vpn_failure_reason_all_known() {
+        assert_eq!(vpn_failure_reason(2), "User disconnected");
+        assert_eq!(vpn_failure_reason(3), "Service stopped");
+        assert_eq!(vpn_failure_reason(4), "IP config invalid");
+        assert_eq!(vpn_failure_reason(6), "Service start timeout");
+        assert_eq!(vpn_failure_reason(7), "Service start failed");
+        assert_eq!(vpn_failure_reason(8), "No secrets");
+        assert_eq!(vpn_failure_reason(10), "Connection removed");
+    }
+
+    #[test]
+    fn test_vpn_failure_reason_unknown_includes_code() {
+        let msg = vpn_failure_reason(42);
+        assert!(msg.contains("42"));
+    }
+
+    // --- NmEvent ---
+
+    #[test]
+    fn test_nm_event_clone() {
+        let event = NmEvent::VpnActivated {
+            name: "vpn1".into(),
+        };
+        let cloned = event.clone();
+        match cloned {
+            NmEvent::VpnActivated { name } => assert_eq!(name, "vpn1"),
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_nm_event_debug() {
+        let event = NmEvent::VpnFailed {
+            name: "vpn1".into(),
+            reason: "timeout".into(),
+        };
+        let debug = format!("{:?}", event);
+        assert!(debug.contains("VpnFailed"));
+        assert!(debug.contains("timeout"));
+    }
+
+    // --- should_process_event ---
+
+    #[test]
+    fn test_dedup_unknown_vpn_filtered() {
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let mut monitor = NmMonitor::new(tx);
+        assert!(!monitor.should_process_event("unknown", "activated"));
+    }
+
+    #[test]
+    fn test_dedup_first_event_accepted() {
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let mut monitor = NmMonitor::new(tx);
+        assert!(monitor.should_process_event("my-vpn", "activated"));
+    }
+
+    #[test]
+    fn test_dedup_same_event_within_window_rejected() {
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let mut monitor = NmMonitor::new(tx);
+        assert!(monitor.should_process_event("my-vpn", "activated"));
+        // Immediately again — should be deduped
+        assert!(!monitor.should_process_event("my-vpn", "activated"));
+    }
+
+    #[test]
+    fn test_dedup_different_event_type_accepted() {
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let mut monitor = NmMonitor::new(tx);
+        assert!(monitor.should_process_event("my-vpn", "activated"));
+        // Different event type → should be accepted
+        assert!(monitor.should_process_event("my-vpn", "deactivated"));
+    }
+
+    #[test]
+    fn test_dedup_different_vpn_accepted() {
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let mut monitor = NmMonitor::new(tx);
+        assert!(monitor.should_process_event("vpn1", "activated"));
+        // Different VPN → should be accepted
+        assert!(monitor.should_process_event("vpn2", "activated"));
+    }
+
+    #[test]
+    fn test_dedup_after_window_accepted() {
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let mut monitor = NmMonitor::new(tx);
+        assert!(monitor.should_process_event("my-vpn", "activated"));
+
+        // Manually set the timestamp to the past
+        let key = ("my-vpn".to_string(), "activated".to_string());
+        monitor
+            .recent_events
+            .insert(key, Instant::now() - std::time::Duration::from_secs(2));
+
+        // Now it should be accepted (past the dedup window)
+        assert!(monitor.should_process_event("my-vpn", "activated"));
+    }
+
+    // --- NmMonitor creation ---
+
+    #[test]
+    fn test_nm_monitor_new() {
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let monitor = NmMonitor::new(tx);
+        assert!(monitor.recent_events.is_empty());
+    }
+
+    // --- EVENT_DEDUP_WINDOW_MS constant ---
+
+    #[test]
+    fn test_dedup_window_reasonable() {
+        let window = EVENT_DEDUP_WINDOW_MS;
+        assert!(window >= 100, "Dedup window too short: {}", window);
+        assert!(window <= 5000, "Dedup window too long: {}", window);
     }
 }
