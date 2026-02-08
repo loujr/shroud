@@ -66,18 +66,22 @@ pub async fn run_client_mode(args: &Args) -> i32 {
         ParsedCommand::Debug {
             action: DebugAction::Tail { verbose },
         } => {
-            // Auto-enable debug logging if not already on
+            // Track whether we enabled logging (so we can disable on exit)
             let log_path = logging::default_log_path();
-            if !logging::is_debug_logging_enabled() {
+            let we_enabled = if !logging::is_debug_logging_enabled() {
                 match send_command(IpcCommand::Debug { enable: true }).await {
                     Ok(_) => {
                         eprintln!("Debug logging enabled: {}", log_path.display());
+                        true
                     }
                     Err(_) => {
                         eprintln!("Note: daemon not running, tailing existing log file");
+                        false
                     }
                 }
-            }
+            } else {
+                false
+            };
 
             if *verbose {
                 eprintln!(
@@ -100,13 +104,11 @@ pub async fn run_client_mode(args: &Args) -> i32 {
             }
 
             let status = if *verbose {
-                // Full firehose — all log levels
                 std::process::Command::new("tail")
                     .args(["-f", "-n", "50"])
                     .arg(&log_path)
                     .status()
             } else {
-                // INFO and above — filter out DEBUG noise (polling, health checks)
                 std::process::Command::new("bash")
                     .arg("-c")
                     .arg(format!(
@@ -115,6 +117,12 @@ pub async fn run_client_mode(args: &Args) -> i32 {
                     ))
                     .status()
             };
+
+            // Auto-disable debug logging if we enabled it
+            if we_enabled {
+                let _ = send_command(IpcCommand::Debug { enable: false }).await;
+                eprintln!("Debug logging disabled");
+            }
 
             match status {
                 Ok(s) => return s.code().unwrap_or(1),
