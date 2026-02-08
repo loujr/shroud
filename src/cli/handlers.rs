@@ -460,12 +460,12 @@ fn print_human_verification_report(report: &verify::VerificationReport, verbose:
         .checks
         .iter()
         .find(|c| c.name == "chain_exists")
-        .map_or(false, |c| matches!(c.verdict, verify::Verdict::Fail));
+        .is_some_and(|c| matches!(c.verdict, verify::Verdict::Fail));
     let jump_missing = report
         .checks
         .iter()
         .find(|c| c.name == "jump_rule_exists")
-        .map_or(false, |c| matches!(c.verdict, verify::Verdict::Fail));
+        .is_some_and(|c| matches!(c.verdict, verify::Verdict::Fail));
 
     match report.overall {
         verify::Verdict::Pass => println!("\nYour kill switch is working. Non-VPN traffic is blocked."),

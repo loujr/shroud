@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.11.9] - 2026-02-08
+
+### Fixed
+
+- **clippy**: resolved `unnecessary_map_or` (use `is_some_and`) in `verify-killswitch` output code.
+
+---
+
 ## [1.11.8] - 2026-02-08
 
 ### Improved
