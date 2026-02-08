@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.0] - 2026-02-07
+
+### Added
+
+- **Notification System** — New `notifications` module providing categorized, configurable, throttled desktop notifications for VPN events.
+
+  - **`notifications::types`** — `NotificationCategory` enum (13 variants: Connected, Disconnected, ConnectionLost, Reconnecting, Reconnected, ReconnectionFailed, KillSwitchEnabled, KillSwitchDisabled, HealthDegraded, HealthRestored, ConnectionFailed, Error, FirstRun) with per-category icon names, urgency levels, default timeouts, sound policy, action support, and config key mapping. `Notification` builder with urgency/timeout/action overrides. `NotificationAction` with standard Reconnect/Dismiss factories. `Urgency` enum (Low/Normal/Critical). 30 tests across 4 submodules.
+
+  - **`notifications::manager`** — `NotificationManager` with `NotificationConfig` (11 configurable fields), per-category enable/disable, time-based throttling with dedup, suppressed-count tracking, and convenience methods (`vpn_connected`, `vpn_disconnected`, `vpn_connection_lost`, `vpn_reconnected`, `reconnection_failed`, `connection_failed`, `kill_switch_changed`, `health_changed`, `error`, `first_run_tip`). 20 tests across 5 submodules covering enable/disable, throttling, should_display, config updates, and accessors.
+
+---
+
 ## [1.9.9] - 2026-02-07
 
 ### Added

@@ -42,6 +42,8 @@ mod killswitch;
 mod logging;
 mod mode;
 mod nm;
+#[allow(dead_code)]
+mod notifications;
 mod state;
 mod supervisor;
 mod tray;
