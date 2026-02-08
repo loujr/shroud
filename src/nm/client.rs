@@ -142,7 +142,10 @@ pub async fn get_active_vpn_with_state() -> Option<ActiveVpnInfo> {
     let output = run_nmcli(&["-t", "-f", "NAME,TYPE,STATE", "con", "show", "--active"]).await?;
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    debug!("nmcli active connections: {}", stdout.trim());
+    debug!(
+        "nmcli active connections: {}",
+        stdout.trim().replace('\n', " | ")
+    );
 
     let vpns = parse_active_vpns(&stdout);
 
