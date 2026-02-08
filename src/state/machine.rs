@@ -443,4 +443,381 @@ mod tests {
         sm.retries = 20;
         assert_eq!(sm.backoff_delay_secs(), 30); // capped at max
     }
+
+    // ---- Extended state transition tests ----
+
+    #[test]
+    fn test_external_connection_detected() {
+        let mut sm = StateMachine::new();
+        // When disconnected, NmVpnUp means an external connection was detected
+        let reason = sm.handle_event(Event::NmVpnUp {
+            server: "external-vpn".into(),
+        });
+
+        assert!(matches!(sm.state, VpnState::Connected { ref server } if server == "external-vpn"));
+        assert!(matches!(reason, Some(TransitionReason::ExternalChange)));
+        assert_eq!(sm.retries, 0);
+    }
+
+    #[test]
+    fn test_connected_vpn_changed() {
+        let mut sm = StateMachine::new();
+        sm.state = VpnState::Connected {
+            server: "vpn1".into(),
+        };
+
+        let reason = sm.handle_event(Event::NmVpnChanged {
+            server: "vpn2".into(),
+        });
+
+        assert!(matches!(sm.state, VpnState::Connected { ref server } if server == "vpn2"));
+        assert!(matches!(reason, Some(TransitionReason::ExternalChange)));
+    }
+
+    #[test]
+    fn test_connected_vpn_down_triggers_reconnect() {
+        let mut sm = StateMachine::new();
+        sm.state = VpnState::Connected {
+            server: "vpn1".into(),
+        };
+
+        let reason = sm.handle_event(Event::NmVpnDown);
+
+        assert!(matches!(
+            sm.state,
+            VpnState::Reconnecting {
+                ref server,
+                attempt: 1,
+                ..
+            } if server == "vpn1"
+        ));
+        assert!(matches!(reason, Some(TransitionReason::VpnLost)));
+    }
+
+    #[test]
+    fn test_connected_health_ok_no_transition() {
+        let mut sm = StateMachine::new();
+        sm.state = VpnState::Connected {
+            server: "vpn1".into(),
+        };
+
+        let reason = sm.handle_event(Event::HealthOk);
+        assert!(reason.is_none());
+        assert!(matches!(sm.state, VpnState::Connected { .. }));
+    }
+
+    #[test]
+    fn test_degraded_health_ok_recovery() {
+        let mut sm = StateMachine::new();
+        sm.state = VpnState::Degraded {
+            server: "vpn1".into(),
+        };
+
+        let reason = sm.handle_event(Event::HealthOk);
+
+        assert!(matches!(sm.state, VpnState::Connected { ref server } if server == "vpn1"));
+        assert!(matches!(reason, Some(TransitionReason::VpnReestablished)));
+    }
+
+    #[test]
+    fn test_degraded_vpn_down() {
+        let mut sm = StateMachine::new();
+        sm.state = VpnState::Degraded {
+            server: "vpn1".into(),
+        };
+
+        let reason = sm.handle_event(Event::NmVpnDown);
+
+        assert!(matches!(sm.state, VpnState::Reconnecting { .. }));
+        assert!(matches!(reason, Some(TransitionReason::VpnLost)));
+    }
+
+    #[test]
+    fn test_reconnecting_success() {
+        let mut sm = StateMachine::new();
+        sm.state = VpnState::Reconnecting {
+            server: "vpn1".into(),
+            attempt: 3,
+            max_attempts: 10,
+        };
+
+        let reason = sm.handle_event(Event::NmVpnUp {
+            server: "vpn1".into(),
+        });
+
+        assert!(matches!(sm.state, VpnState::Connected { .. }));
+        assert!(matches!(reason, Some(TransitionReason::VpnReestablished)));
+        assert_eq!(sm.retries, 0);
+    }
+
+    #[test]
+    fn test_reconnecting_connection_failed() {
+        let mut sm = StateMachine::new();
+        sm.state = VpnState::Reconnecting {
+            server: "vpn1".into(),
+            attempt: 2,
+            max_attempts: 10,
+        };
+
+        let reason = sm.handle_event(Event::ConnectionFailed {
+            reason: "VPN not found".into(),
+        });
+
+        assert!(matches!(sm.state, VpnState::Disconnected));
+        assert!(matches!(reason, Some(TransitionReason::ConnectionFailed)));
+    }
+
+    #[test]
+    fn test_reconnecting_timeout_increments() {
+        let config = StateMachineConfig {
+            max_retries: 5,
+            ..Default::default()
+        };
+        let mut sm = StateMachine::with_config(config);
+        sm.state = VpnState::Reconnecting {
+            server: "vpn1".into(),
+            attempt: 1,
+            max_attempts: 5,
+        };
+
+        let reason = sm.handle_event(Event::Timeout);
+
+        assert!(matches!(
+            sm.state,
+            VpnState::Reconnecting { attempt: 2, .. }
+        ));
+        assert!(matches!(reason, Some(TransitionReason::Retrying)));
+    }
+
+    #[test]
+    fn test_reconnecting_timeout_exhausted() {
+        let mut sm = StateMachine::new();
+        sm.state = VpnState::Reconnecting {
+            server: "vpn1".into(),
+            attempt: 9,
+            max_attempts: 10,
+        };
+
+        let reason = sm.handle_event(Event::Timeout);
+
+        assert!(matches!(sm.state, VpnState::Failed { .. }));
+        assert!(matches!(reason, Some(TransitionReason::RetriesExhausted)));
+    }
+
+    #[test]
+    fn test_failed_user_enable_restarts() {
+        let mut sm = StateMachine::new();
+        sm.state = VpnState::Failed {
+            server: "vpn1".into(),
+            reason: "timeout".into(),
+        };
+        sm.retries = 5;
+
+        let reason = sm.handle_event(Event::UserEnable {
+            server: "vpn1".into(),
+        });
+
+        assert!(matches!(sm.state, VpnState::Connecting { .. }));
+        assert!(matches!(reason, Some(TransitionReason::UserRequested)));
+        assert_eq!(sm.retries, 0);
+    }
+
+    #[test]
+    fn test_failed_external_recovery() {
+        let mut sm = StateMachine::new();
+        sm.state = VpnState::Failed {
+            server: "vpn1".into(),
+            reason: "timeout".into(),
+        };
+
+        let reason = sm.handle_event(Event::NmVpnUp {
+            server: "vpn2".into(),
+        });
+
+        assert!(matches!(sm.state, VpnState::Connected { ref server } if server == "vpn2"));
+        assert!(matches!(reason, Some(TransitionReason::ExternalChange)));
+    }
+
+    #[test]
+    fn test_connecting_connection_failed() {
+        let mut sm = StateMachine::new();
+        sm.state = VpnState::Connecting {
+            server: "bad-vpn".into(),
+        };
+
+        let reason = sm.handle_event(Event::ConnectionFailed {
+            reason: "Invalid config".into(),
+        });
+
+        assert!(matches!(sm.state, VpnState::Disconnected));
+        assert!(matches!(reason, Some(TransitionReason::ConnectionFailed)));
+        assert_eq!(sm.retries, 0);
+    }
+
+    #[test]
+    fn test_connecting_nm_vpn_down() {
+        let config = StateMachineConfig {
+            max_retries: 5,
+            ..Default::default()
+        };
+        let mut sm = StateMachine::with_config(config);
+        sm.state = VpnState::Connecting {
+            server: "vpn1".into(),
+        };
+
+        let reason = sm.handle_event(Event::NmVpnDown);
+
+        assert!(matches!(
+            sm.state,
+            VpnState::Reconnecting { attempt: 1, .. }
+        ));
+        assert!(matches!(reason, Some(TransitionReason::Retrying)));
+    }
+
+    #[test]
+    fn test_wake_event_returns_none() {
+        let mut sm = StateMachine::new();
+        sm.state = VpnState::Connected {
+            server: "vpn1".into(),
+        };
+
+        let reason = sm.handle_event(Event::Wake);
+
+        // Wake doesn't change state, just signals resync
+        assert!(reason.is_none());
+        assert!(matches!(sm.state, VpnState::Connected { .. }));
+    }
+
+    #[test]
+    fn test_sleep_event_no_transition() {
+        let mut sm = StateMachine::new();
+        sm.state = VpnState::Connected {
+            server: "vpn1".into(),
+        };
+
+        let reason = sm.handle_event(Event::Sleep);
+        assert!(reason.is_none());
+    }
+
+    #[test]
+    fn test_user_disable_resets_retries() {
+        let mut sm = StateMachine::new();
+        sm.state = VpnState::Reconnecting {
+            server: "vpn1".into(),
+            attempt: 5,
+            max_attempts: 10,
+        };
+        sm.retries = 5;
+
+        sm.handle_event(Event::UserDisable);
+
+        assert!(matches!(sm.state, VpnState::Disconnected));
+        assert_eq!(sm.retries, 0);
+    }
+
+    #[test]
+    fn test_set_state_logs_transition() {
+        let mut sm = StateMachine::new();
+        sm.set_state(
+            VpnState::Connected {
+                server: "vpn1".into(),
+            },
+            TransitionReason::ExternalChange,
+        );
+        assert!(matches!(sm.state, VpnState::Connected { .. }));
+    }
+
+    #[test]
+    fn test_set_state_same_state_no_log() {
+        let mut sm = StateMachine::new();
+        // Setting to same state should not log
+        sm.set_state(VpnState::Disconnected, TransitionReason::Unknown);
+        assert!(matches!(sm.state, VpnState::Disconnected));
+    }
+
+    #[test]
+    fn test_default_config_values() {
+        let config = StateMachineConfig::default();
+        assert_eq!(config.max_retries, 10);
+        assert_eq!(config.base_delay_secs, 2);
+        assert_eq!(config.max_delay_secs, 30);
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let sm = StateMachine::default();
+        assert!(matches!(sm.state, VpnState::Disconnected));
+        assert_eq!(sm.retries, 0);
+    }
+
+    #[test]
+    fn test_max_retries_accessor() {
+        let config = StateMachineConfig {
+            max_retries: 42,
+            ..Default::default()
+        };
+        let sm = StateMachine::with_config(config);
+        assert_eq!(sm.max_retries(), 42);
+    }
+
+    #[test]
+    fn test_retries_accessor() {
+        let mut sm = StateMachine::new();
+        assert_eq!(sm.retries(), 0);
+
+        sm.state = VpnState::Connecting {
+            server: "vpn".into(),
+        };
+        sm.handle_event(Event::Timeout);
+        assert_eq!(sm.retries(), 1);
+    }
+
+    #[test]
+    fn test_unhandled_events_return_none() {
+        let mut sm = StateMachine::new();
+        // Disconnected + NmDeviceChanged = no transition
+        let result = sm.handle_event(Event::NmDeviceChanged);
+        assert!(result.is_none());
+
+        // Disconnected + HealthOk = no transition
+        let result = sm.handle_event(Event::HealthOk);
+        assert!(result.is_none());
+
+        // Disconnected + HealthDegraded = no transition
+        let result = sm.handle_event(Event::HealthDegraded);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_full_lifecycle() {
+        let config = StateMachineConfig {
+            max_retries: 3,
+            ..Default::default()
+        };
+        let mut sm = StateMachine::with_config(config);
+
+        // Disconnected -> Connecting
+        sm.handle_event(Event::UserEnable { server: "vpn".into() });
+        assert!(matches!(sm.state, VpnState::Connecting { .. }));
+
+        // Connecting -> Connected
+        sm.handle_event(Event::NmVpnUp { server: "vpn".into() });
+        assert!(matches!(sm.state, VpnState::Connected { .. }));
+
+        // Connected -> Degraded
+        sm.handle_event(Event::HealthDegraded);
+        assert!(matches!(sm.state, VpnState::Degraded { .. }));
+
+        // Degraded -> Reconnecting
+        sm.handle_event(Event::HealthDead);
+        assert!(matches!(sm.state, VpnState::Reconnecting { .. }));
+
+        // Reconnecting -> Connected
+        sm.handle_event(Event::NmVpnUp { server: "vpn".into() });
+        assert!(matches!(sm.state, VpnState::Connected { .. }));
+
+        // Connected -> Disconnected
+        sm.handle_event(Event::UserDisable);
+        assert!(matches!(sm.state, VpnState::Disconnected));
+    }
 }

@@ -364,6 +364,8 @@ impl Tray for VpnTray {
 mod tests {
     use super::*;
 
+    // ----- extract_short_name -----
+
     #[test]
     fn test_extract_short_name() {
         assert_eq!(extract_short_name("ie211-dublin"), "ie211");
@@ -374,11 +376,183 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_short_name_no_hyphen() {
+        assert_eq!(extract_short_name("singlevpn"), "singlevpn");
+    }
+
+    #[test]
+    fn test_extract_short_name_leading_hyphen() {
+        assert_eq!(extract_short_name("-starts-with-hyphen"), "");
+    }
+
+    #[test]
+    fn test_extract_short_name_trailing_hyphen() {
+        assert_eq!(extract_short_name("server-"), "server");
+    }
+
+    #[test]
+    fn test_extract_short_name_multiple_hyphens() {
+        assert_eq!(extract_short_name("uk-lon-001-fast"), "uk");
+    }
+
+    #[test]
+    fn test_extract_short_name_numbers_only() {
+        assert_eq!(extract_short_name("12345-server"), "12345");
+    }
+
+    #[test]
+    fn test_extract_short_name_unicode() {
+        assert_eq!(extract_short_name("münchen-vpn"), "münchen");
+    }
+
+    // ----- SharedState -----
+
+    #[test]
     fn test_shared_state_default() {
         let state = SharedState::default();
         assert_eq!(state.state, VpnState::Disconnected);
         assert!(state.auto_reconnect);
         assert!(!state.kill_switch);
         assert!(state.connections.is_empty());
+    }
+
+    #[test]
+    fn test_shared_state_clone() {
+        let mut state = SharedState::default();
+        state.state = VpnState::Connected {
+            server: "vpn1".into(),
+        };
+        state.kill_switch = true;
+        state.connections = vec!["vpn1".into(), "vpn2".into()];
+
+        let cloned = state.clone();
+        assert_eq!(cloned.state, state.state);
+        assert_eq!(cloned.kill_switch, true);
+        assert_eq!(cloned.connections.len(), 2);
+    }
+
+    #[test]
+    fn test_shared_state_modify_connections() {
+        let mut state = SharedState::default();
+        state.connections.push("vpn-a".into());
+        state.connections.push("vpn-b".into());
+        state.connections.push("vpn-c".into());
+
+        assert_eq!(state.connections.len(), 3);
+        assert_eq!(state.connections[0], "vpn-a");
+    }
+
+    #[test]
+    fn test_shared_state_modify_vpn_state() {
+        let mut state = SharedState::default();
+
+        state.state = VpnState::Connecting {
+            server: "vpn1".into(),
+        };
+        assert!(matches!(state.state, VpnState::Connecting { .. }));
+
+        state.state = VpnState::Connected {
+            server: "vpn1".into(),
+        };
+        assert!(matches!(state.state, VpnState::Connected { .. }));
+
+        state.state = VpnState::Degraded {
+            server: "vpn1".into(),
+        };
+        assert!(matches!(state.state, VpnState::Degraded { .. }));
+
+        state.state = VpnState::Reconnecting {
+            server: "vpn1".into(),
+            attempt: 2,
+            max_attempts: 10,
+        };
+        assert!(matches!(state.state, VpnState::Reconnecting { .. }));
+
+        state.state = VpnState::Failed {
+            server: "vpn1".into(),
+            reason: "timeout".into(),
+        };
+        assert!(matches!(state.state, VpnState::Failed { .. }));
+    }
+
+    #[test]
+    fn test_shared_state_toggle_flags() {
+        let mut state = SharedState::default();
+
+        // Toggle auto_reconnect
+        state.auto_reconnect = !state.auto_reconnect;
+        assert!(!state.auto_reconnect);
+        state.auto_reconnect = !state.auto_reconnect;
+        assert!(state.auto_reconnect);
+
+        // Toggle kill_switch
+        state.kill_switch = !state.kill_switch;
+        assert!(state.kill_switch);
+        state.kill_switch = !state.kill_switch;
+        assert!(!state.kill_switch);
+
+        // Toggle debug_logging
+        state.debug_logging = !state.debug_logging;
+        assert!(state.debug_logging);
+    }
+
+    // ----- VpnCommand -----
+
+    #[test]
+    fn test_vpn_command_connect() {
+        let cmd = VpnCommand::Connect("test-vpn".to_string());
+        match cmd {
+            VpnCommand::Connect(name) => assert_eq!(name, "test-vpn"),
+            _ => panic!("Expected Connect"),
+        }
+    }
+
+    #[test]
+    fn test_vpn_command_disconnect() {
+        let cmd = VpnCommand::Disconnect;
+        assert!(matches!(cmd, VpnCommand::Disconnect));
+    }
+
+    #[test]
+    fn test_vpn_command_toggle_auto_reconnect() {
+        let cmd = VpnCommand::ToggleAutoReconnect;
+        assert!(matches!(cmd, VpnCommand::ToggleAutoReconnect));
+    }
+
+    #[test]
+    fn test_vpn_command_toggle_killswitch() {
+        let cmd = VpnCommand::ToggleKillSwitch;
+        assert!(matches!(cmd, VpnCommand::ToggleKillSwitch));
+    }
+
+    #[test]
+    fn test_vpn_command_toggle_autostart() {
+        let cmd = VpnCommand::ToggleAutostart;
+        assert!(matches!(cmd, VpnCommand::ToggleAutostart));
+    }
+
+    #[test]
+    fn test_vpn_command_debug() {
+        let cmd = VpnCommand::Connect("vpn".into());
+        let debug = format!("{:?}", cmd);
+        assert!(debug.contains("Connect"));
+        assert!(debug.contains("vpn"));
+    }
+
+    #[test]
+    fn test_vpn_command_all_variants() {
+        // Ensure all variants can be constructed
+        let commands: Vec<VpnCommand> = vec![
+            VpnCommand::Connect("vpn".into()),
+            VpnCommand::Disconnect,
+            VpnCommand::ToggleAutoReconnect,
+            VpnCommand::ToggleKillSwitch,
+            VpnCommand::ToggleAutostart,
+            VpnCommand::ToggleDebugLogging,
+            VpnCommand::OpenLogFile,
+            VpnCommand::RefreshConnections,
+            VpnCommand::Restart,
+        ];
+        assert_eq!(commands.len(), 9);
     }
 }

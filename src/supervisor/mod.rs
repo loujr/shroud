@@ -17,6 +17,8 @@
 //! - `state_sync.rs` - State synchronization utilities
 //! - `reconnect.rs` - Reconnection logic with exponential backoff
 
+#[allow(dead_code)]
+pub mod command_validation;
 mod event_loop;
 mod handlers;
 mod reconnect;

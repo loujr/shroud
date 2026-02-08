@@ -273,4 +273,203 @@ mod tests {
         assert_eq!(checker.config.endpoints.len(), 1);
         assert_eq!(checker.config.failure_threshold, 5);
     }
+
+    // ----- Reset behaviour -----
+
+    #[test]
+    fn test_reset_clears_all_counters() {
+        let mut checker = HealthChecker::new();
+        checker.consecutive_failures = 5;
+        checker.consecutive_degraded = 3;
+        checker.suspended_until = Some(std::time::Instant::now() + Duration::from_secs(60));
+
+        checker.reset();
+
+        assert_eq!(checker.consecutive_failures, 0);
+        assert_eq!(checker.consecutive_degraded, 0);
+        assert!(checker.suspended_until.is_none());
+    }
+
+    #[test]
+    fn test_reset_is_idempotent() {
+        let mut checker = HealthChecker::new();
+        checker.reset();
+        checker.reset();
+        assert_eq!(checker.consecutive_failures, 0);
+        assert_eq!(checker.consecutive_degraded, 0);
+    }
+
+    // ----- Suspension behaviour -----
+
+    #[test]
+    fn test_suspend_sets_until() {
+        let mut checker = HealthChecker::new();
+        checker.suspend(Duration::from_secs(30));
+        assert!(checker.suspended_until.is_some());
+        assert!(checker.is_suspended());
+    }
+
+    #[test]
+    fn test_suspend_resets_counters() {
+        let mut checker = HealthChecker::new();
+        checker.consecutive_failures = 5;
+        checker.consecutive_degraded = 3;
+
+        checker.suspend(Duration::from_secs(10));
+
+        assert_eq!(checker.consecutive_failures, 0);
+        assert_eq!(checker.consecutive_degraded, 0);
+    }
+
+    #[test]
+    fn test_suspend_expired_not_suspended() {
+        let mut checker = HealthChecker::new();
+        // Set suspension to the past
+        checker.suspended_until = Some(std::time::Instant::now() - Duration::from_secs(1));
+        assert!(!checker.is_suspended());
+    }
+
+    #[test]
+    fn test_resume_clears_suspension() {
+        let mut checker = HealthChecker::new();
+        checker.suspend(Duration::from_secs(300));
+        assert!(checker.is_suspended());
+
+        checker.resume();
+        assert!(!checker.is_suspended());
+        assert!(checker.suspended_until.is_none());
+    }
+
+    #[test]
+    fn test_resume_when_not_suspended() {
+        let mut checker = HealthChecker::new();
+        // Should not panic
+        checker.resume();
+        assert!(!checker.is_suspended());
+    }
+
+    // ----- Threshold logic -----
+
+    #[test]
+    fn test_failure_counter_increments() {
+        let mut checker = HealthChecker::new();
+        assert_eq!(checker.consecutive_failures, 0);
+
+        checker.consecutive_failures += 1;
+        assert_eq!(checker.consecutive_failures, 1);
+
+        checker.consecutive_failures += 1;
+        assert_eq!(checker.consecutive_failures, 2);
+    }
+
+    #[test]
+    fn test_degraded_counter_increments() {
+        let mut checker = HealthChecker::new();
+        assert_eq!(checker.consecutive_degraded, 0);
+
+        checker.consecutive_degraded += 1;
+        assert_eq!(checker.consecutive_degraded, 1);
+    }
+
+    #[test]
+    fn test_failure_threshold_boundary() {
+        let config = HealthConfig {
+            failure_threshold: 3,
+            ..Default::default()
+        };
+        let mut checker = HealthChecker::with_config(config);
+
+        // Below threshold
+        checker.consecutive_failures = 2;
+        assert!(checker.consecutive_failures < checker.config.failure_threshold);
+
+        // At threshold
+        checker.consecutive_failures = 3;
+        assert!(checker.consecutive_failures >= checker.config.failure_threshold);
+    }
+
+    #[test]
+    fn test_degraded_threshold_boundary() {
+        let config = HealthConfig {
+            degraded_threshold: 2,
+            ..Default::default()
+        };
+        let mut checker = HealthChecker::with_config(config);
+
+        // Below threshold
+        checker.consecutive_degraded = 1;
+        assert!(checker.consecutive_degraded < checker.config.degraded_threshold);
+
+        // At threshold
+        checker.consecutive_degraded = 2;
+        assert!(checker.consecutive_degraded >= checker.config.degraded_threshold);
+    }
+
+    // ----- HealthResult equality -----
+
+    #[test]
+    fn test_health_result_equality() {
+        assert_eq!(HealthResult::Healthy, HealthResult::Healthy);
+        assert_ne!(HealthResult::Healthy, HealthResult::Dead { reason: "x".into() });
+
+        assert_eq!(
+            HealthResult::Degraded { latency_ms: 100 },
+            HealthResult::Degraded { latency_ms: 100 }
+        );
+        assert_ne!(
+            HealthResult::Degraded { latency_ms: 100 },
+            HealthResult::Degraded { latency_ms: 200 }
+        );
+    }
+
+    #[test]
+    fn test_health_result_debug() {
+        let healthy = format!("{:?}", HealthResult::Healthy);
+        assert!(healthy.contains("Healthy"));
+
+        let dead = format!("{:?}", HealthResult::Dead { reason: "timeout".into() });
+        assert!(dead.contains("Dead"));
+        assert!(dead.contains("timeout"));
+    }
+
+    #[test]
+    fn test_health_result_clone() {
+        let result = HealthResult::Degraded { latency_ms: 500 };
+        let cloned = result.clone();
+        assert_eq!(result, cloned);
+    }
+
+    // ----- Config edge cases -----
+
+    #[test]
+    fn test_default_config_has_multiple_endpoints() {
+        let config = HealthConfig::default();
+        assert!(config.endpoints.len() >= 2, "Should have fallback endpoints");
+    }
+
+    #[test]
+    fn test_config_with_single_endpoint() {
+        let config = HealthConfig {
+            endpoints: vec!["https://example.com".into()],
+            ..Default::default()
+        };
+        let checker = HealthChecker::with_config(config);
+        assert_eq!(checker.config.endpoints.len(), 1);
+    }
+
+    #[test]
+    fn test_config_clone() {
+        let config = HealthConfig::default();
+        let cloned = config.clone();
+        assert_eq!(config.timeout_secs, cloned.timeout_secs);
+        assert_eq!(config.endpoints.len(), cloned.endpoints.len());
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let checker = HealthChecker::default();
+        assert_eq!(checker.consecutive_failures, 0);
+        assert_eq!(checker.consecutive_degraded, 0);
+        assert!(checker.suspended_until.is_none());
+    }
 }

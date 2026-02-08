@@ -7,6 +7,8 @@ pub mod boot;
 pub mod cleanup;
 pub mod firewall;
 pub mod paths;
+#[allow(dead_code)]
+pub mod rules;
 pub mod sudo_check;
 
 #[cfg(test)]

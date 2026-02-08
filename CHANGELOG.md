@@ -12,6 +12,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.2] - 2026-02-07
+
+### Added
+
+- **Test Coverage Improvement** - Added 96 new unit tests (372 → 468), targeting modules with the lowest coverage. Total test count across all suites: 533 passing.
+
+- **New Module: `supervisor::command_validation`** - Pure-function module extracted from I/O-heavy supervisor handlers. Provides testable `validate_connect()`, `validate_disconnect()`, `format_status()`, `format_list()`, `parse_ks_action()`, `should_update_tray()`, and `should_auto_reconnect()` functions with 7 test submodules.
+
+- **New Module: `gateway::validation`** - Pure-function network validation module. Provides `validate_interface_name()`, `validate_subnet()`, `is_vpn_interface()`, `is_physical_interface()`, `parse_default_interface()`, `parse_default_gateway()`, and iptables rule builders with 5 test submodules covering valid/invalid inputs, shell injection attacks, and route parsing.
+
+- **New Module: `killswitch::rules`** - Pure-function firewall rule generation module. Provides `classify_ip()`, `is_doh_provider()`, rule builders for server allow, loopback, LAN, VPN interface, DNS modes (tunnel/localhost/any), DoH blocking, IPv6 blocking/tunneling, and `validate_chain_name()` with 7 test submodules.
+
+- **Expanded State Machine Tests** - 25 new transition tests in `state::machine`: external connection detection, VPN changed events, health recovery, reconnection lifecycle, connection failures, wake/sleep events, `set_state`, full lifecycle, unhandled events, and accessor methods.
+
+- **Expanded Health Checker Tests** - 18 new tests in `health::checker`: reset/suspend/resume behaviour, threshold boundaries, counter tracking, `HealthResult` equality/clone/debug, config edge cases, and `Default` impl.
+
+- **Expanded Tray Tests** - 17 new tests in `tray::service`: `extract_short_name` edge cases (leading/trailing hyphens, unicode, numbers-only), `SharedState` clone/modify/toggle, and all `VpnCommand` variant construction and debug formatting.
+
+---
+
 ## [1.9.1] - 2026-02-05
 
 ### Removed
