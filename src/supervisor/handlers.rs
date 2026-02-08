@@ -118,13 +118,23 @@ impl super::VpnSupervisor {
                 self.update_tray();
             }
             NmEvent::VpnActivating { name } => {
-                // Only update if we're not already aware of this activation
-                if !matches!(&self.machine.state, VpnState::Connecting { server } if server == &name)
-                {
+                // Only update if we're not already connecting/connected to this VPN
+                let dominated = matches!(
+                    &self.machine.state,
+                    VpnState::Connecting { server } | VpnState::Connected { server }
+                        if server == &name
+                );
+                if !dominated {
                     info!("D-Bus: VPN '{}' activating (external)", name);
                     self.dispatch(Event::UserEnable { server: name });
                     self.sync_shared_state().await;
                     self.update_tray();
+                } else {
+                    debug!(
+                        "D-Bus: ignoring activating event for '{}' (already {})",
+                        name,
+                        self.machine.state.name()
+                    );
                 }
             }
             NmEvent::VpnDeactivated { name } => {
@@ -919,6 +929,10 @@ impl super::VpnSupervisor {
     pub(crate) async fn toggle_kill_switch(&mut self) {
         let current_enabled = self.app_config.kill_switch_enabled;
         let new_enabled = !current_enabled;
+        info!(
+            "Kill switch toggle requested: {} → {}",
+            current_enabled, new_enabled
+        );
 
         // Optimistically update shared state immediately so tray shows new state
         // This prevents the "flicker" where tray briefly shows old state
@@ -1204,6 +1218,23 @@ impl super::VpnSupervisor {
                 }
             }
             IpcCommand::KillSwitch { enable } => {
+                // Skip if already in the desired state
+                if self.kill_switch.is_enabled() == enable {
+                    debug!(
+                        "Kill switch already {}, skipping",
+                        if enable { "enabled" } else { "disabled" }
+                    );
+                    let _ = response_tx
+                        .send(IpcResponse::OkMessage {
+                            message: format!(
+                                "Kill switch already {}",
+                                if enable { "enabled" } else { "disabled" }
+                            ),
+                        })
+                        .await;
+                    return;
+                }
+
                 let result = if enable {
                     self.kill_switch.enable().await
                 } else {
