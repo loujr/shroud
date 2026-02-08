@@ -12,6 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.6] - 2026-02-07
+
+### Added
+
+- **Test Coverage Push (741 → 803 unit tests)** — Added 62 new unit tests targeting remaining 0%-coverage files across tray, headless, and gateway modules.
+
+- **New Module: `tray::drawing`** — Pure pixel-level drawing functions (`draw_dots`, `draw_dash`, `draw_x_mark`, `draw_exclamation`) extracted from `icons.rs`, plus `IconVariant` enum with colour/size helpers. 20 tests across 5 submodules.
+
+- **New Module: `headless::runtime_helpers`** — `RuntimePhase` lifecycle enum, `classify_signal()` for Unix signal mapping, PID file format/parse/validate, `parse_watchdog_usec()`, `validate_runtime()` config validation. 25 tests across 6 submodules.
+
+- **New Module: `gateway::rule_builder`** — `GatewayRule` enum (Forward/ForwardClient/Related/Masquerade) with `to_args()`, `build_gateway_rules()`, `build_client_rules()`, `nat_required()`, `ForwardingState` enum with `/proc` value parsing. 17 tests across 4 submodules.
+
+---
+
 ## [1.9.5] - 2026-02-07
 
 ### Added

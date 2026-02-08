@@ -2,6 +2,8 @@
 //!
 //! Provides the system tray UI for the VPN manager.
 
+#[allow(dead_code)]
+pub mod drawing;
 pub mod icons;
 pub mod service;
 #[allow(dead_code)]

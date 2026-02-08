@@ -12,6 +12,8 @@ pub mod detect;
 pub mod firewall;
 pub mod forwarding;
 pub mod nat;
+#[allow(dead_code)]
+pub mod rule_builder;
 pub mod status;
 #[allow(dead_code)]
 pub mod status_fmt;

@@ -10,6 +10,8 @@
 #[allow(dead_code)]
 pub mod config;
 pub mod runtime;
+#[allow(dead_code)]
+pub mod runtime_helpers;
 pub mod systemd;
 
 #[cfg(test)]
