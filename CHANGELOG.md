@@ -12,6 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.1] - 2026-02-07
+
+### Fixed
+
+- **Kill switch idempotent guard** — IPC `killswitch on`/`off` commands now short-circuit when the kill switch is already in the desired state, preventing redundant iptables cleanup + VPN server IP re-detection (~600ms saved per no-op toggle).
+
+- **Duplicate D-Bus activating events** — `VpnActivating` events are now suppressed when the VPN is already in `Connected` state (not just `Connecting`), eliminating duplicate "activating (external)" log entries.
+
+### Changed
+
+- **Kill switch toggle logging** — `toggle_kill_switch()` now logs the state transition direction (`true → false` / `false → true`) for easier debugging of unexpected toggles.
+
+---
+
 ## [1.10.0] - 2026-02-07
 
 ### Added
