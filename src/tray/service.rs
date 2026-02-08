@@ -418,16 +418,18 @@ mod tests {
 
     #[test]
     fn test_shared_state_clone() {
-        let mut state = SharedState::default();
-        state.state = VpnState::Connected {
-            server: "vpn1".into(),
+        let state = SharedState {
+            state: VpnState::Connected {
+                server: "vpn1".into(),
+            },
+            kill_switch: true,
+            connections: vec!["vpn1".into(), "vpn2".into()],
+            ..Default::default()
         };
-        state.kill_switch = true;
-        state.connections = vec!["vpn1".into(), "vpn2".into()];
 
         let cloned = state.clone();
         assert_eq!(cloned.state, state.state);
-        assert_eq!(cloned.kill_switch, true);
+        assert!(cloned.kill_switch);
         assert_eq!(cloned.connections.len(), 2);
     }
 
@@ -444,10 +446,11 @@ mod tests {
 
     #[test]
     fn test_shared_state_modify_vpn_state() {
-        let mut state = SharedState::default();
-
-        state.state = VpnState::Connecting {
-            server: "vpn1".into(),
+        let mut state = SharedState {
+            state: VpnState::Connecting {
+                server: "vpn1".into(),
+            },
+            ..Default::default()
         };
         assert!(matches!(state.state, VpnState::Connecting { .. }));
 
