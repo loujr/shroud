@@ -18,133 +18,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Notification System** — New `notifications` module providing categorized, configurable, throttled desktop notifications for VPN events.
 
-  - **`notifications::types`** — `NotificationCategory` enum (13 variants: Connected, Disconnected, ConnectionLost, Reconnecting, Reconnected, ReconnectionFailed, KillSwitchEnabled, KillSwitchDisabled, HealthDegraded, HealthRestored, ConnectionFailed, Error, FirstRun) with per-category icon names, urgency levels, default timeouts, sound policy, action support, and config key mapping. `Notification` builder with urgency/timeout/action overrides. `NotificationAction` with standard Reconnect/Dismiss factories. `Urgency` enum (Low/Normal/Critical). 30 tests across 4 submodules.
+  - **`notifications::types`** — `NotificationCategory` enum (13 variants: Connected, Disconnected, ConnectionLost, Reconnecting, Reconnected, ReconnectionFailed, KillSwitchEnabled, KillSwitchDisabled, HealthDegraded, HealthRestored, ConnectionFailed, Error, FirstRun) with per-category icon names, urgency levels, default timeouts, sound policy, action support, and config key mapping. `Notification` builder with urgency/timeout/action overrides. `NotificationAction` with standard Reconnect/Dismiss factories. `Urgency` enum (Low/Normal/Critical).
 
-  - **`notifications::manager`** — `NotificationManager` with `NotificationConfig` (11 configurable fields), per-category enable/disable, time-based throttling with dedup, suppressed-count tracking, and convenience methods (`vpn_connected`, `vpn_disconnected`, `vpn_connection_lost`, `vpn_reconnected`, `reconnection_failed`, `connection_failed`, `kill_switch_changed`, `health_changed`, `error`, `first_run_tip`). 20 tests across 5 submodules covering enable/disable, throttling, should_display, config updates, and accessors.
+  - **`notifications::manager`** — `NotificationManager` with `NotificationConfig` (11 configurable fields), per-category enable/disable, time-based throttling with dedup, suppressed-count tracking, and 10 convenience methods (`vpn_connected`, `vpn_disconnected`, `vpn_connection_lost`, `vpn_reconnected`, `reconnection_failed`, `connection_failed`, `kill_switch_changed`, `health_changed`, `error`, `first_run_tip`).
 
----
+- **Test Coverage Overhaul (372 → 985 unit tests)** — Added 613 new unit tests across the entire codebase, increasing coverage from ~25% to ~35%. New pure-function modules extract testable logic from I/O-heavy code.
 
-## [1.9.9] - 2026-02-07
+  - **New Modules (14 files):**
+    - `supervisor::command_validation` — validate/format commands, parse kill-switch actions, tray-update decisions
+    - `supervisor::reconnect_logic` — backoff calculation, reconnect decisions
+    - `supervisor::connection_stats` — lifecycle statistics tracking
+    - `supervisor::response_builder` — IPC response construction, NM event classification
+    - `gateway::validation` — interface/subnet validation, route parsing
+    - `gateway::rule_builder` — GatewayRule enum, NAT/forwarding builders, ForwardingState
+    - `gateway::status_fmt` — GatewaySnapshot Display formatting
+    - `killswitch::rules` — firewall rule generation, IP classification, chain validation
+    - `killswitch::cleanup_logic` — cleanup command builders, iptables output parsing
+    - `nm::parsing` — nmcli output parsing (active VPNs, connections, UUIDs)
+    - `dbus::types` — NM state enums, D-Bus path parsing, failure reasons
+    - `tray::state` — icon selection, tooltip, menu building, action mapping
+    - `tray::drawing` — pixel-level icon drawing primitives, IconVariant
+    - `headless::config` — stdin command parser, log levels, systemd messages
+    - `headless::runtime_helpers` — lifecycle phases, signals, PID, watchdog
+    - `cli::output` — duration formatting, list output, exit codes
 
-### Added
-
-- **Test Coverage Push (895 → 935 unit tests)** — Added 40 new unit tests targeting `killswitch/firewall.rs`, the largest file at 24% coverage.
-
-- **New nftables Ruleset Tests** — 22 tests covering `build_nft_ruleset()`: basic structure, VPN interfaces, local network, DHCP, IPv6 modes (block/tunnel/off), DNS modes (tunnel/localhost/any), DoH blocking (on/off/custom), VPN server IP allowlist (IPv4/IPv6), configured server IP, log prefix, input chain. Previously 0% coverage on this ~100-line pure function.
-
-- **Expanded Kill Switch Tests** — 18 tests: `KillSwitchError` Display for all variants, `KillSwitchStatus` equality, `KillSwitch::new()` defaults, `set_vpn_server` set/clear, `set_config` field updates, `build_complete_script` with VPN IPs/IPv6 modes/LAN/DHCP/logging, strict mode DoH, custom DoH IPs in iptables, `DOH_PROVIDER_IPS` validation (count and valid IPs), constants (`CHAIN_NAME`, `NFT_TABLE`, `TOGGLE_COOLDOWN_MS`).
-
----
-
-## [1.9.8] - 2026-02-07
-
-### Added
-
-- **Test Coverage Push (844 → 895 unit tests)** — Added 51 new unit tests targeting cli and dbus, the two largest remaining coverage gaps.
-
-- **Expanded CLI Handler Tests** — 40 new tests in `cli/handlers.rs`: complete `args_to_command()` mapping coverage (all 30 `ParsedCommand` → `IpcCommand` conversions including Connect, Disconnect, Reconnect, Switch, Status, List, KillSwitch, AutoReconnect, Debug variants, Ping, Refresh, Quit, Restart, Reload, and all local-only commands returning `None`). 13 `handle_response()` tests covering all `IpcResponse` variants (Ok, Error, Pong, Status connected/disconnected, Connections, OkMessage, KillSwitchStatus, AutoReconnectStatus, DebugInfo, JSON mode, quiet mode).
-
-- **Expanded D-Bus Monitor Tests** — 11 new tests in `dbus/monitor.rs`: full `vpn_failure_reason()` coverage for all 11 reason codes, `NmEvent` clone/debug, and 6 `should_process_event()` dedup tests (unknown VPN filtering, first event acceptance, same-event within-window rejection, different-event-type acceptance, different-VPN acceptance, after-window acceptance).
-
----
-
-## [1.9.7] - 2026-02-07
-
-### Added
-
-- **Test Coverage Push (803 → 845 unit tests)** — Added 42 new unit tests expanding coverage in 6 partially-covered files.
-
-- **Expanded Config Tests** — 18 new tests in `config/settings.rs`: `DnsMode` Display, `Config::validate()` with valid/invalid/empty `last_server`, `load_validated()` fallback on validation failure, `HeadlessConfig` defaults and roundtrip, `KillSwitchConfig` roundtrip, `AllowedClients` single-IP edge case, `ConfigError` Display variants, `GatewayConfig` defaults.
-
-- **Expanded Kill Switch Tests** — 7 new tests in `killswitch/sudo_check.rs`: `SudoAccessStatus` equality, inequality, clone, debug, `check_sudo_access_with_message()`. 5 new tests in `killswitch/paths.rs`: binary path content checks, non-empty validation, `log_detected_paths()`.
-
-- **New NM Connection Tests** — 10 new tests in `nm/connections.rs` (previously 0%): `VpnType` Display/equality/clone/debug, `VpnConnection` struct/clone, `nmcli_command()` default and env override.
-
-- **Expanded IPC Tests** — 7 new tests: `ipc/server.rs` empty line handling, validation failure path, Status command roundtrip, multiple commands per connection. `ipc/client.rs` error variant display coverage.
-
----
-
-## [1.9.6] - 2026-02-07
-
-### Added
-
-- **Test Coverage Push (741 → 803 unit tests)** — Added 62 new unit tests targeting remaining 0%-coverage files across tray, headless, and gateway modules.
-
-- **New Module: `tray::drawing`** — Pure pixel-level drawing functions (`draw_dots`, `draw_dash`, `draw_x_mark`, `draw_exclamation`) extracted from `icons.rs`, plus `IconVariant` enum with colour/size helpers. 20 tests across 5 submodules.
-
-- **New Module: `headless::runtime_helpers`** — `RuntimePhase` lifecycle enum, `classify_signal()` for Unix signal mapping, PID file format/parse/validate, `parse_watchdog_usec()`, `validate_runtime()` config validation. 25 tests across 6 submodules.
-
-- **New Module: `gateway::rule_builder`** — `GatewayRule` enum (Forward/ForwardClient/Related/Masquerade) with `to_args()`, `build_gateway_rules()`, `build_client_rules()`, `nat_required()`, `ForwardingState` enum with `/proc` value parsing. 17 tests across 4 submodules.
-
----
-
-## [1.9.5] - 2026-02-07
-
-### Added
-
-- **Test Coverage Push (693 → 741 unit tests)** — Added 48 new unit tests targeting 0%-coverage files: supervisor handlers, killswitch cleanup, and gateway status.
-
-- **New Module: `supervisor::response_builder`** — Pure IPC response construction: `build_status_response()` for all 6 VpnState variants, `build_list_response()` with active markers, `needs_disconnect_first()`, `validate_connect()`, and `classify_nm_event()` mapping NmEvents to StateActions. 28 tests across 5 submodules.
-
-- **New Module: `killswitch::cleanup_logic`** — Pure cleanup command builders: `build_remove_jump()`, `build_flush_chain()`, `build_delete_chain()`, `build_chain_cleanup()`, `chain_exists_in_output()` for iptables output parsing, `find_shroud_rules()`, and `manual_cleanup_instructions()`. 12 tests.
-
-- **New Module: `gateway::status_fmt`** — `GatewaySnapshot` struct with `Display` impl for human-readable gateway status output, covering enabled/disabled, interfaces, IPs, kill switch, and FORWARD rules. 8 tests.
-
----
-
-## [1.9.4] - 2026-02-07
-
-### Added
-
-- **Test Coverage Push (605 → 693 unit tests)** — Added 88 new unit tests targeting supervisor, nm, logging, and cli modules.
-
-- **New Module: `supervisor::reconnect_logic`** — Pure reconnect decision logic: `ReconnectConfig`, `ReconnectTracker` with attempt/success tracking, linear backoff `calculate_delay()`, and `decide_reconnect()` returning `ReconnectDecision` enum. 25+ tests across 4 submodules.
-
-- **New Module: `supervisor::connection_stats`** — Connection lifecycle statistics: connect/disconnect/fail/reconnect counters, session duration tracking, and success rate calculation. 15 tests.
-
-- **New Module: `nm::parsing`** — NM output parsing extracted from `nm::client`: `parse_active_vpns()`, `parse_vpn_connections()`, `parse_vpn_uuid()`, `select_best_vpn()` priority logic, and `is_vpn_connection_type()`. 25+ tests across 5 submodules.
-
-- **New Module: `cli::output`** — CLI output formatting: `format_duration()`, `format_list_output()`, `format_error()`, `format_success()`, `exit_codes` constants, and `format_json()`. 20+ tests across 5 submodules.
-
-- **Expanded Logging Tests** — 15 new tests in `logging.rs`: timestamp generation/format, leap year calculation, `parse_level` and `verbose_to_level` edge cases, `Args` default/clone, and path helpers.
-
----
-
-## [1.9.3] - 2026-02-07
-
-### Added
-
-- **Test Coverage Push (468 → 605 unit tests)** — Added 137 new unit tests targeting the lowest-coverage modules: tray (1%), dbus (4%), headless (5%), supervisor (5%), and ipc (30%).
-
-- **New Module: `tray::state`** — Pure-logic tray state management: `TrayIcon` enum with icon name/tooltip generation, `MenuItem` builder pattern, `build_menu()` for constructing menus from `VpnState`, and `handle_menu_action()` for mapping menu ids to actions. 40+ tests across 4 submodules.
-
-- **New Module: `dbus::types`** — D-Bus type conversions and state mapping: `NmVpnState` (8 variants with activating/active/failed/disconnected queries), `NmActiveState` (5 variants), `NmDeviceState` (13 variants), D-Bus path parsing utilities, connection type classification, and VPN failure reason codes. 30+ tests across 6 submodules.
-
-- **New Module: `headless::config`** — Headless mode configuration helpers: `StdinCommand` parser with 8 command types + shortcuts, `LogLevel` enum with case-insensitive parsing, watchdog interval validation, auto-connect validation, and systemd notification message builders. 30+ tests across 5 submodules.
-
-- **Expanded IPC Protocol Tests** — 35+ new tests in `ipc::protocol`: roundtrip serialization for all command/response variants, validation tests for connect/switch/list commands, response helper methods (`is_ok`, `error_message`), command descriptions, `VpnConnectionInfo` serialization, and deserialization error handling.
-
-- **Expanded Supervisor Tests** — 10 new tests covering all `VpnCommand` and `IpcCommand` variant construction, `IpcResponse` variants (`OkMessage`, `Pong`, `Status`, `KillSwitchStatus`, `AutoReconnectStatus`, `DebugInfo`).
-
----
-
-## [1.9.2] - 2026-02-07
-
-### Added
-
-- **Test Coverage Improvement** - Added 96 new unit tests (372 → 468), targeting modules with the lowest coverage. Total test count across all suites: 533 passing.
-
-- **New Module: `supervisor::command_validation`** - Pure-function module extracted from I/O-heavy supervisor handlers. Provides testable `validate_connect()`, `validate_disconnect()`, `format_status()`, `format_list()`, `parse_ks_action()`, `should_update_tray()`, and `should_auto_reconnect()` functions with 7 test submodules.
-
-- **New Module: `gateway::validation`** - Pure-function network validation module. Provides `validate_interface_name()`, `validate_subnet()`, `is_vpn_interface()`, `is_physical_interface()`, `parse_default_interface()`, `parse_default_gateway()`, and iptables rule builders with 5 test submodules covering valid/invalid inputs, shell injection attacks, and route parsing.
-
-- **New Module: `killswitch::rules`** - Pure-function firewall rule generation module. Provides `classify_ip()`, `is_doh_provider()`, rule builders for server allow, loopback, LAN, VPN interface, DNS modes (tunnel/localhost/any), DoH blocking, IPv6 blocking/tunneling, and `validate_chain_name()` with 7 test submodules.
-
-- **Expanded State Machine Tests** - 25 new transition tests in `state::machine`: external connection detection, VPN changed events, health recovery, reconnection lifecycle, connection failures, wake/sleep events, `set_state`, full lifecycle, unhandled events, and accessor methods.
-
-- **Expanded Health Checker Tests** - 18 new tests in `health::checker`: reset/suspend/resume behaviour, threshold boundaries, counter tracking, `HealthResult` equality/clone/debug, config edge cases, and `Default` impl.
-
-- **Expanded Tray Tests** - 17 new tests in `tray::service`: `extract_short_name` edge cases (leading/trailing hyphens, unicode, numbers-only), `SharedState` clone/modify/toggle, and all `VpnCommand` variant construction and debug formatting.
+  - **Expanded Tests in Existing Files:**
+    - `state::machine` — 25 new transition tests (external connection, VPN changed, health recovery, wake/sleep, full lifecycle)
+    - `health::checker` — 18 new tests (reset, suspend, thresholds, HealthResult traits)
+    - `tray::service` — 17 new tests (SharedState, VpnCommand variants)
+    - `ipc::protocol` — 35+ roundtrip serialization, validation, description tests
+    - `killswitch::firewall` — 40 new tests (nft ruleset, KillSwitchError, DOH_PROVIDER_IPS validation)
+    - `cli::handlers` — 40 new tests (args_to_command mapping, handle_response formatting)
+    - `dbus::monitor` — 11 new tests (vpn_failure_reason, should_process_event dedup)
+    - `config::settings` — 18 new tests (DnsMode, validate, HeadlessConfig, GatewayConfig)
+    - `killswitch::sudo_check` — 7 new tests (SudoAccessStatus traits)
+    - `killswitch::paths` — 5 new tests (binary path content, log_detected_paths)
+    - `nm::connections` — 9 new tests (VpnType, VpnConnection, nmcli_command)
+    - `ipc::server` — 4 new tests (validation failure, multi-command, Status roundtrip)
+    - `ipc::client` — 3 new tests (error variants, connect_to_daemon)
+    - `logging` — 15 new tests (timestamp, leap year, parse_level, Args)
 
 ---
 
