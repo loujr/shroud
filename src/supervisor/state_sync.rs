@@ -7,11 +7,10 @@
 //! - Desktop notifications
 //! - NetworkManager (source of truth)
 
-use log::{debug, info, warn};
+use log::{debug, info};
 
 use crate::nm::get_active_vpn as nm_get_active_vpn;
 use crate::state::{Event, TransitionReason, VpnState};
-use crate::tray::VpnTray;
 
 impl super::VpnSupervisor {
     /// Dispatch an event to the state machine and sync the shared state
@@ -23,11 +22,9 @@ impl super::VpnSupervisor {
             self.health_checker.reset();
 
             // Save last connected server to config
-            if self.app_config.last_server.as_ref() != Some(server) {
-                self.app_config.last_server = Some(server.clone());
-                if let Err(e) = self.config_manager.save(&self.app_config) {
-                    warn!("Failed to save last_server to config: {}", e);
-                }
+            if self.config_store.config.last_server.as_ref() != Some(server) {
+                self.config_store.config.last_server = Some(server.clone());
+                self.config_store.save();
             }
         }
 
@@ -43,79 +40,6 @@ impl super::VpnSupervisor {
     pub(crate) async fn sync_shared_state(&self) {
         let mut state = self.shared_state.write().await;
         state.state = self.machine.state.clone();
-    }
-
-    /// Update the tray icon with current state
-    pub(crate) fn update_tray(&self) {
-        let current_state = match self.shared_state.try_read() {
-            Ok(guard) => {
-                debug!(
-                    "update_tray: state={:?}, auto_reconnect={}, kill_switch={}",
-                    guard.state, guard.auto_reconnect, guard.kill_switch
-                );
-                guard.clone()
-            }
-            Err(_) => {
-                warn!("update_tray: Failed to read shared_state");
-                return;
-            }
-        };
-
-        let tray_handle = self.tray_handle.clone();
-        std::thread::spawn(move || {
-            if let Ok(handle_guard) = tray_handle.lock() {
-                if let Some(handle) = handle_guard.as_ref() {
-                    let result = handle.update(move |tray: &mut VpnTray| {
-                        if let Ok(mut cached) = tray.cached_state.write() {
-                            debug!("Tray cached_state updated to: {:?}", current_state.state);
-                            *cached = current_state.clone();
-                        }
-                    });
-                    if result.is_none() {
-                        warn!("Tray handle.update() returned None - service may be shutdown");
-                    }
-                } else {
-                    warn!("Tray handle is None");
-                }
-            } else {
-                warn!("Failed to lock tray_handle");
-            }
-        });
-    }
-
-    /// Show a desktop notification (legacy compatibility wrapper).
-    ///
-    /// Prefer using `self.notification_manager` methods directly for
-    /// new code — they provide categorized, throttled notifications.
-    pub(crate) fn show_notification(&mut self, title: &str, body: &str) {
-        use crate::notifications::{Notification, NotificationCategory};
-
-        // Infer category from title for backward compatibility
-        let category = match title.to_lowercase().as_str() {
-            t if t.contains("connected") && !t.contains("dis") && !t.contains("re") => {
-                NotificationCategory::Connected
-            }
-            t if t.contains("disconnected") => NotificationCategory::Disconnected,
-            t if t.contains("reconnect") => NotificationCategory::Reconnected,
-            t if t.contains("connection lost") => NotificationCategory::ConnectionLost,
-            t if t.contains("kill switch") => {
-                if body.to_lowercase().contains("enabled")
-                    || body.to_lowercase().contains("blocked")
-                {
-                    NotificationCategory::KillSwitchEnabled
-                } else {
-                    NotificationCategory::KillSwitchDisabled
-                }
-            }
-            t if t.contains("health") || t.contains("degraded") || t.contains("recovered") => {
-                NotificationCategory::HealthDegraded
-            }
-            t if t.contains("error") || t.contains("failed") => NotificationCategory::Error,
-            _ => NotificationCategory::Connected, // fallback
-        };
-
-        self.notification_manager
-            .show(Notification::new(category, title, body));
     }
 
     /// Sync internal state with NetworkManager reality
@@ -140,7 +64,7 @@ impl super::VpnSupervisor {
                     server: conn.clone(),
                 });
                 self.sync_shared_state().await;
-                self.update_tray();
+                self.tray.update(&self.shared_state);
                 true
             }
 
@@ -154,7 +78,7 @@ impl super::VpnSupervisor {
                 self.machine
                     .set_state(VpnState::Disconnected, TransitionReason::ExternalChange);
                 self.sync_shared_state().await;
-                self.update_tray();
+                self.tray.update(&self.shared_state);
                 true
             }
 
@@ -168,7 +92,7 @@ impl super::VpnSupervisor {
                     server: conn.clone(),
                 });
                 self.sync_shared_state().await;
-                self.update_tray();
+                self.tray.update(&self.shared_state);
                 true
             }
 
@@ -178,12 +102,12 @@ impl super::VpnSupervisor {
                     "State sync: VPN '{}' connected during reconnect attempt",
                     conn
                 );
-                self.reconnect_cancelled = true;
+                self.timing.reconnect_cancelled = true;
                 self.dispatch(Event::NmVpnUp {
                     server: conn.clone(),
                 });
                 self.sync_shared_state().await;
-                self.update_tray();
+                self.tray.update(&self.shared_state);
                 true
             }
 
@@ -194,7 +118,7 @@ impl super::VpnSupervisor {
                     server: conn.clone(),
                 });
                 self.sync_shared_state().await;
-                self.update_tray();
+                self.tray.update(&self.shared_state);
                 true
             }
 
@@ -204,7 +128,7 @@ impl super::VpnSupervisor {
                 self.machine
                     .set_state(VpnState::Disconnected, TransitionReason::Timeout);
                 self.sync_shared_state().await;
-                self.update_tray();
+                self.tray.update(&self.shared_state);
                 true
             }
 

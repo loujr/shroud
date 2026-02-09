@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.12.1] - 2026-02-09
+
+### Changed
+- **supervisor**: decomposed `VpnSupervisor` into `TrayBridge`, `ConfigStore`, and `TimingState`; centralized tray updates & notifications; unified config persistence. No behavioral changes intended.
+- **handlers/state_sync/reconnect/event_loop**: migrated to new subcomponents; preserved reconnect debouncing and state sync semantics.
+- **tests/clippy**: `cargo test` and `cargo clippy --all-targets -D warnings` passing.
+
 ## [1.12.0] - 2026-02-09
 
 ### Added / Improved

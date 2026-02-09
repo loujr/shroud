@@ -43,7 +43,7 @@ impl super::VpnSupervisor {
                     server: active.clone(),
                 });
                 self.sync_shared_state().await;
-                self.update_tray();
+                self.tray.update(&self.shared_state);
                 Some(false)
             }
             Some(active) => {
@@ -57,8 +57,9 @@ impl super::VpnSupervisor {
                     server: active.clone(),
                 });
                 self.sync_shared_state().await;
-                self.update_tray();
-                self.show_notification("VPN Switched", &format!("Now connected to {}", active));
+                self.tray.update(&self.shared_state);
+                self.tray
+                    .notify("VPN Switched", &format!("Now connected to {}", active));
                 None
             }
             None => {
@@ -82,7 +83,7 @@ impl super::VpnSupervisor {
         });
 
         // DEBOUNCE: Check if we recently attempted a reconnect
-        if let Some(last_time) = self.last_reconnect_time {
+        if let Some(last_time) = self.timing.last_reconnect_time {
             let elapsed = last_time.elapsed().as_secs();
             if elapsed < RECONNECT_DEBOUNCE_SECS {
                 debug!(
@@ -92,10 +93,10 @@ impl super::VpnSupervisor {
                 return;
             }
         }
-        self.last_reconnect_time = Some(Instant::now());
+        self.timing.last_reconnect_time = Some(Instant::now());
 
         // Clear any previous cancellation flag
-        self.reconnect_cancelled = false;
+        self.timing.reconnect_cancelled = false;
 
         // CRITICAL: Check actual NM state before starting reconnect loop
         match self.should_attempt_reconnect(connection_name).await {
@@ -119,7 +120,7 @@ impl super::VpnSupervisor {
                 "Cannot reconnect: VPN '{}' no longer exists in NetworkManager",
                 connection_name
             );
-            self.show_notification(
+            self.tray.notify(
                 "Reconnect Failed",
                 &format!("VPN '{}' not found", connection_name),
             );
@@ -128,7 +129,7 @@ impl super::VpnSupervisor {
                 reason: format!("VPN '{}' no longer exists", connection_name),
             });
             self.sync_shared_state().await;
-            self.update_tray();
+            self.tray.update(&self.shared_state);
             // Refresh connection list to update the tray menu
             self.refresh_connections().await;
             return;
@@ -143,12 +144,12 @@ impl super::VpnSupervisor {
 
         for attempt in 1..=max_attempts {
             // Check for cancellation before each attempt
-            if self.reconnect_cancelled {
+            if self.timing.reconnect_cancelled {
                 info!("Reconnection cancelled by user");
                 self.machine
                     .set_state(VpnState::Disconnected, TransitionReason::UserRequested);
                 self.sync_shared_state().await;
-                self.update_tray();
+                self.tray.update(&self.shared_state);
                 return;
             }
 
@@ -181,7 +182,7 @@ impl super::VpnSupervisor {
                 TransitionReason::Retrying,
             );
             self.sync_shared_state().await;
-            self.update_tray();
+            self.tray.update(&self.shared_state);
 
             // Calculate backoff delay - but check for cancellation during the wait
             let delay = std::cmp::min(
@@ -201,12 +202,13 @@ impl super::VpnSupervisor {
                         info!("Disconnect command received during reconnect - cancelling");
                         // Disconnect any partial connection
                         let _ = nm_disconnect(connection_name).await;
-                        self.last_disconnect_time = Some(Instant::now());
+                        self.timing.last_disconnect_time = Some(Instant::now());
                         self.machine
                             .set_state(VpnState::Disconnected, TransitionReason::UserRequested);
                         self.sync_shared_state().await;
-                        self.update_tray();
-                        self.show_notification("VPN Disconnected", "Reconnection cancelled");
+                        self.tray.update(&self.shared_state);
+                        self.tray
+                            .notify("VPN Disconnected", "Reconnection cancelled");
                         return;
                     }
                     Ok(other_cmd) => {
@@ -235,12 +237,12 @@ impl super::VpnSupervisor {
                                 "Disconnect command received during connection verify - cancelling"
                             );
                             let _ = nm_disconnect(connection_name).await;
-                            self.last_disconnect_time = Some(Instant::now());
+                            self.timing.last_disconnect_time = Some(Instant::now());
                             self.machine
                                 .set_state(VpnState::Disconnected, TransitionReason::UserRequested);
                             self.sync_shared_state().await;
-                            self.update_tray();
-                            self.show_notification("VPN Disconnected", "Connection cancelled");
+                            self.tray.update(&self.shared_state);
+                            self.tray.notify("VPN Disconnected", "Connection cancelled");
                             return;
                         }
                         sleep(Duration::from_millis(200)).await;
@@ -253,8 +255,8 @@ impl super::VpnSupervisor {
                                 server: connection_name.to_string(),
                             });
                             self.sync_shared_state().await;
-                            self.update_tray();
-                            self.show_notification(
+                            self.tray.update(&self.shared_state);
+                            self.tray.notify(
                                 "VPN Reconnected",
                                 &format!("Reconnected to {}", connection_name),
                             );
@@ -286,8 +288,8 @@ impl super::VpnSupervisor {
             TransitionReason::RetriesExhausted,
         );
         self.sync_shared_state().await;
-        self.update_tray();
-        self.show_notification(
+        self.tray.update(&self.shared_state);
+        self.tray.notify(
             "VPN Reconnection Failed",
             &format!("Failed after {} attempts", max_attempts),
         );

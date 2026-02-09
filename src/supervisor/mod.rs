@@ -19,6 +19,7 @@
 
 #[allow(dead_code)]
 pub mod command_validation;
+mod config_store;
 #[allow(dead_code)]
 pub mod connection_stats;
 mod event_loop;
@@ -29,6 +30,10 @@ pub mod reconnect_logic;
 #[allow(dead_code)]
 pub mod response_builder;
 mod state_sync;
+mod tray_bridge;
+
+pub(crate) use config_store::ConfigStore;
+pub(crate) use tray_bridge::TrayBridge;
 
 #[cfg(test)]
 mod tests;
@@ -37,7 +42,6 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{mpsc, RwLock};
 
-use crate::config::{Config, ConfigManager};
 use crate::dbus::NmEvent;
 use crate::health::HealthChecker;
 use crate::ipc::{IpcCommand, IpcResponse};
@@ -120,6 +124,28 @@ impl ExitState {
     }
 }
 
+/// Timing-sensitive state for debouncing, grace periods, and throttling.
+#[derive(Debug)]
+pub(crate) struct TimingState {
+    pub(crate) last_disconnect_time: Option<Instant>,
+    pub(crate) last_poll_time: Instant,
+    pub(crate) last_wake_event: Option<Instant>,
+    pub(crate) last_reconnect_time: Option<Instant>,
+    pub(crate) reconnect_cancelled: bool,
+}
+
+impl Default for TimingState {
+    fn default() -> Self {
+        Self {
+            last_disconnect_time: None,
+            last_poll_time: Instant::now(),
+            last_wake_event: None,
+            last_reconnect_time: None,
+            reconnect_cancelled: false,
+        }
+    }
+}
+
 /// VPN Supervisor that manages VPN connections via NetworkManager
 ///
 /// Uses a formal state machine for all state transitions, ensuring:
@@ -137,34 +163,20 @@ pub struct VpnSupervisor {
     pub(crate) ipc_rx: mpsc::Receiver<(IpcCommand, mpsc::Sender<IpcResponse>)>,
     /// Channel receiver for D-Bus events from NetworkManager
     pub(crate) dbus_rx: mpsc::Receiver<NmEvent>,
-    /// Tray handle for updating the icon
-    pub(crate) tray_handle: Arc<std::sync::Mutex<Option<ksni::blocking::Handle<VpnTray>>>>,
-    /// Timestamp of last intentional disconnect (for grace period)
-    pub(crate) last_disconnect_time: Option<Instant>,
-    /// Timestamp of last polling tick (for detecting sleep/wake)
-    pub(crate) last_poll_time: Instant,
     /// Health checker for VPN connectivity verification
     pub(crate) health_checker: HealthChecker,
-    /// Configuration manager for persistent settings
-    pub(crate) config_manager: ConfigManager,
-    /// Current configuration
-    pub(crate) app_config: Config,
+    /// System tray and notifications
+    pub(crate) tray: TrayBridge,
+    /// Persistent configuration storage
+    pub(crate) config_store: ConfigStore,
     /// Kill switch for blocking non-VPN traffic
     pub(crate) kill_switch: KillSwitch,
+    /// Timing-sensitive state
+    pub(crate) timing: TimingState,
     /// VPN switching context
     pub(crate) switch_ctx: SwitchContext,
-    /// Timestamp of last wake event dispatch (for debounce)
-    pub(crate) last_wake_event: Option<Instant>,
-    /// Timestamp of last reconnect attempt start (for debounce)
-    pub(crate) last_reconnect_time: Option<Instant>,
-    /// Flag to cancel ongoing reconnection attempts
-    pub(crate) reconnect_cancelled: bool,
-    /// Whether this is the first run (config file did not exist)
-    pub(crate) is_first_run: bool,
     /// Exit state
     pub(crate) exit_state: ExitState,
-    /// Notification manager for categorized, throttled desktop notifications
-    pub(crate) notification_manager: NotificationManager,
 }
 
 impl VpnSupervisor {
@@ -179,26 +191,20 @@ impl VpnSupervisor {
         use log::info;
 
         // Load persistent configuration
-        let config_manager = ConfigManager::new();
-        let is_first_run = !config_manager.config_path().exists();
-        let app_config = config_manager.load_validated();
-        info!(
-            "Loaded config: auto_reconnect={}, last_server={:?}",
-            app_config.auto_reconnect, app_config.last_server
-        );
+        let config_store = ConfigStore::load();
 
         let sm_config = StateMachineConfig {
-            max_retries: app_config.max_reconnect_attempts,
+            max_retries: config_store.config.max_reconnect_attempts,
             base_delay_secs: RECONNECT_BASE_DELAY_SECS,
             max_delay_secs: RECONNECT_MAX_DELAY_SECS,
         };
 
         // Create kill switch with config-based DNS and IPv6 modes
         let mut kill_switch = KillSwitch::with_config(
-            app_config.dns_mode,
-            app_config.ipv6_mode,
-            app_config.block_doh,
-            app_config.custom_doh_blocklist.clone(),
+            config_store.config.dns_mode,
+            config_store.config.ipv6_mode,
+            config_store.config.block_doh,
+            config_store.config.custom_doh_blocklist.clone(),
         );
 
         // Sync with actual system state (detect existing rules)
@@ -207,7 +213,9 @@ impl VpnSupervisor {
             info!("Kill switch rules detected from previous session");
         }
 
-        let notification_manager = NotificationManager::new(app_config.notifications.clone());
+        let notification_manager =
+            NotificationManager::new(config_store.config.notifications.clone());
+        let tray = TrayBridge::new(tray_handle, notification_manager);
 
         Self {
             machine: StateMachine::with_config(sm_config),
@@ -215,20 +223,13 @@ impl VpnSupervisor {
             rx,
             ipc_rx,
             dbus_rx,
-            tray_handle,
-            last_disconnect_time: None,
-            last_poll_time: Instant::now(),
+            tray,
+            config_store,
             health_checker: HealthChecker::new(),
-            config_manager,
-            app_config,
             kill_switch,
+            timing: TimingState::default(),
             switch_ctx: SwitchContext::default(),
-            last_wake_event: None,
-            last_reconnect_time: None,
-            reconnect_cancelled: false,
-            is_first_run,
             exit_state: ExitState::default(),
-            notification_manager,
         }
     }
 }

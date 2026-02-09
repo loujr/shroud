@@ -33,7 +33,7 @@ impl super::VpnSupervisor {
         // IMPORTANT: Use actual iptables state for kill_switch, not just config
         {
             let mut state = self.shared_state.write().await;
-            state.auto_reconnect = self.app_config.auto_reconnect;
+            state.auto_reconnect = self.config_store.config.auto_reconnect;
             // Use actual kill switch state from iptables, not config
             // The kill_switch was already synced in VpnSupervisor::new()
             state.kill_switch = self.kill_switch.is_enabled();
@@ -42,10 +42,10 @@ impl super::VpnSupervisor {
         // Initial connection refresh and state sync - do this BEFORE enabling kill switch
         self.refresh_connections().await;
         self.initial_nm_sync().await;
-        self.last_poll_time = Instant::now();
+        self.timing.last_poll_time = Instant::now();
 
         // Only restore kill switch if VPN is already connected (avoid blocking VPN connection on startup)
-        if self.app_config.kill_switch_enabled {
+        if self.config_store.config.kill_switch_enabled {
             if matches!(self.machine.state, VpnState::Connected { .. }) {
                 info!("Restoring kill switch from config (VPN already connected)");
                 if let Err(e) = self.kill_switch.enable().await {
@@ -61,19 +61,19 @@ impl super::VpnSupervisor {
         }
 
         // Update tray with initial state
-        self.update_tray();
+        self.tray.update(&self.shared_state);
 
-        if self.is_first_run && !crate::autostart::Autostart::is_enabled() {
+        if self.config_store.is_first_run && !crate::autostart::Autostart::is_enabled() {
             info!("First run detected and autostart not enabled");
-            self.show_notification(
+            self.tray.notify(
                 "Shroud",
                 "Tip: Run 'shroud autostart on' to start automatically on login",
             );
         }
 
         // Use health check interval from config
-        let health_interval = if self.app_config.health_check_interval_secs > 0 {
-            self.app_config.health_check_interval_secs
+        let health_interval = if self.config_store.config.health_check_interval_secs > 0 {
+            self.config_store.config.health_check_interval_secs
         } else {
             HEALTH_CHECK_INTERVAL_SECS
         };
@@ -151,10 +151,10 @@ impl super::VpnSupervisor {
 
                 // Poll NetworkManager state periodically (fallback/backup)
                 _ = nm_poll_interval.tick() => {
-                    let elapsed = self.last_poll_time.elapsed();
+                    let elapsed = self.timing.last_poll_time.elapsed();
                     if elapsed > Duration::from_secs(TIME_JUMP_THRESHOLD_SECS) {
                         // Time jump detected - check if we're in cooldown period
-                        let should_dispatch = match self.last_wake_event {
+                        let should_dispatch = match self.timing.last_wake_event {
                             Some(last) => last.elapsed().as_secs() >= TIME_JUMP_COOLDOWN_SECS,
                             None => true,
                         };
@@ -172,19 +172,19 @@ impl super::VpnSupervisor {
                             self.health_checker.suspend(Duration::from_secs(10));
 
                             self.dispatch(Event::Wake);
-                            self.last_wake_event = Some(Instant::now());
+                            self.timing.last_wake_event = Some(Instant::now());
                             self.force_state_resync().await;
                         } else {
                             debug!(
                                 "Time jump detected but in cooldown ({:.1}s since last wake event)",
-                                self.last_wake_event.unwrap().elapsed().as_secs_f32()
+                                self.timing.last_wake_event.unwrap().elapsed().as_secs_f32()
                             );
                         }
                     } else {
                         // Regular poll - check for multiple VPNs and sync state
                         self.poll_nm_state().await;
                     }
-                    self.last_poll_time = Instant::now();
+                    self.timing.last_poll_time = Instant::now();
                 }
 
                 // Run health checks when connected
