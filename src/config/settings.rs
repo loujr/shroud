@@ -282,6 +282,9 @@ pub struct Config {
     pub health_check_interval_secs: u64,
     /// Health check latency threshold for degraded state (ms)
     pub health_degraded_threshold_ms: u64,
+    /// Custom health check endpoints (URLs). If empty, uses built-in defaults.
+    #[serde(default)]
+    pub health_check_endpoints: Vec<String>,
     /// Maximum reconnection attempts before giving up
     pub max_reconnect_attempts: u32,
     /// Kill switch enabled (blocks non-VPN traffic)
@@ -322,6 +325,7 @@ impl Default for Config {
             last_server: None,
             health_check_interval_secs: 30,
             health_degraded_threshold_ms: 2000,
+            health_check_endpoints: Vec::new(),
             max_reconnect_attempts: 10,
             kill_switch_enabled: false,
             dns_mode: DnsMode::default(),
@@ -689,6 +693,7 @@ mod tests {
         assert!(config.auto_reconnect);
         assert!(config.last_server.is_none());
         assert_eq!(config.health_check_interval_secs, 30);
+        assert!(config.health_check_endpoints.is_empty());
         assert_eq!(config.max_reconnect_attempts, 10);
         assert_eq!(config.dns_mode, DnsMode::Tunnel);
         assert!(config.block_doh);
@@ -704,6 +709,7 @@ mod tests {
             last_server: Some("us-east-1".to_string()),
             health_check_interval_secs: 60,
             health_degraded_threshold_ms: 3000,
+            health_check_endpoints: vec!["https://example.com/health".to_string()],
             max_reconnect_attempts: 5,
             kill_switch_enabled: true,
             dns_mode: DnsMode::Localhost,
@@ -731,6 +737,7 @@ mod tests {
         assert_eq!(parsed.block_doh, config.block_doh);
         assert_eq!(parsed.custom_doh_blocklist, config.custom_doh_blocklist);
         assert_eq!(parsed.ipv6_mode, config.ipv6_mode);
+        assert_eq!(parsed.health_check_endpoints, config.health_check_endpoints);
     }
 
     #[test]
@@ -744,6 +751,7 @@ mod tests {
         assert!(!config.auto_reconnect);
         assert!(config.last_server.is_none()); // default
         assert_eq!(config.health_check_interval_secs, 30); // default
+        assert!(config.health_check_endpoints.is_empty()); // default
         assert_eq!(config.dns_mode, DnsMode::Tunnel); // default
         assert!(config.block_doh);
         assert!(config.custom_doh_blocklist.is_empty());
@@ -884,6 +892,7 @@ mod tests {
             last_server: Some("test-server".to_string()),
             health_check_interval_secs: 45,
             health_degraded_threshold_ms: 1500,
+            health_check_endpoints: vec!["https://example.com".to_string()],
             max_reconnect_attempts: 5,
             kill_switch_enabled: true,
             dns_mode: DnsMode::Localhost,
@@ -908,6 +917,10 @@ mod tests {
         assert_eq!(loaded.kill_switch_enabled, original.kill_switch_enabled);
         assert_eq!(loaded.dns_mode, original.dns_mode);
         assert_eq!(loaded.ipv6_mode, original.ipv6_mode);
+        assert_eq!(
+            loaded.health_check_endpoints,
+            original.health_check_endpoints
+        );
     }
 
     #[test]

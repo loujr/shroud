@@ -13,6 +13,10 @@ use std::path::PathBuf;
 
 use crate::cli::validation::validate_vpn_name;
 
+/// Current IPC protocol version.
+/// Bump this when adding/removing/changing command or response variants.
+pub const PROTOCOL_VERSION: u32 = 1;
+
 /// Path to the IPC Unix domain socket.
 ///
 /// Uses XDG_RUNTIME_DIR for proper user isolation.
@@ -35,6 +39,14 @@ pub const SOCKET_PATH: &str = "/tmp/shroud.sock";
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", content = "data")]
 pub enum IpcCommand {
+    /// Protocol version handshake. Must be the first message sent by a client.
+    Hello {
+        version: u32,
+    },
+
+    /// Report daemon binary version and protocol version.
+    Version,
+
     /// Connect to a VPN by name.
     Connect {
         /// Name of the VPN connection (as shown in NetworkManager)
@@ -95,6 +107,15 @@ pub enum IpcCommand {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", content = "data")]
 pub enum IpcResponse {
+    /// Handshake response confirming accepted protocol version.
+    HelloOk { version: u32 },
+
+    /// Protocol version mismatch — client should upgrade/downgrade.
+    VersionMismatch {
+        server_version: u32,
+        client_version: u32,
+    },
+
     /// Operation completed successfully.
     Ok,
 
@@ -139,6 +160,12 @@ pub enum IpcResponse {
         debug_enabled: bool,
     },
 
+    /// Version info
+    VersionInfo {
+        binary_version: String,
+        protocol_version: u32,
+    },
+
     /// Pong response
     Pong,
 }
@@ -164,6 +191,12 @@ impl IpcCommand {
                 }
                 Ok(())
             }
+            IpcCommand::Hello { version } => {
+                if *version == 0 {
+                    return Err("Invalid protocol version".to_string());
+                }
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
@@ -172,6 +205,8 @@ impl IpcCommand {
     #[allow(dead_code)]
     pub fn description(&self) -> &'static str {
         match self {
+            IpcCommand::Hello { .. } => "handshake",
+            IpcCommand::Version => "daemon version",
             IpcCommand::Connect { .. } => "connect to VPN",
             IpcCommand::Disconnect => "disconnect from VPN",
             IpcCommand::Switch { .. } => "switch VPN",
@@ -254,6 +289,15 @@ mod tests {
     }
 
     #[test]
+    fn test_response_serialize_hello_ok() {
+        let resp = IpcResponse::HelloOk {
+            version: PROTOCOL_VERSION,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("HelloOk"));
+    }
+
+    #[test]
     fn test_response_serialize_error() {
         let resp = IpcResponse::Error {
             message: "something failed".to_string(),
@@ -261,6 +305,29 @@ mod tests {
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("Error"));
         assert!(json.contains("something failed"));
+    }
+
+    #[test]
+    fn test_response_serialize_version_mismatch() {
+        let resp = IpcResponse::VersionMismatch {
+            server_version: 1,
+            client_version: 2,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("VersionMismatch"));
+    }
+
+    #[test]
+    fn test_roundtrip_version_info() {
+        let resp = IpcResponse::VersionInfo {
+            binary_version: "1.13.0".into(),
+            protocol_version: PROTOCOL_VERSION,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        let back: IpcResponse = serde_json::from_str(&json).unwrap();
+        assert!(
+            matches!(back, IpcResponse::VersionInfo { protocol_version, .. } if protocol_version == PROTOCOL_VERSION)
+        );
     }
 
     #[test]
@@ -333,11 +400,48 @@ mod tests {
     }
 
     #[test]
+    fn test_validation_hello_zero() {
+        let cmd = IpcCommand::Hello { version: 0 };
+        assert!(cmd.validate().is_err());
+    }
+
+    #[test]
+    fn test_validation_hello_valid() {
+        let cmd = IpcCommand::Hello {
+            version: PROTOCOL_VERSION,
+        };
+        assert!(cmd.validate().is_ok());
+    }
+
+    #[test]
     fn test_roundtrip_quit() {
         let cmd = IpcCommand::Quit;
         let json = serde_json::to_string(&cmd).unwrap();
         let back: IpcCommand = serde_json::from_str(&json).unwrap();
         assert_eq!(back, IpcCommand::Quit);
+    }
+
+    #[test]
+    fn test_roundtrip_version() {
+        let cmd = IpcCommand::Version;
+        let json = serde_json::to_string(&cmd).unwrap();
+        let back: IpcCommand = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, IpcCommand::Version);
+    }
+
+    #[test]
+    fn test_roundtrip_hello() {
+        let cmd = IpcCommand::Hello {
+            version: PROTOCOL_VERSION,
+        };
+        let json = serde_json::to_string(&cmd).unwrap();
+        let back: IpcCommand = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            back,
+            IpcCommand::Hello {
+                version: PROTOCOL_VERSION
+            }
+        );
     }
 
     #[test]

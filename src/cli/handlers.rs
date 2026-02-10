@@ -654,6 +654,27 @@ fn handle_response(response: IpcResponse, args: &Args) -> i32 {
             }
             0
         }
+        IpcResponse::HelloOk { version } => {
+            println!("Handshake OK (protocol v{})", version);
+            0
+        }
+        IpcResponse::VersionMismatch {
+            server_version,
+            client_version,
+        } => {
+            eprintln!(
+                "IPC protocol version mismatch: daemon v{}, client v{}",
+                server_version, client_version
+            );
+            1
+        }
+        IpcResponse::VersionInfo {
+            binary_version,
+            protocol_version,
+        } => {
+            println!("shroud {} (ipc v{})", binary_version, protocol_version);
+            0
+        }
         IpcResponse::Pong => {
             println!("Pong");
             0

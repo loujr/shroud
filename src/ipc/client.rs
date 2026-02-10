@@ -17,7 +17,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tracing::debug;
 
-use super::protocol::{socket_path, IpcCommand, IpcResponse};
+use super::protocol::{socket_path, IpcCommand, IpcResponse, PROTOCOL_VERSION};
 
 use thiserror::Error;
 
@@ -37,6 +37,12 @@ pub enum ClientError {
     /// Failed to parse response
     #[error("Failed to parse response: {0}")]
     Parse(#[from] serde_json::Error),
+    /// IPC protocol version mismatch
+    #[error("IPC protocol version mismatch: daemon is v{server_version}, client is v{client_version}. Please restart the daemon.")]
+    VersionMismatch {
+        server_version: u32,
+        client_version: u32,
+    },
     /// Daemon is not running
     #[error("Daemon is not running. Start it with: shroud")]
     DaemonNotRunning,
@@ -112,6 +118,58 @@ pub async fn send_command_on_stream(
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
 
+    // Handshake
+    let hello = IpcCommand::Hello {
+        version: PROTOCOL_VERSION,
+    };
+    let hello_json = serde_json::to_string(&hello).map_err(ClientError::Parse)?;
+    debug!("Sending hello: {}", hello_json);
+    writer
+        .write_all(hello_json.as_bytes())
+        .await
+        .map_err(ClientError::Send)?;
+    writer.write_all(b"\n").await.map_err(ClientError::Send)?;
+    writer.flush().await.map_err(ClientError::Send)?;
+
+    let mut response_line = String::new();
+    reader
+        .read_line(&mut response_line)
+        .await
+        .map_err(ClientError::Receive)?;
+
+    debug!("Received hello response: {}", response_line.trim());
+
+    if !response_line.trim().is_empty() {
+        if let Ok(resp) = serde_json::from_str::<IpcResponse>(response_line.trim()) {
+            match resp {
+                IpcResponse::HelloOk { version } => {
+                    if version != PROTOCOL_VERSION {
+                        return Err(ClientError::VersionMismatch {
+                            server_version: version,
+                            client_version: PROTOCOL_VERSION,
+                        });
+                    }
+                }
+                IpcResponse::VersionMismatch {
+                    server_version,
+                    client_version,
+                } => {
+                    return Err(ClientError::VersionMismatch {
+                        server_version,
+                        client_version,
+                    });
+                }
+                _ => {
+                    // Legacy daemon or unexpected response - proceed
+                }
+            }
+        } else {
+            // Legacy daemon - proceed
+        }
+    }
+
+    response_line.clear();
+
     // Serialize and send command
     let command_json = serde_json::to_string(&command).map_err(ClientError::Parse)?;
 
@@ -125,7 +183,6 @@ pub async fn send_command_on_stream(
     writer.flush().await.map_err(ClientError::Send)?;
 
     // Read response
-    let mut response_line = String::new();
     reader
         .read_line(&mut response_line)
         .await

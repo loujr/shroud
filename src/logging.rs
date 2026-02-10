@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use tracing::level_filters::LevelFilter;
-use tracing_subscriber::filter::{EnvFilter, filter_fn};
+use tracing_subscriber::filter::{filter_fn, EnvFilter};
 use tracing_subscriber::{fmt, prelude::*};
 
 /// Maximum log file size before rotation (10 MB)
@@ -191,7 +191,6 @@ fn get_rotating_writer(path: PathBuf) -> Arc<Mutex<RotatingWriter>> {
         .clone()
 }
 
-
 /// Initialize logging with the given configuration
 pub fn init_logging(args: &Args) {
     // Determine log level
@@ -227,7 +226,9 @@ pub fn init_logging(args: &Args) {
     let rotating_mw = RotatingMakeWriter(get_rotating_writer(log_path));
     let file_layer = fmt::layer()
         .with_writer(rotating_mw)
-        .with_filter(filter_fn(|_meta| DEBUG_LOGGING_ENABLED.load(Ordering::Relaxed)));
+        .with_filter(filter_fn(|_meta| {
+            DEBUG_LOGGING_ENABLED.load(Ordering::Relaxed)
+        }));
 
     if args.log_file.is_some() {
         DEBUG_LOGGING_ENABLED.store(true, Ordering::Relaxed);

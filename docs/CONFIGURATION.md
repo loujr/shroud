@@ -95,6 +95,21 @@ How often to check if the VPN is healthy (seconds). Set to `0` to disable.
 
 If latency exceeds this (milliseconds), connection is marked "degraded."
 
+### `health_check_endpoints`
+
+| Type | Default |
+|------|---------|
+| list of strings | `[]` (uses built-in defaults) |
+
+Custom URLs to check for VPN health. If empty, Shroud uses its built-in endpoints (Cloudflare, ifconfig.me, ipify). Each endpoint must return HTTP 2xx/3xx to be considered healthy.
+
+```toml
+health_check_endpoints = [
+    "https://your-company.com/health",
+    "https://1.1.1.1/cdn-cgi/trace",
+]
+```
+
 ### `max_reconnect_attempts`
 
 | Type | Default |

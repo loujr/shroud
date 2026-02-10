@@ -22,5 +22,5 @@ pub mod client;
 pub mod protocol;
 pub mod server;
 
-pub use protocol::{IpcCommand, IpcResponse};
+pub use protocol::{IpcCommand, IpcResponse, PROTOCOL_VERSION};
 pub use server::IpcServer;

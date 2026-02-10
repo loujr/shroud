@@ -13,7 +13,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{mpsc, Semaphore};
 use tracing::{debug, error, info, warn};
 
-use super::protocol::{socket_path, IpcCommand, IpcResponse};
+use super::protocol::{socket_path, IpcCommand, IpcResponse, PROTOCOL_VERSION};
 use thiserror::Error;
 
 /// Errors that can occur in the IPC server.
@@ -139,6 +139,7 @@ impl IpcServer {
         let mut reader = BufReader::new(reader);
         let mut line = String::new();
         let mut command_count = 0u32;
+        let mut first = true;
 
         while reader.read_line(&mut line).await? > 0 {
             command_count += 1;
@@ -200,6 +201,35 @@ impl IpcServer {
                 continue;
             }
 
+            if first {
+                first = false;
+                if let IpcCommand::Hello { version } = command {
+                    if version != PROTOCOL_VERSION {
+                        let response = IpcResponse::VersionMismatch {
+                            server_version: PROTOCOL_VERSION,
+                            client_version: version,
+                        };
+                        let response_json = serde_json::to_string(&response)?;
+                        writer.write_all(response_json.as_bytes()).await?;
+                        writer.write_all(b"\n").await?;
+                        writer.flush().await?;
+                        break;
+                    } else {
+                        let response = IpcResponse::HelloOk {
+                            version: PROTOCOL_VERSION,
+                        };
+                        let response_json = serde_json::to_string(&response)?;
+                        writer.write_all(response_json.as_bytes()).await?;
+                        writer.write_all(b"\n").await?;
+                        writer.flush().await?;
+                        line.clear();
+                        continue;
+                    }
+                } else {
+                    warn!("Legacy IPC client without version handshake; proceeding");
+                }
+            }
+
             let response = {
                 let (resp_tx, mut resp_rx) = mpsc::channel(1);
 
@@ -247,6 +277,7 @@ impl Drop for IpcServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ipc::protocol::PROTOCOL_VERSION;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
     #[test]
@@ -323,6 +354,86 @@ mod tests {
         assert!(matches!(parsed, IpcResponse::Pong));
 
         drop(reader);
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), handle).await;
+        assert!(result.is_ok(), "handle_connection timed out");
+        assert!(result.unwrap().unwrap().is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_connection_handshake_then_ping() {
+        let (tx, mut rx) = mpsc::channel::<(IpcCommand, mpsc::Sender<IpcResponse>)>(16);
+        let (client, server_stream) = tokio::net::UnixStream::pair().unwrap();
+
+        tokio::spawn(async move {
+            if let Some((cmd, responder)) = rx.recv().await {
+                assert!(matches!(cmd, IpcCommand::Ping));
+                responder.send(IpcResponse::Pong).await.unwrap();
+            }
+        });
+
+        let handle =
+            tokio::spawn(async move { IpcServer::handle_connection(server_stream, tx).await });
+
+        let (client_reader, mut client_writer) = client.into_split();
+        let hello_json = serde_json::to_string(&IpcCommand::Hello {
+            version: PROTOCOL_VERSION,
+        })
+        .unwrap();
+        client_writer
+            .write_all(format!("{}\n", hello_json).as_bytes())
+            .await
+            .unwrap();
+
+        let mut reader = BufReader::new(client_reader);
+        let mut response = String::new();
+        reader.read_line(&mut response).await.unwrap();
+        let parsed: IpcResponse = serde_json::from_str(response.trim()).unwrap();
+        assert!(matches!(parsed, IpcResponse::HelloOk { version } if version == PROTOCOL_VERSION));
+
+        let ping_json = serde_json::to_string(&IpcCommand::Ping).unwrap();
+        client_writer
+            .write_all(format!("{}\n", ping_json).as_bytes())
+            .await
+            .unwrap();
+        client_writer.shutdown().await.unwrap();
+
+        let mut response2 = String::new();
+        reader.read_line(&mut response2).await.unwrap();
+        let parsed2: IpcResponse = serde_json::from_str(response2.trim()).unwrap();
+        assert!(matches!(parsed2, IpcResponse::Pong));
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), handle).await;
+        assert!(result.is_ok(), "handle_connection timed out");
+        assert!(result.unwrap().unwrap().is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_connection_version_mismatch() {
+        let (tx, _rx) = mpsc::channel::<(IpcCommand, mpsc::Sender<IpcResponse>)>(16);
+        let (client, server_stream) = tokio::net::UnixStream::pair().unwrap();
+
+        let handle =
+            tokio::spawn(async move { IpcServer::handle_connection(server_stream, tx).await });
+
+        let (client_reader, mut client_writer) = client.into_split();
+        let hello_json = serde_json::to_string(&IpcCommand::Hello {
+            version: PROTOCOL_VERSION + 1,
+        })
+        .unwrap();
+        client_writer
+            .write_all(format!("{}\n", hello_json).as_bytes())
+            .await
+            .unwrap();
+        client_writer.shutdown().await.unwrap();
+
+        let mut reader = BufReader::new(client_reader);
+        let mut response = String::new();
+        reader.read_line(&mut response).await.unwrap();
+        let parsed: IpcResponse = serde_json::from_str(response.trim()).unwrap();
+        assert!(
+            matches!(parsed, IpcResponse::VersionMismatch { server_version, client_version } if server_version == PROTOCOL_VERSION && client_version == PROTOCOL_VERSION + 1)
+        );
 
         let result = tokio::time::timeout(std::time::Duration::from_secs(2), handle).await;
         assert!(result.is_ok(), "handle_connection timed out");

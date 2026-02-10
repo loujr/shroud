@@ -651,6 +651,9 @@ health_check_interval_secs = 30
 # Latency threshold in milliseconds for marking connection as "degraded"
 health_degraded_threshold_ms = 5000
 
+# Custom health check endpoints (empty = use built-in defaults)
+# health_check_endpoints = ["https://your-endpoint.com/health"]
+
 # Last connected server (managed automatically)
 # last_server = ""
 EOF

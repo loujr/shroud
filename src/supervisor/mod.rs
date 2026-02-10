@@ -43,6 +43,7 @@ use std::time::Instant;
 use tokio::sync::{mpsc, RwLock};
 
 use crate::dbus::NmEvent;
+use crate::health::checker::HealthConfig;
 use crate::health::HealthChecker;
 use crate::ipc::{IpcCommand, IpcResponse};
 use crate::killswitch::KillSwitch;
@@ -241,6 +242,19 @@ impl VpnSupervisor {
             NotificationManager::new(config_store.config.notifications.clone());
         let tray = TrayBridge::new(tray_handle, notification_manager);
 
+        let health_config = if config_store.config.health_check_endpoints.is_empty() {
+            HealthConfig {
+                degraded_threshold_ms: config_store.config.health_degraded_threshold_ms,
+                ..Default::default()
+            }
+        } else {
+            HealthConfig {
+                endpoints: config_store.config.health_check_endpoints.clone(),
+                degraded_threshold_ms: config_store.config.health_degraded_threshold_ms,
+                ..Default::default()
+            }
+        };
+
         Self {
             machine: StateMachine::with_config(sm_config),
             shared_state,
@@ -250,7 +264,7 @@ impl VpnSupervisor {
             tray,
             config_store,
             nm,
-            health_checker: HealthChecker::new(),
+            health_checker: HealthChecker::with_config(health_config),
             kill_switch,
             timing: TimingState::default(),
             switch_ctx: SwitchContext::default(),

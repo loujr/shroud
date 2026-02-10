@@ -15,12 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.13.0] - 2026-02-10
 
 ### Added
+- **ipc**: protocol versioning with `Hello`/`HelloOk`/`VersionMismatch` handshake. Clients send `PROTOCOL_VERSION` on connect; server validates and rejects mismatched versions. Backward-compatible with unversioned legacy clients.
+- **ipc**: `Version` command returns daemon binary version and protocol version.
+- **config**: `health_check_endpoints` field — user-configurable list of health check URLs. When empty (default), built-in endpoints (Cloudflare, ifconfig.me, ipify) are used.
 - **logging**: switched to `tracing` + `tracing-subscriber` with size-based rotating file writer, runtime toggle, and `--log-file` support.
 - **supervisor**: `#[instrument]` spans on handlers and reconnect for richer context.
 - **tests**: tracing subscriber initialized via `tests::common::init()` with `with_test_writer`.
 
 ### Changed
 - **logging**: replaced `log` macros crate-wide with `tracing` macros; stderr filter uses runtime toggle; docs updated.
+- **supervisor**: health checker now respects `health_degraded_threshold_ms` and `health_check_endpoints` from config (previously only interval was wired).
+- **deps**: added `tracing`/`tracing-subscriber`, removed `log`/`env_logger`.
+
+### Fixed
+- **ipc**: handshake now validates protocol version and surfaces clear VersionMismatch errors.
 
 ## [1.12.5] - 2026-02-10
 

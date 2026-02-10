@@ -1098,9 +1098,16 @@ impl super::VpnSupervisor {
         cmd: crate::ipc::IpcCommand,
         response_tx: tokio::sync::mpsc::Sender<crate::ipc::IpcResponse>,
     ) {
-        use crate::ipc::{IpcCommand, IpcResponse};
+        use crate::ipc::{IpcCommand, IpcResponse, PROTOCOL_VERSION};
 
         let response = match cmd {
+            IpcCommand::Hello { .. } => IpcResponse::Error {
+                message: "Hello handshake handled by IPC server".to_string(),
+            },
+            IpcCommand::Version => IpcResponse::VersionInfo {
+                binary_version: env!("CARGO_PKG_VERSION").to_string(),
+                protocol_version: PROTOCOL_VERSION,
+            },
             IpcCommand::Status => {
                 let state = self.shared_state.read().await;
                 let vpn_type = if let Some(name) = state.state.server_name() {
@@ -1409,6 +1416,8 @@ impl super::VpnSupervisor {
                     "config": {
                         "max_reconnect_attempts": self.config_store.config.max_reconnect_attempts,
                         "health_check_interval_secs": self.config_store.config.health_check_interval_secs,
+                        "health_degraded_threshold_ms": self.config_store.config.health_degraded_threshold_ms,
+                        "health_check_endpoints": self.config_store.config.health_check_endpoints.clone(),
                         "dns_mode": format!("{}", self.config_store.config.dns_mode),
                         "ipv6_mode": format!("{:?}", self.config_store.config.ipv6_mode),
                         "block_doh": self.config_store.config.block_doh,
