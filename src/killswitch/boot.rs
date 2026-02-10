@@ -6,8 +6,8 @@
 
 use super::paths::{ip6tables, iptables};
 use super::KillSwitchError;
-use log::info;
 use std::process::Command;
+use tracing::info;
 
 const BOOT_CHAIN: &str = "SHROUD_BOOT_KS";
 

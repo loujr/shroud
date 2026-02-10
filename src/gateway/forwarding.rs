@@ -3,8 +3,8 @@
 //! Manages the kernel's IP forwarding settings via /proc/sys/net/ipv4/ip_forward
 
 use super::GatewayError;
-use log::{debug, info};
 use std::fs;
+use tracing::{debug, info};
 
 const IPV4_FORWARD_PATH: &str = "/proc/sys/net/ipv4/ip_forward";
 const IPV6_FORWARD_PATH: &str = "/proc/sys/net/ipv6/conf/all/forwarding";

@@ -35,15 +35,18 @@ pub use mock_nm::{MockNetworkManager, MockNmCall, MockNmError, MockVpnConnection
 
 use std::path::PathBuf;
 use std::sync::Once;
+use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::fmt;
 
 static INIT: Once = Once::new();
 
 /// Initialize test environment (called once per test run)
 pub fn init() {
     INIT.call_once(|| {
-        let _ = env_logger::builder()
-            .filter_level(log::LevelFilter::Warn)
-            .is_test(true)
+        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
+        let _ = fmt()
+            .with_env_filter(filter)
+            .with_test_writer()
             .try_init();
     });
 }

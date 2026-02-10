@@ -1,9 +1,9 @@
 //! Supervisor reconnection logic
 
-use log::{debug, error, info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use tokio::time::{sleep, Duration};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::state::{Event, TransitionReason, VpnState};
 use crate::tray::VpnCommand;
@@ -26,6 +26,7 @@ impl super::VpnSupervisor {
     /// - Some(true) if we should proceed with reconnect (no VPN active)
     /// - Some(false) if reconnect is unnecessary (target VPN already active)
     /// - None if a different VPN is active (user switched manually)
+    #[instrument(skip(self), fields(target = %target_server))]
     async fn should_attempt_reconnect(&mut self, target_server: &str) -> Option<bool> {
         // Query NetworkManager for actual state
         match self.nm.get_active_vpn().await {
@@ -67,6 +68,7 @@ impl super::VpnSupervisor {
     }
 
     /// Attempt to reconnect with exponential backoff (triggered by connection drop)
+    #[instrument(skip(self), fields(connection = %connection_name))]
     pub(crate) async fn attempt_reconnect(&mut self, connection_name: &str) {
         // RACE PREVENTION: Check if reconnect is already in progress
         if RECONNECT_IN_PROGRESS.swap(true, Ordering::SeqCst) {

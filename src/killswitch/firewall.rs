@@ -26,13 +26,13 @@
 //! - `tunnel`: Allow IPv6 only via VPN tunnel interfaces
 //! - `off`: No special IPv6 handling (legacy)
 
-use log::{debug, info, warn};
 use std::net::IpAddr;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use thiserror::Error;
 use tokio::process::Command;
+use tracing::{debug, info, warn};
 
 use crate::config::{DnsMode, Ipv6Mode};
 use crate::killswitch::paths::{ip6tables, iptables, nft};

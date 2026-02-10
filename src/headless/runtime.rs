@@ -9,10 +9,10 @@ use crate::killswitch::cleanup;
 use crate::nm;
 use crate::supervisor::VpnSupervisor;
 use crate::tray::SharedState;
-use log::{debug, error, info, warn};
 use std::sync::Arc;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::{mpsc, RwLock};
+use tracing::{debug, error, info, warn};
 
 /// Run Shroud in headless mode.
 ///

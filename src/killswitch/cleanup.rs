@@ -6,10 +6,10 @@
 //! Principle II: Fail Loud, Recover Quiet
 //! Cleanup should be silent on success, loud on failure.
 
-use log::{debug, error, info, warn};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use thiserror::Error;
+use tracing::{debug, error, info, warn};
 
 use crate::killswitch::paths::{ip6tables, iptables, nft};
 

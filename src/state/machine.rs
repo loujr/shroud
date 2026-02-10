@@ -2,7 +2,7 @@
 //!
 //! Handles state transitions based on events, with logging and retry logic.
 
-use log::info;
+use tracing::info;
 
 use crate::state::types::{Event, TransitionReason, VpnState};
 

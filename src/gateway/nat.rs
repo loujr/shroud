@@ -4,8 +4,8 @@
 
 use super::GatewayError;
 use crate::killswitch::paths::{ip6tables, iptables};
-use log::{debug, info};
 use std::process::Command;
+use tracing::{debug, info};
 
 /// Enable NAT for the VPN interface.
 /// Enable NAT (masquerade) on the VPN interface.

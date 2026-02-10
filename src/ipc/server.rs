@@ -7,11 +7,11 @@
 //! The server runs in a dedicated tokio task and forwards received commands
 //! to the supervisor via a channel. Responses are sent back through the socket.
 
-use log::{debug, error, info, warn};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{mpsc, Semaphore};
+use tracing::{debug, error, info, warn};
 
 use super::protocol::{socket_path, IpcCommand, IpcResponse};
 use thiserror::Error;

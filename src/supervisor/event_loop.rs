@@ -1,8 +1,8 @@
 //! Supervisor event loop
 
-use log::{debug, info, warn};
 use std::time::Instant;
 use tokio::time::Duration;
+use tracing::{debug, info, warn};
 
 use crate::state::{Event, VpnState};
 use crate::tray::VpnCommand;

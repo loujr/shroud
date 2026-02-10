@@ -1,8 +1,8 @@
 //! Supervisor event handlers
 
-use log::{debug, error, info, warn};
 use std::time::Instant;
 use tokio::time::{sleep, Duration};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::daemon::lock::release_instance_lock;
 use crate::dbus::NmEvent;
@@ -22,6 +22,7 @@ use super::{
 
 impl super::VpnSupervisor {
     /// Handle D-Bus event from NetworkManager
+    #[instrument(skip(self), fields(event = ?event))]
     pub(crate) async fn handle_dbus_event(&mut self, event: NmEvent) {
         debug!("Received D-Bus event: {:?}", event);
 

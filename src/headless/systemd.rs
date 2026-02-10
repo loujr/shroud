@@ -8,11 +8,11 @@
 //!
 //! Reference: <https://www.freedesktop.org/software/systemd/man/sd_notify.html>
 
-use log::{debug, trace};
 use std::env;
 use std::os::unix::net::UnixDatagram;
 use std::path::PathBuf;
 use std::time::Duration;
+use tracing::{debug, trace};
 
 /// Get the systemd notify socket path from environment.
 fn notify_socket() -> Option<PathBuf> {

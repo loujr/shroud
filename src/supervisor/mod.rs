@@ -212,7 +212,7 @@ impl VpnSupervisor {
         tray_handle: Arc<std::sync::Mutex<Option<ksni::blocking::Handle<VpnTray>>>>,
         nm: Box<dyn NmClient>,
     ) -> Self {
-        use log::info;
+        use tracing::info;
 
         // Load persistent configuration
         let config_store = ConfigStore::load();

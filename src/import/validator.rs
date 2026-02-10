@@ -83,7 +83,7 @@ pub fn validate_openvpn(path: &Path) -> Result<(), ValidationError> {
         || contents.contains("pkcs12");
 
     if !has_auth {
-        log::warn!("OpenVPN config may be missing authentication configuration");
+        tracing::warn!("OpenVPN config may be missing authentication configuration");
     }
 
     Ok(())

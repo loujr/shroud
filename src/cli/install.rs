@@ -1,9 +1,9 @@
 //! Atomic binary installation helpers for CLI update/restart flows.
 
-use log::{debug, info};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use tracing::{debug, info};
 
 /// Error type for installation failures.
 #[derive(Debug)]

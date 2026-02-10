@@ -197,9 +197,9 @@ Fixes #123
 ```rust
 // ✅ Good
 match connection.activate().await {
-    Ok(()) => log::info!("Connected"),
+    Ok(()) => tracing::info!("Connected"),
     Err(e) => {
-        log::error!("Connection failed: {}", e);
+        tracing::error!("Connection failed: {}", e);
         return Err(e.into());
     }
 }
@@ -213,12 +213,17 @@ connection.activate().await.unwrap();
 
 ### Logging
 
+- Use `tracing` macros (`tracing::info!`, `tracing::warn!`, `tracing::error!`, `tracing::debug!`, `tracing::trace!`).
+- Prefer `#[instrument(skip(self, ...), fields(...))]` on async handlers to capture context.
+- `RUST_LOG=debug cargo run` enables debug logs to stderr; runtime toggle writes to `~/.local/share/shroud/debug.log`.
+- Tests: call `tests::common::init()` to initialize tracing subscriber.
+
 ```rust
-log::error!("...");   // User must know about this
-log::warn!("...");    // User might care
-log::info!("...");    // Normal operation
-log::debug!("...");   // Development details
-log::trace!("...");   // Deep debugging only
+// Example
+#[instrument(skip(self), fields(conn = %conn_name))]
+pub async fn handle(&mut self, conn_name: &str) {
+    info!(%conn_name, "handling connection");
+}
 ```
 
 ---

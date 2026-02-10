@@ -48,10 +48,10 @@ mod supervisor;
 mod tray;
 mod util;
 
-use log::{error, info};
 use std::process::ExitCode;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
+use tracing::{error, info, Level};
 
 use crate::daemon::{acquire_instance_lock, release_instance_lock};
 use crate::dbus::NmMonitor;
@@ -128,7 +128,7 @@ async fn run_daemon_mode(args: cli::Args) {
     // Initialize logging
     logging::init_logging(&log_args);
 
-    if log::log_enabled!(log::Level::Debug) {
+    if tracing::enabled!(Level::DEBUG) {
         killswitch::paths::log_detected_paths();
     }
 

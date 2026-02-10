@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.13.0] - 2026-02-10
+
+### Added
+- **logging**: switched to `tracing` + `tracing-subscriber` with size-based rotating file writer, runtime toggle, and `--log-file` support.
+- **supervisor**: `#[instrument]` spans on handlers and reconnect for richer context.
+- **tests**: tracing subscriber initialized via `tests::common::init()` with `with_test_writer`.
+
+### Changed
+- **logging**: replaced `log` macros crate-wide with `tracing` macros; stderr filter uses runtime toggle; docs updated.
+
 ## [1.12.5] - 2026-02-10
 
 ### Fixed

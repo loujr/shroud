@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use log::{error, warn};
+use tracing::{error, warn};
 
 use crate::import::{
     check_networkmanager, detect_config_type, import_directory, import_file, ImportOptions,

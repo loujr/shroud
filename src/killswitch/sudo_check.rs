@@ -1,7 +1,7 @@
 //! Sudo access validation for kill switch operations.
 
-use log::{debug, error, warn};
 use std::process::{Command, Stdio};
+use tracing::{debug, error, warn};
 
 use super::paths::{ip6tables, iptables, nft};
 

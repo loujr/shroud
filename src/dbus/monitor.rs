@@ -4,10 +4,10 @@
 //! This replaces polling for state detection while keeping nmcli for commands.
 
 use futures_lite::StreamExt;
-use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use std::time::Instant;
 use tokio::sync::mpsc;
+use tracing::{debug, error, info, warn};
 use zbus::message::Message;
 use zbus::Connection;
 

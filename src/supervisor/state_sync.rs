@@ -7,7 +7,7 @@
 //! - Desktop notifications
 //! - NetworkManager (source of truth)
 
-use log::{debug, info};
+use tracing::{debug, info};
 
 use crate::state::{Event, TransitionReason, VpnState};
 

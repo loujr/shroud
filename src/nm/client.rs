@@ -3,11 +3,11 @@
 //! Provides functions for interacting with NetworkManager to manage VPN connections.
 //! Currently uses nmcli subprocess calls. Future: migrate to D-Bus for event-driven updates.
 
-use log::{debug, error, info, warn};
 use std::process::Stdio;
 use thiserror::Error;
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
+use tracing::{debug, error, info, warn};
 
 use crate::state::{ActiveVpnInfo, NmVpnState};
 

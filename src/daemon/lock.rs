@@ -3,11 +3,11 @@
 //! Provides file-based locking to ensure only one Shroud daemon runs at a time.
 //! Uses flock() for advisory locking on a file in XDG_RUNTIME_DIR.
 
-use log::{info, warn};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
+use tracing::{info, warn};
 
 /// Get the path to the lock file
 pub fn get_lock_file_path() -> PathBuf {

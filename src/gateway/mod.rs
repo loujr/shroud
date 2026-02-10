@@ -24,9 +24,9 @@ pub mod validation;
 mod tests;
 
 use crate::config::GatewayConfig;
-use log::{debug, info};
 use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
+use tracing::{debug, info};
 
 pub use detect::{detect_lan_interface, detect_vpn_interface};
 pub use firewall::{

@@ -103,7 +103,7 @@ impl Tray for VpnTray {
 
     fn title(&self) -> String {
         let state = self.cached_state.read().unwrap_or_else(|poisoned| {
-            log::warn!("Tray cached_state lock poisoned, recovering");
+            tracing::warn!("Tray cached_state lock poisoned, recovering");
             poisoned.into_inner()
         });
         match &state.state {
@@ -127,7 +127,7 @@ impl Tray for VpnTray {
 
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
         let state = self.cached_state.read().unwrap_or_else(|poisoned| {
-            log::warn!("Tray cached_state lock poisoned, recovering");
+            tracing::warn!("Tray cached_state lock poisoned, recovering");
             poisoned.into_inner()
         });
         match state.state {
@@ -143,7 +143,7 @@ impl Tray for VpnTray {
 
     fn tool_tip(&self) -> ksni::ToolTip {
         let state = self.cached_state.read().unwrap_or_else(|poisoned| {
-            log::warn!("Tray cached_state lock poisoned, recovering");
+            tracing::warn!("Tray cached_state lock poisoned, recovering");
             poisoned.into_inner()
         });
         let (title, description) = match &state.state {
@@ -187,7 +187,7 @@ impl Tray for VpnTray {
             .cached_state
             .read()
             .unwrap_or_else(|poisoned| {
-                log::warn!("Tray cached_state lock poisoned, recovering");
+                tracing::warn!("Tray cached_state lock poisoned, recovering");
                 poisoned.into_inner()
             })
             .clone();

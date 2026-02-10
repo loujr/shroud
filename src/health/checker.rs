@@ -3,10 +3,10 @@
 //! Verifies VPN tunnel connectivity by making HTTP requests through the tunnel
 //! and checking for expected responses.
 
-use log::{debug, warn};
 use std::time::{Duration, Instant};
 use tokio::task::spawn_blocking;
 use tokio::time::timeout;
+use tracing::{debug, warn};
 use ureq;
 
 /// Result of a health check

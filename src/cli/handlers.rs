@@ -3,7 +3,7 @@
 //! Implements the client-side execution of CLI commands by communicating
 //! with the daemon over IPC.
 
-use log::{error, info};
+use tracing::{error, info};
 
 use super::args::{Args, DebugAction, GatewayAction, ParsedCommand, ToggleAction};
 use super::help;

@@ -33,8 +33,8 @@
 //! ```
 
 use crate::cli::validation::validate_vpn_name;
-use log::{debug, info, warn};
 use thiserror::Error;
+use tracing::{debug, info, warn};
 
 /// Errors that can occur during configuration operations.
 #[derive(Error, Debug)]

@@ -1,9 +1,9 @@
 //! Interface auto-detection for gateway mode.
 
-use log::{debug, warn};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use tracing::{debug, warn};
 
 /// Detect the LAN interface.
 ///

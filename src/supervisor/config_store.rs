@@ -1,4 +1,4 @@
-use log::{info, warn};
+use tracing::{info, warn};
 
 use crate::config::{Config, ConfigManager};
 

@@ -2,9 +2,9 @@
 //!
 //! Detects iptables/ip6tables/nft binaries across distros and caches results.
 
-use log::debug;
 use std::path::PathBuf;
 use std::sync::OnceLock;
+use tracing::debug;
 
 static IPTABLES_PATH: OnceLock<PathBuf> = OnceLock::new();
 static IP6TABLES_PATH: OnceLock<PathBuf> = OnceLock::new();
@@ -75,10 +75,10 @@ pub fn nft() -> &'static str {
 }
 
 pub fn log_detected_paths() {
-    log::debug!("Firewall binary paths:");
-    log::debug!("  iptables:  {}", iptables());
-    log::debug!("  ip6tables: {}", ip6tables());
-    log::debug!("  nft:       {}", nft());
+    tracing::debug!("Firewall binary paths:");
+    tracing::debug!("  iptables:  {}", iptables());
+    tracing::debug!("  ip6tables: {}", ip6tables());
+    tracing::debug!("  nft:       {}", nft());
 }
 
 #[cfg(test)]

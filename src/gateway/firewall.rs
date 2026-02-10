@@ -6,8 +6,8 @@
 use super::GatewayError;
 use crate::config::AllowedClients;
 use crate::killswitch::paths::{ip6tables, iptables};
-use log::info;
 use std::process::Command;
+use tracing::info;
 
 const GATEWAY_CHAIN: &str = "SHROUD_GATEWAY";
 const GATEWAY_KS_CHAIN: &str = "SHROUD_GATEWAY_KS";

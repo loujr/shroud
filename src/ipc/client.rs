@@ -12,10 +12,10 @@
 //! println!("Status: {:?}", response);
 //! ```
 
-use log::debug;
 use std::io;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
+use tracing::debug;
 
 use super::protocol::{socket_path, IpcCommand, IpcResponse};
 

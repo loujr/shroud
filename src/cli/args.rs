@@ -263,7 +263,7 @@ fn parse_command(argv: &[String]) -> Result<ParsedCommand, String> {
             let name = argv.get(1).ok_or("connect requires a connection name")?;
             let validated = validate_vpn_name(name).map_err(|e| e.to_string())?;
             if validation::looks_like_injection(&validated) {
-                log::debug!(
+                tracing::debug!(
                     "VPN name contains unusual characters: {:?}",
                     validation::sanitize_for_display(&validated, 50)
                 );

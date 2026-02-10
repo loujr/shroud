@@ -1,6 +1,6 @@
-use log::{debug, warn};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::{debug, warn};
 
 use crate::notifications::NotificationManager;
 use crate::tray::{SharedState, VpnTray};

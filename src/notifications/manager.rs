@@ -1,9 +1,9 @@
 //! Notification manager with throttling and configuration.
 
 use super::types::{Notification, NotificationCategory};
-use log::{debug, warn};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
+use tracing::{debug, warn};
 
 /// User-facing notification configuration.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

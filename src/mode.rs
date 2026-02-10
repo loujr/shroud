@@ -13,8 +13,8 @@
 //! or any other heuristics. This prevents accidental mode switches that
 //! could break user workflows.
 
-use log::info;
 use std::env;
+use tracing::info;
 
 /// Runtime mode for Shroud
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
