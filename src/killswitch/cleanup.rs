@@ -147,6 +147,13 @@ fn run_cleanup_command() -> Result<(), CleanupError> {
 /// Execute cleanup with a timeout.
 ///
 /// This prevents blocking forever if a password prompt appears.
+/// Clean up kill switch rules with a timeout.
+///
+/// # Errors
+///
+/// Returns [`CleanupError::Timeout`] if sudo prompts or iptables/nft commands hang beyond `timeout`.
+///
+/// Returns [`CleanupError::CommandFailed`] if rules remain after cleanup commands complete.
 pub fn cleanup_with_timeout(timeout: Duration) -> Result<CleanupResult, CleanupError> {
     let ipv4_exists = rules_exist().unwrap_or(false);
     let ipv6_exists = rules_exist_ipv6().unwrap_or(false);
@@ -278,6 +285,12 @@ fn log_manual_cleanup_instructions() {
 /// Clean up all kill switch rules (iptables, ip6tables, nft, boot chain).
 ///
 /// Used during shutdown to ensure no rules are left behind.
+///
+/// # Errors
+///
+/// Currently returns `Ok(())`; internal cleanup failures are logged and ignored. If error propagation is added,
+/// this may return [`CleanupError::Timeout`] when sudo prompts block cleanup, or [`CleanupError::CommandFailed`]
+/// if rules remain after cleanup commands.
 pub fn cleanup_all() -> Result<(), CleanupError> {
     // Clean main kill switch
     let _ = cleanup_with_timeout(CLEANUP_TIMEOUT);

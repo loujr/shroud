@@ -93,6 +93,11 @@ async fn nmcli_output_with_path(
 }
 
 /// Check if NetworkManager is running
+/// Ensure NetworkManager is running.
+///
+/// # Errors
+///
+/// Returns [`ImportError::NetworkManagerNotRunning`] if NetworkManager is not reachable.
 pub async fn check_networkmanager() -> Result<(), ImportError> {
     let output = nmcli_output(&["general", "status"])
         .await
@@ -118,7 +123,19 @@ pub async fn connection_exists(name: &str) -> bool {
     }
 }
 
-/// Import a single config file
+/// Import a single config file.
+///
+/// # Errors
+///
+/// Returns [`ImportError::NotFound`] if the file does not exist.
+///
+/// Returns [`ImportError::UnknownFormat`] if the file is not a supported format (.ovpn/.conf).
+///
+/// Returns [`ImportError::AlreadyExists`] if a connection with the target name exists and `force` is false.
+///
+/// Returns [`ImportError::IoError`] if the file cannot be read.
+///
+/// Returns [`ImportError::NetworkManagerNotRunning`] if NetworkManager is not available.
 pub async fn import_file(
     path: &Path,
     custom_name: Option<&str>,

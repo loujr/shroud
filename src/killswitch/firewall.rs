@@ -326,7 +326,22 @@ impl KillSwitch {
         true
     }
 
-    /// Enable the kill switch
+    /// Enable the kill switch.
+    ///
+    /// Applies iptables/nftables rules that block all traffic except through the VPN tunnel
+    /// (and allowed exceptions like loopback, LAN/DHCP when configured).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KillSwitchError::Spawn`] if the iptables/nft binary cannot be executed
+    /// (not installed or not in `$PATH`).
+    ///
+    /// Returns [`KillSwitchError::ExitStatus`] if iptables/nft exits with a non-zero status
+    /// (missing `sudo` privileges or conflicting existing chains).
+    ///
+    /// Returns [`KillSwitchError::Wait`] if the iptables/nft process cannot be awaited to completion.
+    ///
+    /// Returns [`KillSwitchError::Write`] if nftables rules cannot be written to stdin (nft backend only).
     pub async fn enable(&mut self) -> Result<(), KillSwitchError> {
         // RACE PREVENTION: Acquire toggle lock
         if TOGGLE_IN_PROGRESS.swap(true, Ordering::SeqCst) {
@@ -955,7 +970,20 @@ impl KillSwitch {
         matches!(output, Ok(status) if status.success())
     }
 
-    /// Disable the kill switch
+    /// Disable the kill switch.
+    ///
+    /// Removes iptables/nftables rules previously installed by [`KillSwitch::enable`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KillSwitchError::Spawn`] if the iptables/nft binary cannot be executed.
+    ///
+    /// Returns [`KillSwitchError::ExitStatus`] if iptables/nft exits with a non-zero status
+    /// while removing rules (e.g., insufficient `sudo` privileges).
+    ///
+    /// Returns [`KillSwitchError::Wait`] if the iptables/nft process cannot be awaited to completion.
+    ///
+    /// Returns [`KillSwitchError::Write`] if nftables rules cannot be written to stdin (nft backend only).
     pub async fn disable(&mut self) -> Result<(), KillSwitchError> {
         // RACE PREVENTION: Acquire toggle lock
         if TOGGLE_IN_PROGRESS.swap(true, Ordering::SeqCst) {

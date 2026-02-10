@@ -64,6 +64,16 @@ pub enum GatewayError {
 }
 
 /// Enable VPN gateway mode.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::Detection`] if the LAN or VPN interface cannot be detected.
+///
+/// Returns [`GatewayError::Forwarding`] if enabling IP forwarding fails (writing to `/proc/sys/net/ipv4/ip_forward`).
+///
+/// Returns [`GatewayError::Nat`] if configuring NAT (masquerade) fails via iptables.
+///
+/// Returns [`GatewayError::Firewall`] if forward rules cannot be installed.
 pub async fn enable(config: &GatewayConfig) -> Result<(), GatewayError> {
     info!("Enabling VPN gateway mode");
 
@@ -113,6 +123,12 @@ pub async fn enable(config: &GatewayConfig) -> Result<(), GatewayError> {
 }
 
 /// Disable VPN gateway mode.
+///
+/// # Errors
+///
+/// Currently returns `Ok(())`; errors are swallowed. If error propagation is added,
+/// this may return [`GatewayError::Forwarding`], [`GatewayError::Nat`], or [`GatewayError::Firewall`]
+/// when tearing down forwarding, NAT, or firewall rules.
 pub async fn disable() -> Result<(), GatewayError> {
     info!("Disabling VPN gateway mode");
 
@@ -139,6 +155,11 @@ pub fn is_enabled() -> bool {
 
 /// Update gateway when VPN interface changes.
 #[allow(dead_code)]
+/// Update the VPN interface used for NAT/forwarding.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::Nat`] if re-applying the masquerade rule for the new interface fails.
 pub async fn update_vpn_interface(new_interface: &str) -> Result<(), GatewayError> {
     if !is_enabled() {
         return Ok(());

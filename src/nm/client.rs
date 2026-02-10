@@ -211,11 +211,19 @@ pub async fn is_connection_active(connection_name: &str) -> bool {
     }
 }
 
-/// Connect to a VPN via NetworkManager
+/// Connect to a VPN via NetworkManager.
 ///
 /// Handles race conditions gracefully:
 /// - If connection is already active, returns Ok (success)
 /// - If a different VPN is active, proceeds with connection (NM will handle it)
+///
+/// # Errors
+///
+/// Returns [`NmError::Timeout`] if `nmcli` does not respond within the configured timeout.
+///
+/// Returns [`NmError::Execution`] if the `nmcli` binary cannot be executed (missing or not in `$PATH`).
+///
+/// Returns [`NmError::Command`] if `nmcli` returns a non-zero status (e.g., connection not found).
 pub async fn connect(connection_name: &str) -> Result<(), NmError> {
     info!("Activating VPN connection: {}", connection_name);
 
@@ -271,7 +279,17 @@ pub async fn connect(connection_name: &str) -> Result<(), NmError> {
     }
 }
 
-/// Disconnect a VPN via NetworkManager
+/// Disconnect a VPN via NetworkManager.
+///
+/// # Errors
+///
+/// Returns [`NmError::Timeout`] if `nmcli` does not respond within the configured timeout.
+///
+/// Returns [`NmError::Execution`] if the `nmcli` binary cannot be executed (missing or not in `$PATH`).
+///
+/// Returns [`NmError::Command`] if `nmcli` returns a non-zero status.
+///
+/// Returns [`NmError::Disconnect`] if all disconnect methods (nmcli + pkill fallbacks) are exhausted.
 pub async fn disconnect(connection_name: &str) -> Result<(), NmError> {
     info!("Deactivating VPN connection: {}", connection_name);
 

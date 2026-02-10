@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.12.4] - 2026-02-09
+
+### Added
+- **docs**: `/// # Errors` rustdoc sections for public fallible APIs across killswitch, nm, gateway, IPC, config, import, logging, headless, dbus.
+
 ## [1.12.3] - 2026-02-09
 
 ### Fixed

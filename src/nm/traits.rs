@@ -33,9 +33,27 @@ pub trait NmClient: Send + Sync {
     async fn get_vpn_state(&self, name: &str) -> Option<NmVpnState>;
 
     /// Activate a VPN connection by name.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NmError::Timeout`] if `nmcli` does not respond within the configured timeout.
+    ///
+    /// Returns [`NmError::Execution`] if the `nmcli` binary cannot be executed (missing or not in `$PATH`).
+    ///
+    /// Returns [`NmError::Command`] if `nmcli` returns a non-zero status (e.g., connection not found).
     async fn connect(&self, name: &str) -> Result<(), NmError>;
 
     /// Deactivate a VPN connection by name.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NmError::Timeout`] if `nmcli` does not respond within the configured timeout.
+    ///
+    /// Returns [`NmError::Execution`] if the `nmcli` binary cannot be executed (missing or not in `$PATH`).
+    ///
+    /// Returns [`NmError::Command`] if `nmcli` returns a non-zero status.
+    ///
+    /// Returns [`NmError::Disconnect`] if all disconnect methods (nmcli + pkill fallbacks) are exhausted.
     async fn disconnect(&self, name: &str) -> Result<(), NmError>;
 
     /// Kill orphan OpenVPN processes.

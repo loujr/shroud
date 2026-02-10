@@ -45,6 +45,12 @@ pub enum ClientError {
 /// Connect to the Shroud daemon.
 ///
 /// Returns a connected Unix stream, or an error if the daemon is not running.
+///
+/// # Errors
+///
+/// Returns [`ClientError::DaemonNotRunning`] if the socket does not exist or the connection is refused.
+///
+/// Returns [`ClientError::Connection`] for other I/O errors establishing the socket.
 pub async fn connect_to_daemon() -> Result<UnixStream, ClientError> {
     let path = socket_path();
 
@@ -70,6 +76,19 @@ pub async fn connect_to_daemon() -> Result<UnixStream, ClientError> {
 /// # Returns
 ///
 /// The response from the daemon, or an error if communication failed.
+/// Send a command to the daemon (creates a new connection).
+///
+/// # Errors
+///
+/// Returns [`ClientError::DaemonNotRunning`] if the IPC socket is missing or unavailable.
+///
+/// Returns [`ClientError::Connection`] for connection I/O errors.
+///
+/// Returns [`ClientError::Send`] if writing the request fails (broken pipe).
+///
+/// Returns [`ClientError::Receive`] if the response is empty or the connection closes prematurely.
+///
+/// Returns [`ClientError::Parse`] if the response cannot be parsed as JSON.
 pub async fn send_command(command: IpcCommand) -> Result<IpcResponse, ClientError> {
     let stream = connect_to_daemon().await?;
     send_command_on_stream(stream, command).await
@@ -78,6 +97,14 @@ pub async fn send_command(command: IpcCommand) -> Result<IpcResponse, ClientErro
 /// Send a command on an existing stream.
 ///
 /// This is useful when you want to reuse a connection for multiple commands.
+///
+/// # Errors
+///
+/// Returns [`ClientError::Send`] if writing the request fails (broken pipe).
+///
+/// Returns [`ClientError::Receive`] if the response is empty or the connection closes prematurely.
+///
+/// Returns [`ClientError::Parse`] if the response cannot be parsed as JSON.
 pub async fn send_command_on_stream(
     stream: UnixStream,
     command: IpcCommand,

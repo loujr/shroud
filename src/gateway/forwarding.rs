@@ -10,6 +10,11 @@ const IPV4_FORWARD_PATH: &str = "/proc/sys/net/ipv4/ip_forward";
 const IPV6_FORWARD_PATH: &str = "/proc/sys/net/ipv6/conf/all/forwarding";
 
 /// Enable IP forwarding.
+/// Enable IP forwarding (IPv4 and optionally IPv6).
+///
+/// # Errors
+///
+/// Returns [`GatewayError::Forwarding`] if writing to `/proc/sys/net/ipv4/ip_forward` (or IPv6 equivalent) fails.
 pub fn enable_forwarding(include_ipv6: bool) -> Result<(), GatewayError> {
     info!("Enabling IP forwarding");
 
@@ -28,6 +33,11 @@ pub fn enable_forwarding(include_ipv6: bool) -> Result<(), GatewayError> {
 }
 
 /// Disable IP forwarding.
+/// Disable IP forwarding.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::Forwarding`] if writing `0` to the forwarding sysctl paths fails.
 pub fn disable_forwarding() -> Result<(), GatewayError> {
     info!("Disabling IP forwarding");
 

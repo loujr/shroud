@@ -13,6 +13,10 @@ const GATEWAY_CHAIN: &str = "SHROUD_GATEWAY";
 const GATEWAY_KS_CHAIN: &str = "SHROUD_GATEWAY_KS";
 
 /// Enable FORWARD rules for gateway traffic.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::Firewall`] if iptables forward chain or rules cannot be created.
 pub fn enable_forward_rules(
     lan_interface: &str,
     vpn_interface: &str,
@@ -93,6 +97,11 @@ pub fn enable_forward_rules(
 }
 
 /// Disable FORWARD rules.
+/// Disable forwarding firewall rules.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::Firewall`] if iptables forward rules or chains cannot be removed.
 pub fn disable_forward_rules() -> Result<(), GatewayError> {
     info!("Disabling gateway forward rules");
 
@@ -111,6 +120,11 @@ pub fn disable_forward_rules() -> Result<(), GatewayError> {
 }
 
 /// Enable kill switch for forwarded traffic.
+/// Enable forwarding kill switch rules for the LAN interface.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::Firewall`] if iptables rules cannot be installed.
 pub fn enable_forward_killswitch(lan_interface: &str) -> Result<(), GatewayError> {
     info!("Enabling gateway kill switch");
 
@@ -128,6 +142,11 @@ pub fn enable_forward_killswitch(lan_interface: &str) -> Result<(), GatewayError
 }
 
 /// Disable kill switch for forwarded traffic.
+/// Disable forwarding kill switch rules.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::Firewall`] if iptables rules cannot be removed.
 pub fn disable_forward_killswitch() -> Result<(), GatewayError> {
     info!("Disabling gateway kill switch");
 

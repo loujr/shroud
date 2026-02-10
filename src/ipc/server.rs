@@ -56,6 +56,12 @@ impl IpcServer {
     ///
     /// Binds to the Unix socket and accepts client connections.
     /// This method runs indefinitely until an error occurs.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ServerError::Cleanup`] if a stale socket file cannot be removed.
+    ///
+    /// Returns [`ServerError::Bind`] if binding the Unix socket fails (permissions, path in use).
     pub async fn run(self) -> Result<(), ServerError> {
         let path = socket_path();
 

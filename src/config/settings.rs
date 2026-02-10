@@ -593,10 +593,20 @@ impl ConfigManager {
         }
     }
 
-    /// Save configuration to disk
+    /// Save configuration to disk.
     ///
     /// Creates the config directory if it doesn't exist.
     /// Uses atomic write (temp file + rename) to prevent corruption on crash.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::Directory`] if the config directory cannot be created.
+    ///
+    /// Returns [`ConfigError::Write`] if the temp file cannot be written or permissions set.
+    ///
+    /// Returns [`ConfigError::Rename`] if the atomic rename fails.
+    ///
+    /// Returns [`ConfigError::Serialize`] if the config cannot be serialized to TOML.
     pub fn save(&self, config: &Config) -> Result<(), ConfigError> {
         // Ensure config directory exists
         if let Some(parent) = self.config_path.parent() {

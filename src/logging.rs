@@ -74,7 +74,11 @@ pub fn default_log_path() -> PathBuf {
     log_directory().join("debug.log")
 }
 
-/// Ensure log directory exists with proper permissions
+/// Ensure log directory exists with proper permissions.
+///
+/// # Errors
+///
+/// Returns `Err(std::io::Error)` if the directory cannot be created or permissions cannot be set.
 pub fn ensure_log_directory() -> std::io::Result<PathBuf> {
     let dir = log_directory();
     if !dir.exists() {
@@ -281,7 +285,11 @@ pub fn init_logging(args: &Args) {
     }
 }
 
-/// Enable debug file logging (called from tray toggle)
+/// Enable debug file logging (called from tray toggle).
+///
+/// # Errors
+///
+/// Returns `Err(String)` if the log directory cannot be created or the log file cannot be opened.
 pub fn enable_debug_logging() -> Result<PathBuf, String> {
     let path = default_log_path();
     enable_file_logging_internal(&path).map_err(|e| e.to_string())?;

@@ -81,10 +81,14 @@ impl NmMonitor {
         true
     }
 
-    /// Start monitoring NetworkManager D-Bus signals
+    /// Start monitoring NetworkManager D-Bus signals.
     ///
     /// This runs in a loop and sends events via the channel.
     /// Should be spawned as a background task.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`zbus::Error`] if connecting to D-Bus or installing signal match rules fails.
     pub async fn run(mut self) -> Result<(), zbus::Error> {
         use tokio::time::{timeout, Duration};
 

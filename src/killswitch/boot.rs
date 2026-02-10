@@ -17,6 +17,12 @@ const BOOT_CHAIN: &str = "SHROUD_BOOT_KS";
 /// - Only allows loopback and (optionally) LAN
 /// - Blocks everything else including DNS
 /// - No VPN exceptions (tunnel doesn't exist yet)
+///
+/// # Errors
+///
+/// Returns [`KillSwitchError::Spawn`] if the iptables binary cannot be executed (missing binary or not in `$PATH`).
+///
+/// Returns [`KillSwitchError::ExitStatus`] if iptables exits with a non-zero status (e.g., missing `sudo` privileges).
 pub fn enable_boot_killswitch(allow_lan: bool) -> Result<(), KillSwitchError> {
     info!("Enabling boot kill switch");
 
@@ -32,6 +38,12 @@ pub fn enable_boot_killswitch(allow_lan: bool) -> Result<(), KillSwitchError> {
 ///
 /// Called when the full runtime kill switch takes over.
 /// Uses loop to remove ALL duplicate jump rules that may have accumulated.
+///
+/// # Errors
+///
+/// Returns [`KillSwitchError::Spawn`] if the iptables binary cannot be executed.
+///
+/// Returns [`KillSwitchError::ExitStatus`] if iptables exits with a non-zero status while removing rules.
 pub fn disable_boot_killswitch() -> Result<(), KillSwitchError> {
     info!("Disabling boot kill switch");
 

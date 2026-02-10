@@ -23,6 +23,14 @@ use tokio::sync::{mpsc, RwLock};
 /// 3. Supervisor (VPN management)
 /// 4. Signal handlers (graceful shutdown)
 /// 5. Auto-connect (if configured)
+///
+/// # Errors
+///
+/// Returns an error if boot kill switch setup fails while `require_kill_switch` is true.
+///
+/// Returns an error if signal handler or watchdog setup fails.
+///
+/// Returns an error if the IPC server fails to bind the Unix socket.
 pub async fn run_headless(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting Shroud in headless mode");
 

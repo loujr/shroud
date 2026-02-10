@@ -8,6 +8,11 @@ use log::{debug, info};
 use std::process::Command;
 
 /// Enable NAT for the VPN interface.
+/// Enable NAT (masquerade) on the VPN interface.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::Nat`] if configuring iptables masquerade fails.
 pub fn enable_nat(vpn_interface: &str) -> Result<(), GatewayError> {
     info!("Enabling NAT on interface: {}", vpn_interface);
 
@@ -41,6 +46,11 @@ pub fn enable_nat(vpn_interface: &str) -> Result<(), GatewayError> {
 }
 
 /// Disable NAT rules.
+/// Disable NAT (masquerade).
+///
+/// # Errors
+///
+/// Returns [`GatewayError::Nat`] if removing the iptables masquerade rule fails.
 pub fn disable_nat() -> Result<(), GatewayError> {
     info!("Disabling NAT");
 
