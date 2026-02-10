@@ -3,7 +3,7 @@
 //! Generates colored circular icons for different VPN states.
 //! Icons are cached at startup to avoid regeneration on every tray update.
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 /// Icon type for status indication
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -16,15 +16,16 @@ pub enum IconType {
 }
 
 /// Pre-computed icons for each state (generated once at startup)
-pub static ICON_CONNECTED: Lazy<Vec<ksni::Icon>> =
-    Lazy::new(|| generate_icon_data(IconType::Connected));
-pub static ICON_CONNECTING: Lazy<Vec<ksni::Icon>> =
-    Lazy::new(|| generate_icon_data(IconType::Connecting));
-pub static ICON_DISCONNECTED: Lazy<Vec<ksni::Icon>> =
-    Lazy::new(|| generate_icon_data(IconType::Disconnected));
-pub static ICON_DEGRADED: Lazy<Vec<ksni::Icon>> =
-    Lazy::new(|| generate_icon_data(IconType::Degraded));
-pub static ICON_FAILED: Lazy<Vec<ksni::Icon>> = Lazy::new(|| generate_icon_data(IconType::Failed));
+pub static ICON_CONNECTED: LazyLock<Vec<ksni::Icon>> =
+    LazyLock::new(|| generate_icon_data(IconType::Connected));
+pub static ICON_CONNECTING: LazyLock<Vec<ksni::Icon>> =
+    LazyLock::new(|| generate_icon_data(IconType::Connecting));
+pub static ICON_DISCONNECTED: LazyLock<Vec<ksni::Icon>> =
+    LazyLock::new(|| generate_icon_data(IconType::Disconnected));
+pub static ICON_DEGRADED: LazyLock<Vec<ksni::Icon>> =
+    LazyLock::new(|| generate_icon_data(IconType::Degraded));
+pub static ICON_FAILED: LazyLock<Vec<ksni::Icon>> =
+    LazyLock::new(|| generate_icon_data(IconType::Failed));
 
 /// Get cached status icons (avoids regenerating on every tray update)
 #[inline]

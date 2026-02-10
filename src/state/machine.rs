@@ -82,6 +82,7 @@ impl StateMachine {
     /// Handle an event and potentially transition to a new state
     ///
     /// Returns the transition reason if a transition occurred, None otherwise.
+    #[must_use = "the transition reason indicates whether state changed and should be handled"]
     pub fn handle_event(&mut self, event: Event) -> Option<TransitionReason> {
         let old_state = self.state.clone();
         let mut reason = TransitionReason::Unknown;
@@ -334,10 +335,10 @@ mod tests {
     #[test]
     fn test_connecting_to_connected() {
         let mut sm = StateMachine::new();
-        sm.handle_event(Event::UserEnable {
+        let _ = sm.handle_event(Event::UserEnable {
             server: "test".into(),
         });
-        sm.handle_event(Event::NmVpnUp {
+        let _ = sm.handle_event(Event::NmVpnUp {
             server: "test".into(),
         });
 
@@ -351,7 +352,7 @@ mod tests {
         sm.state = VpnState::Connected {
             server: "test".into(),
         };
-        sm.handle_event(Event::HealthDegraded);
+        let _ = sm.handle_event(Event::HealthDegraded);
 
         assert!(matches!(sm.state, VpnState::Degraded { .. }));
     }
@@ -362,7 +363,7 @@ mod tests {
         sm.state = VpnState::Degraded {
             server: "test".into(),
         };
-        sm.handle_event(Event::HealthDead);
+        let _ = sm.handle_event(Event::HealthDead);
 
         assert!(matches!(sm.state, VpnState::Reconnecting { .. }));
     }
@@ -375,7 +376,7 @@ mod tests {
         sm.state = VpnState::Connected {
             server: "test".into(),
         };
-        sm.handle_event(Event::UserDisable);
+        let _ = sm.handle_event(Event::UserDisable);
         assert!(matches!(sm.state, VpnState::Disconnected));
 
         // From Reconnecting
@@ -384,7 +385,7 @@ mod tests {
             attempt: 3,
             max_attempts: 10,
         };
-        sm.handle_event(Event::UserDisable);
+        let _ = sm.handle_event(Event::UserDisable);
         assert!(matches!(sm.state, VpnState::Disconnected));
 
         // From Failed
@@ -392,7 +393,7 @@ mod tests {
             server: "test".into(),
             reason: "test".into(),
         };
-        sm.handle_event(Event::UserDisable);
+        let _ = sm.handle_event(Event::UserDisable);
         assert!(matches!(sm.state, VpnState::Disconnected));
     }
 
@@ -408,21 +409,21 @@ mod tests {
         };
 
         // First timeout -> Reconnecting
-        sm.handle_event(Event::Timeout);
+        let _ = sm.handle_event(Event::Timeout);
         assert!(matches!(
             sm.state,
             VpnState::Reconnecting { attempt: 1, .. }
         ));
 
         // Second timeout -> still Reconnecting
-        sm.handle_event(Event::Timeout);
+        let _ = sm.handle_event(Event::Timeout);
         assert!(matches!(
             sm.state,
             VpnState::Reconnecting { attempt: 2, .. }
         ));
 
         // Third timeout -> Failed
-        sm.handle_event(Event::Timeout);
+        let _ = sm.handle_event(Event::Timeout);
         assert!(matches!(sm.state, VpnState::Failed { .. }));
     }
 
@@ -709,7 +710,7 @@ mod tests {
         };
         sm.retries = 5;
 
-        sm.handle_event(Event::UserDisable);
+        let _ = sm.handle_event(Event::UserDisable);
 
         assert!(matches!(sm.state, VpnState::Disconnected));
         assert_eq!(sm.retries, 0);
@@ -768,7 +769,7 @@ mod tests {
         sm.state = VpnState::Connecting {
             server: "vpn".into(),
         };
-        sm.handle_event(Event::Timeout);
+        let _ = sm.handle_event(Event::Timeout);
         assert_eq!(sm.retries(), 1);
     }
 
@@ -797,33 +798,33 @@ mod tests {
         let mut sm = StateMachine::with_config(config);
 
         // Disconnected -> Connecting
-        sm.handle_event(Event::UserEnable {
+        let _ = sm.handle_event(Event::UserEnable {
             server: "vpn".into(),
         });
         assert!(matches!(sm.state, VpnState::Connecting { .. }));
 
         // Connecting -> Connected
-        sm.handle_event(Event::NmVpnUp {
+        let _ = sm.handle_event(Event::NmVpnUp {
             server: "vpn".into(),
         });
         assert!(matches!(sm.state, VpnState::Connected { .. }));
 
         // Connected -> Degraded
-        sm.handle_event(Event::HealthDegraded);
+        let _ = sm.handle_event(Event::HealthDegraded);
         assert!(matches!(sm.state, VpnState::Degraded { .. }));
 
         // Degraded -> Reconnecting
-        sm.handle_event(Event::HealthDead);
+        let _ = sm.handle_event(Event::HealthDead);
         assert!(matches!(sm.state, VpnState::Reconnecting { .. }));
 
         // Reconnecting -> Connected
-        sm.handle_event(Event::NmVpnUp {
+        let _ = sm.handle_event(Event::NmVpnUp {
             server: "vpn".into(),
         });
         assert!(matches!(sm.state, VpnState::Connected { .. }));
 
         // Connected -> Disconnected
-        sm.handle_event(Event::UserDisable);
+        let _ = sm.handle_event(Event::UserDisable);
         assert!(matches!(sm.state, VpnState::Disconnected));
     }
 }

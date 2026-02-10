@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.12.5] - 2026-02-10
+
+### Fixed
+- **release**: `panic = "unwind"` so `install_panic_hook()` runs and cleans kill switch rules on panic.
+- **mode**: call `check_headless_requirements` / `check_desktop_requirements` during `detect_mode()` with warnings.
+- **state**: `StateMachine::handle_event` is `#[must_use]`; call sites updated.
+
+### Changed
+- **deps**: replace `once_cell` with `std::sync::LazyLock` (MSRV 1.85).
+- **logging**: add TODO for `tracing` migration.
+
 ## [1.12.4] - 2026-02-09
 
 ### Added

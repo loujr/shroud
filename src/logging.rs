@@ -6,6 +6,9 @@
 //! - Runtime toggle via tray menu
 //!
 //! Log files are written to ~/.local/share/shroud/ with proper permissions.
+//!
+//! TODO: Consider migrating to the `tracing` crate for structured logging with spans
+//! (e.g., per-connection context) to improve debugging in production.
 
 use log::LevelFilter;
 use std::fs::{self, File, OpenOptions};

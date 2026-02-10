@@ -68,6 +68,9 @@ use crate::tray::{SharedState, VpnCommand, VpnTray};
 /// This ensures that kill switch rules are cleaned up even if Shroud panics.
 /// Without this, a panic could leave iptables rules in place, locking out
 /// the user from all network access.
+///
+/// IMPORTANT: Requires `panic = "unwind"` in `[profile.release]` (Cargo.toml).
+/// If the panic strategy is "abort", this hook will not execute.
 fn install_panic_hook() {
     use killswitch::CleanupResult;
 

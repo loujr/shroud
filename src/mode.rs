@@ -43,44 +43,47 @@ impl std::fmt::Display for RuntimeMode {
 ///
 /// --desktop flag is accepted but redundant (desktop is always default)
 pub fn detect_mode(cli_headless: bool, cli_desktop: bool) -> RuntimeMode {
-    // --headless flag: explicit headless request
-    if cli_headless {
+    let mode = if cli_headless {
         info!("Mode: headless (--headless flag)");
-        return RuntimeMode::Headless;
-    }
-
-    // --desktop flag: explicit desktop (redundant but accepted)
-    if cli_desktop {
+        RuntimeMode::Headless
+    } else if cli_desktop {
         info!("Mode: desktop (--desktop flag)");
-        return RuntimeMode::Desktop;
-    }
-
-    // SHROUD_MODE environment variable: explicit mode choice
-    if let Ok(mode) = env::var("SHROUD_MODE") {
+        RuntimeMode::Desktop
+    } else if let Ok(mode) = env::var("SHROUD_MODE") {
         match mode.to_lowercase().as_str() {
             "headless" => {
                 info!("Mode: headless (SHROUD_MODE=headless)");
-                return RuntimeMode::Headless;
+                RuntimeMode::Headless
             }
             "desktop" => {
                 info!("Mode: desktop (SHROUD_MODE=desktop)");
-                return RuntimeMode::Desktop;
+                RuntimeMode::Desktop
             }
             _ => {
                 // Unknown value - warn but use default
                 eprintln!("Warning: Unknown SHROUD_MODE='{}', using desktop", mode);
+                info!("Mode: desktop (default)");
+                RuntimeMode::Desktop
             }
         }
+    } else {
+        info!("Mode: desktop (default)");
+        RuntimeMode::Desktop
+    };
+
+    // Validate requirements for the selected mode
+    let validation_result = match mode {
+        RuntimeMode::Headless => check_headless_requirements(),
+        RuntimeMode::Desktop => check_desktop_requirements(),
+    };
+    if let Err(warning) = validation_result {
+        eprintln!("Warning: {}", warning);
     }
 
-    // DEFAULT: Always desktop
-    // No auto-detection, no heuristics, no surprises.
-    info!("Mode: desktop (default)");
-    RuntimeMode::Desktop
+    mode
 }
 
 /// Check if headless mode can run (basic requirements).
-#[allow(dead_code)]
 pub fn check_headless_requirements() -> Result<(), String> {
     // Check if we can access system config directory
     let config_dir = std::path::Path::new("/etc/shroud");
@@ -94,7 +97,6 @@ pub fn check_headless_requirements() -> Result<(), String> {
 }
 
 /// Check if desktop mode can run (basic requirements).
-#[allow(dead_code)]
 pub fn check_desktop_requirements() -> Result<(), String> {
     // Check for display
     if env::var("DISPLAY").is_err() && env::var("WAYLAND_DISPLAY").is_err() {
