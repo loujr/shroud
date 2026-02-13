@@ -63,45 +63,32 @@ use crate::tray::{SharedState, VpnCommand, VpnTray};
 // Main
 // ============================================================================
 
-/// Install a panic hook that performs emergency cleanup
+/// Install a panic hook that performs emergency resource cleanup.
 ///
-/// This ensures that kill switch rules are cleaned up even if Shroud panics.
-/// Without this, a panic could leave iptables rules in place, locking out
-/// the user from all network access.
+/// SECURITY: The panic hook does NOT remove kill switch rules (SHROUD-VULN-043).
+/// A panic leaves the kill switch in place (fail-closed). This prevents an
+/// attacker from triggering a panic to disable protection. The user may lose
+/// network access until they run `shroud cleanup` or manually flush rules.
+///
+/// The hook only cleans up the IPC socket and instance lock so the daemon
+/// can be restarted.
 ///
 /// IMPORTANT: Requires `panic = "unwind"` in `[profile.release]` (Cargo.toml).
 /// If the panic strategy is "abort", this hook will not execute.
 fn install_panic_hook() {
-    use killswitch::CleanupResult;
-
     let default_hook = std::panic::take_hook();
 
     std::panic::set_hook(Box::new(move |info| {
-        // Best-effort cleanup - don't panic again if this fails
-        eprintln!("\n!!! SHROUD PANIC - attempting emergency cleanup !!!");
+        eprintln!("\n!!! SHROUD PANIC !!!");
+        eprintln!("Kill switch rules are preserved (fail-closed).");
+        eprintln!("If you're locked out, run: shroud cleanup");
+        eprintln!("  or: sudo iptables -F SHROUD_KILLSWITCH && sudo iptables -D OUTPUT -j SHROUD_KILLSWITCH && sudo iptables -X SHROUD_KILLSWITCH");
 
-        // Try to clean up kill switch rules
-        match killswitch::cleanup_with_fallback() {
-            CleanupResult::Cleaned => {
-                eprintln!("Kill switch rules cleaned up successfully.");
-            }
-            CleanupResult::NothingToClean => {
-                eprintln!("No kill switch rules to clean up.");
-            }
-            CleanupResult::Failed(msg) => {
-                eprintln!("Emergency kill switch cleanup failed: {}", msg);
-                eprintln!("If you're locked out, manually run:");
-                eprintln!("  sudo iptables -F SHROUD_KILLSWITCH");
-                eprintln!("  sudo iptables -D OUTPUT -j SHROUD_KILLSWITCH");
-                eprintln!("  sudo iptables -X SHROUD_KILLSWITCH");
-            }
-        }
-
-        // Clean up socket file
+        // Clean up socket file so daemon can restart
         let socket_path = ipc::protocol::socket_path();
         let _ = std::fs::remove_file(&socket_path);
 
-        // Release lock
+        // Release lock so daemon can restart
         daemon::release_instance_lock();
 
         // Call the default panic hook for the actual panic output

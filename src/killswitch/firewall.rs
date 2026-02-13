@@ -1623,9 +1623,16 @@ table inet {table} {{
                             if let Ok(ip) = host.parse::<IpAddr>() {
                                 return Some(ip);
                             }
-                            if let Some(ip) = Self::resolve_hostname(host).await {
-                                return Some(ip);
-                            }
+                            // SECURITY: Do NOT resolve hostnames here (SHROUD-VULN-041).
+                            // DNS resolution during kill switch enablement happens on the
+                            // unprotected network, allowing DNS poisoning to inject
+                            // attacker-controlled IPs into the whitelist. Only use IPs
+                            // directly from the NM connection profile.
+                            warn!(
+                                "VPN '{}' uses hostname '{}' — cannot whitelist without DNS. \
+                                 Use IP address in VPN config for kill switch compatibility.",
+                                conn_name, host
+                            );
                         }
                     }
                 }
@@ -1635,7 +1642,11 @@ table inet {table} {{
         None
     }
 
-    /// Resolve a hostname to an IP address
+    /// Resolve a hostname to an IP address.
+    ///
+    /// NOTE: Not used during kill switch enablement (SHROUD-VULN-041).
+    /// Kept for potential future use with trusted/cached DNS resolution.
+    #[allow(dead_code)]
     async fn resolve_hostname(hostname: &str) -> Option<IpAddr> {
         let output = Command::new("getent")
             .args(["ahosts", hostname])
@@ -1671,34 +1682,14 @@ impl Default for KillSwitch {
 impl Drop for KillSwitch {
     fn drop(&mut self) {
         if self.enabled {
-            warn!("Kill switch dropped while enabled — attempting emergency cleanup");
-            match self.backend {
-                FirewallBackend::Iptables => {
-                    let _ = std::process::Command::new("sudo")
-                        .args(["-n", iptables(), "-D", "OUTPUT", "-j", CHAIN_NAME])
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .status();
-                    let _ = std::process::Command::new("sudo")
-                        .args(["-n", iptables(), "-F", CHAIN_NAME])
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .status();
-                    let _ = std::process::Command::new("sudo")
-                        .args(["-n", iptables(), "-X", CHAIN_NAME])
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .status();
-                }
-                FirewallBackend::Nftables => {
-                    let _ = std::process::Command::new("sudo")
-                        .args(["-n", nft(), "delete", "table", "inet", NFT_TABLE])
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .status();
-                }
-            }
-            info!("Emergency kill switch cleanup attempted");
+            // SECURITY: Do NOT clean up rules in Drop (SHROUD-VULN-045).
+            // Fail-closed: rules persist until explicit cleanup or next startup.
+            // This prevents double-cleanup races with concurrent instances and
+            // aligns with the panic hook's fail-closed design (SHROUD-VULN-043).
+            warn!(
+                "Kill switch dropped while enabled — rules preserved (fail-closed). \
+                 Run 'shroud cleanup' or 'sudo iptables -F SHROUD_KILLSWITCH' to remove."
+            );
         }
     }
 }

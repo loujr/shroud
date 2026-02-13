@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.15.4] - 2026-02-13
+
+### Fixed
+- **security**: VPN hostname resolution removed from kill switch enable path — only direct IP addresses from NM connection profiles are whitelisted. DNS resolution on the unprotected network allowed kill switch whitelist poisoning via ARP spoofing or rogue DHCP (SHROUD-VULN-041, Critical).
+- **security**: `detect_local_subnets()` now filters virtual/container interfaces (docker*, veth*, virbr*, br-*, cni*, flannel*, podman*). Prevents attacker-created interfaces from widening the kill switch LAN exception (SHROUD-VULN-042, High).
+- **security**: panic hook changed to fail-closed — kill switch rules are preserved on panic. Only socket and lock are cleaned so daemon can restart. Prevents attacker-triggered panics from disabling protection (SHROUD-VULN-043, High).
+- **security**: `KillSwitch::Drop` now only warns, does not attempt rule cleanup. Eliminates double-cleanup race between panic hook and Drop (SHROUD-VULN-045, High).
+- **security**: IPC `Reconnect` command now calls `handle_connect()` directly instead of disconnect-sleep-connect. Eliminates 2-second unprotected window where kill switch was disabled during reconnection (SHROUD-VULN-046, High).
+- **security**: autostart `find_binary()` now prefers system-wide paths (`/usr/local/bin`, `/usr/bin`) over user-writable paths (`~/.cargo/bin`). Prevents autostart entry from pointing at attacker-controlled binary (SHROUD-VULN-047, Medium).
+
 ## [1.15.3] - 2026-02-13
 
 ### Fixed

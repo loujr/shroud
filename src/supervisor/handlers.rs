@@ -1263,17 +1263,16 @@ impl super::VpnSupervisor {
                 IpcResponse::Ok
             }
             IpcCommand::Reconnect => {
-                // Check if we have a last server
+                // SECURITY: Use handle_connect() directly — it handles disconnecting
+                // the old VPN internally while preserving the kill switch.
+                // The old disconnect-sleep-connect pattern disabled the kill switch
+                // during the 2-second gap (SHROUD-VULN-046).
                 let can_reconnect = {
                     let state = self.shared_state.read().await;
                     state.state.server_name().is_some()
                 };
 
-                // If connected, we disconnect then connect (handle_connect does this if we pass same server?)
-                // Reconnect usually means "reconnect to LAST active server if disconnected" or "restart current".
-                // Current logic:
                 if can_reconnect {
-                    // Get current server
                     let server = self
                         .shared_state
                         .read()
@@ -1282,13 +1281,9 @@ impl super::VpnSupervisor {
                         .server_name()
                         .unwrap()
                         .to_string();
-                    self.handle_disconnect().await;
-                    sleep(Duration::from_secs(2)).await;
                     self.handle_connect(&server).await;
                     IpcResponse::Ok
                 } else {
-                    // Check history?
-                    // app_config has last_server
                     let last_server = self.config_store.config.last_server.clone();
                     if let Some(server) = last_server {
                         self.handle_connect(&server).await;

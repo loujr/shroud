@@ -63,6 +63,15 @@ pub fn detect_local_subnets() -> Vec<String> {
                 || iface.starts_with("tap")
                 || iface.starts_with("wg")
                 || *iface == "lo"
+                // SECURITY: Skip virtual/container interfaces that widen the
+                // kill switch LAN exception unnecessarily (SHROUD-VULN-042).
+                || iface.starts_with("docker")
+                || iface.starts_with("veth")
+                || iface.starts_with("virbr")
+                || iface.starts_with("br-")
+                || iface.starts_with("cni")
+                || iface.starts_with("flannel")
+                || iface.starts_with("podman")
             {
                 continue;
             }

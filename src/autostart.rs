@@ -21,22 +21,44 @@ impl Autostart {
             .ok_or_else(|| "Could not determine XDG config directory".to_string())
     }
 
-    /// Find the installed shroud binary with absolute path
+    /// Find the installed shroud binary with absolute path.
+    ///
+    /// SECURITY: Prefers system-wide paths over user-writable paths
+    /// to prevent autostart entry from pointing at an attacker-controlled
+    /// binary in ~/.cargo/bin (SHROUD-VULN-047).
     fn find_binary() -> Result<PathBuf, String> {
-        let candidates = [
-            dirs::home_dir().map(|h| h.join(".cargo/bin/shroud")),
-            dirs::home_dir().map(|h| h.join(".local/bin/shroud")),
-            Some(PathBuf::from("/usr/local/bin/shroud")),
-            Some(PathBuf::from("/usr/bin/shroud")),
+        // Check system-wide paths first (not user-writable)
+        let system_candidates = [
+            PathBuf::from("/usr/local/bin/shroud"),
+            PathBuf::from("/usr/bin/shroud"),
         ];
 
-        for candidate in candidates.into_iter().flatten() {
+        for candidate in &system_candidates {
+            if candidate.exists() && is_executable(candidate) {
+                return Ok(candidate.clone());
+            }
+        }
+
+        // Then try current_exe (the actually running binary)
+        if let Ok(exe) = std::env::current_exe() {
+            if exe.exists() && !exe.to_string_lossy().contains(" (deleted)") {
+                return Ok(exe);
+            }
+        }
+
+        // Last resort: user-writable paths
+        let user_candidates = [
+            dirs::home_dir().map(|h| h.join(".local/bin/shroud")),
+            dirs::home_dir().map(|h| h.join(".cargo/bin/shroud")),
+        ];
+
+        for candidate in user_candidates.into_iter().flatten() {
             if candidate.exists() && is_executable(&candidate) {
                 return Ok(candidate);
             }
         }
 
-        std::env::current_exe().map_err(|e| format!("Could not determine binary path: {}", e))
+        Err("Could not find shroud binary".to_string())
     }
 
     /// Generate desktop file content with absolute path
