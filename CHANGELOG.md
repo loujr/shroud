@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.15.3] - 2026-02-13
+
+### Fixed
+- **security**: restart spawns child BEFORE releasing lock/socket — eliminates 100ms hijack window where an attacker could grab the instance lock and impersonate the daemon (SHROUD-VULN-031, Critical).
+- **security**: `resolve_restart_path()` no longer falls back to user-writable `~/.local/bin` or `~/.cargo/bin` when the running binary is deleted. Refuses to restart and instructs user to restart manually (SHROUD-VULN-036, High).
+- **security**: `is_actually_enabled()` returns `false` (not internal state) when sudo verification fails. Prevents silent kill switch desync where tray shows enabled but rules are gone after `sudo -K` (SHROUD-VULN-032, Critical).
+- **security**: `TOGGLE_IN_PROGRESS` moved from `static AtomicBool` to struct-owned `bool` field. Eliminates static lifetime issues with task cancellation and concurrent toggle races (SHROUD-VULN-033, High).
+- **security**: kill switch toggle "best-effort disable" path no longer persists `kill_switch_enabled = false` to config when iptables errors occur. Runtime state updates but config retains user intent (SHROUD-VULN-035, High).
+- **security**: config migration (`migrate()`) no longer writes to disk. Migrated values are validated in-memory first; only persisted after `Config::validate()` passes. Prevents poisoned configs from surviving validation rejection (SHROUD-VULN-039, Medium).
+- **security**: IPC restart path now uses `setsid` detachment and spawn-before-release pattern, matching tray restart. No longer disables kill switch before restart (was inconsistent with tray path).
+
 ## [1.15.2] - 2026-02-13
 
 ### Fixed

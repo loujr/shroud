@@ -779,15 +779,11 @@ impl super::VpnSupervisor {
 
         info!("Spawning new daemon instance: {:?}", exe_path);
 
-        // Clean up resources BEFORE spawning to avoid conflicts
-        release_instance_lock();
-        let socket_path = crate::ipc::protocol::socket_path();
-        let _ = std::fs::remove_file(&socket_path);
-
-        // Give time for socket to be released
-        sleep(Duration::from_millis(100)).await;
-
         // Spawn detached process that will outlive us
+        // SECURITY: Spawn FIRST, then release lock. The child will block on
+        // acquiring the lock until we exit. This eliminates the hijack window
+        // where both lock and socket are released before the child starts
+        // (SHROUD-VULN-031).
         let mut cmd = std::process::Command::new(&exe_path);
         cmd.stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
@@ -807,7 +803,12 @@ impl super::VpnSupervisor {
             Ok(child) => {
                 info!("Spawned new daemon (PID: {})", child.id());
 
-                // Give child time to start and bind socket
+                // Now release resources so child can acquire them
+                release_instance_lock();
+                let socket_path = crate::ipc::protocol::socket_path();
+                let _ = std::fs::remove_file(&socket_path);
+
+                // Give child time to acquire lock and bind socket
                 sleep(Duration::from_millis(500)).await;
 
                 // Now exit
@@ -817,9 +818,6 @@ impl super::VpnSupervisor {
             Err(e) => {
                 error!("Failed to spawn new instance: {}", e);
                 self.tray.notify("Restart Failed", &format!("Error: {}", e));
-                // Re-acquire lock since spawn failed
-                // Note: We can't easily re-acquire, so just warn
-                warn!("Lock and socket were released but spawn failed - may need manual restart");
             }
         }
     }
@@ -981,13 +979,14 @@ impl super::VpnSupervisor {
                                 e
                             );
 
+                            // SECURITY: Update runtime state but do NOT persist to config.
+                            // If the table/chain doesn't exist, the rules are effectively
+                            // gone — but config should retain the user's intent to have
+                            // the kill switch enabled (SHROUD-VULN-035).
                             {
                                 let mut state = self.shared_state.write().await;
                                 state.kill_switch = false;
                             }
-
-                            self.config_store.config.kill_switch_enabled = false;
-                            self.config_store.save();
 
                             self.tray.update(&self.shared_state);
                             self.tray.notify("Kill Switch", "Disabled");
@@ -1429,14 +1428,11 @@ impl super::VpnSupervisor {
                 return;
             }
             IpcCommand::Restart => {
+                use std::os::unix::process::CommandExt;
                 info!("Restart requested via IPC");
 
-                if self.kill_switch.is_enabled() {
-                    info!("Disabling kill switch before restart");
-                    if let Err(e) = self.kill_switch.disable().await {
-                        error!("Failed to disable kill switch: {}", e);
-                    }
-                }
+                // NOTE: Do NOT disable kill switch before restart.
+                // The new instance will adopt existing rules via sync_state().
 
                 let exe_path = match resolve_restart_path() {
                     Ok(path) => path,
@@ -1448,14 +1444,27 @@ impl super::VpnSupervisor {
 
                 info!("Spawning new daemon instance: {:?}", exe_path);
 
-                let spawn_result = std::process::Command::new(&exe_path)
-                    .stdin(std::process::Stdio::null())
+                // SECURITY: Spawn with setsid, matching the tray restart path.
+                // Spawn BEFORE releasing lock (SHROUD-VULN-031).
+                let mut cmd = std::process::Command::new(&exe_path);
+                cmd.stdin(std::process::Stdio::null())
                     .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .spawn();
+                    .stderr(std::process::Stdio::null());
 
-                match spawn_result {
-                    Ok(_) => {
+                unsafe {
+                    cmd.pre_exec(|| {
+                        libc::setsid();
+                        Ok(())
+                    });
+                }
+
+                match cmd.spawn() {
+                    Ok(child) => {
+                        info!("Spawned new daemon (PID: {})", child.id());
+                        // Release lock and socket so child can acquire them
+                        release_instance_lock();
+                        let sock = crate::ipc::protocol::socket_path();
+                        let _ = std::fs::remove_file(&sock);
                         self.exit_state.request("restart");
                         IpcResponse::OkMessage {
                             message: "Restarting daemon...".to_string(),
@@ -1538,51 +1547,13 @@ fn resolve_restart_path() -> Result<std::path::PathBuf, String> {
         return Ok(exe_path);
     }
 
-    // SECURITY: Only check known install locations — no $PATH fallback.
-    // Walking $PATH could pick up attacker-controlled binaries (SHROUD-VULN-008).
-    let mut candidates = Vec::new();
-
-    if let Some(home) = dirs::home_dir() {
-        candidates.push(home.join(".local/bin/shroud"));
-        candidates.push(home.join(".cargo/bin/shroud"));
-    }
-
-    for candidate in candidates {
-        if !candidate.exists() {
-            continue;
-        }
-
-        // Verify it's an ELF binary (not a script or garbage)
-        if let Ok(mut f) = std::fs::File::open(&candidate) {
-            use std::io::Read;
-            let mut magic = [0u8; 4];
-            if f.read_exact(&mut magic).is_ok() && magic != [0x7f, b'E', b'L', b'F'] {
-                warn!(
-                    "Restart candidate {} is not an ELF binary, skipping",
-                    candidate.display()
-                );
-                continue;
-            }
-        }
-
-        // Warn if the candidate differs from the running binary
-        if let Ok(current) = std::env::current_exe() {
-            if let (Ok(c_meta), Ok(r_meta)) =
-                (std::fs::metadata(&current), std::fs::metadata(&candidate))
-            {
-                use std::os::unix::fs::MetadataExt;
-                if c_meta.ino() != r_meta.ino() || c_meta.dev() != r_meta.dev() {
-                    warn!(
-                        "Restart binary {} differs from running binary {}",
-                        candidate.display(),
-                        current.display()
-                    );
-                }
-            }
-        }
-
-        return Ok(candidate);
-    }
-
-    Err("Failed to locate shroud executable to restart".to_string())
+    // SECURITY: Do NOT fall back to user-writable paths like ~/.local/bin or
+    // ~/.cargo/bin. If the running binary is deleted (e.g., during update),
+    // an attacker could place a malicious binary there. Refuse to restart
+    // and instruct the user to restart manually (SHROUD-VULN-036).
+    Err(
+        "Running binary has been deleted or replaced. Cannot safely restart. \
+         Please restart manually: shroud"
+            .to_string(),
+    )
 }

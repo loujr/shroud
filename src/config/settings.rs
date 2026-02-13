@@ -406,9 +406,22 @@ impl ConfigManager {
                     self.migrate(&mut value, version);
                 }
 
-                // Now parse the (possibly migrated) value into Config
-                match value.try_into() {
+                // Parse the (possibly migrated) value into Config
+                match value.try_into::<Config>() {
                     Ok(config) => {
+                        // SECURITY: Validate BEFORE persisting. The migration
+                        // modifies values in-memory but no longer writes to disk
+                        // until validation passes (SHROUD-VULN-039).
+                        if let Err(e) = config.validate() {
+                            warn!("Migrated config failed validation: {}. Using defaults.", e);
+                            return Config::default();
+                        }
+                        // Validation passed — now safe to persist
+                        if version < CONFIG_VERSION {
+                            if let Err(e) = self.save(&config) {
+                                warn!("Failed to save migrated config: {}", e);
+                            }
+                        }
                         info!("Loaded config from {:?}", self.config_path);
                         config
                     }
@@ -484,26 +497,10 @@ impl ConfigManager {
             toml::Value::Integer(CONFIG_VERSION as i64),
         );
 
-        // Save migrated config atomically (temp file + rename)
-        if let Ok(migrated_str) = toml::to_string_pretty(value) {
-            let tmp_path = self.config_path.with_extension("toml.tmp");
-            match fs::write(&tmp_path, &migrated_str) {
-                Ok(()) => {
-                    if let Err(e) = fs::rename(&tmp_path, &self.config_path) {
-                        warn!("Failed atomic rename during migration: {}", e);
-                        // Fallback: direct write
-                        if let Err(e2) = fs::write(&self.config_path, &migrated_str) {
-                            warn!("Failed to save migrated config: {}", e2);
-                        } else {
-                            info!("Saved migrated config to {:?}", self.config_path);
-                        }
-                    } else {
-                        info!("Saved migrated config to {:?}", self.config_path);
-                    }
-                }
-                Err(e) => warn!("Failed to save migrated config: {}", e),
-            }
-        }
+        // NOTE: Migration is now in-memory only. The migrated config is persisted
+        // by the caller (parse_and_migrate) AFTER validation passes.
+        // This prevents poisoned configs from being written to disk before
+        // validation rejects them (SHROUD-VULN-039).
     }
 
     /// Save configuration to disk.

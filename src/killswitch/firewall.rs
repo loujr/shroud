@@ -28,7 +28,6 @@
 
 use std::net::IpAddr;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use thiserror::Error;
 use tokio::process::Command;
@@ -46,9 +45,6 @@ const NFT_TABLE: &str = "shroud_killswitch";
 /// Minimum cooldown between kill switch toggles (milliseconds)
 /// Prevents race conditions from rapid enable/disable
 const TOGGLE_COOLDOWN_MS: u64 = 500;
-
-/// Static flag to prevent concurrent toggle operations
-static TOGGLE_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FirewallBackend {
@@ -148,6 +144,8 @@ pub struct KillSwitch {
     use_legacy: bool,
     /// Timestamp of last toggle operation (for cooldown)
     last_toggle_time: Option<Instant>,
+    /// Flag to prevent concurrent toggle operations (struct-owned, not static)
+    toggle_in_progress: bool,
 }
 
 impl KillSwitch {
@@ -164,6 +162,7 @@ impl KillSwitch {
             backend: FirewallBackend::Iptables,
             use_legacy: false,
             last_toggle_time: None,
+            toggle_in_progress: false,
         }
     }
 
@@ -185,6 +184,7 @@ impl KillSwitch {
             backend: FirewallBackend::Iptables,
             use_legacy: false,
             last_toggle_time: None,
+            toggle_in_progress: false,
         }
     }
 
@@ -288,10 +288,12 @@ impl KillSwitch {
                 match result {
                     Ok(status) => status.success(),
                     Err(_) => {
-                        // If we can't run sudo -n (no password), fall back to internal state
-                        // This prevents flickering when we can't verify
-                        debug!("Cannot check iptables state (sudo required), using internal state");
-                        self.enabled
+                        // SECURITY: When we can't verify via sudo, assume DISABLED
+                        // (false). A false negative (showing disabled when enabled)
+                        // is a UX annoyance; a false positive (showing enabled when
+                        // rules are gone) is a security failure (SHROUD-VULN-032).
+                        warn!("Cannot verify iptables state (sudo failed), assuming disabled");
+                        false
                     }
                 }
             }
@@ -305,8 +307,8 @@ impl KillSwitch {
                 match result {
                     Ok(status) => status.success(),
                     Err(_) => {
-                        debug!("Cannot check nftables state (sudo required), using internal state");
-                        self.enabled
+                        warn!("Cannot verify nftables state (sudo failed), assuming disabled");
+                        false
                     }
                 }
             }
@@ -352,15 +354,19 @@ impl KillSwitch {
     ///
     /// Returns [`KillSwitchError::Write`] if nftables rules cannot be written to stdin (nft backend only).
     pub async fn enable(&mut self) -> Result<(), KillSwitchError> {
-        // RACE PREVENTION: Acquire toggle lock
-        if TOGGLE_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+        // RACE PREVENTION: Check toggle flag (SHROUD-VULN-033: struct-owned, not static)
+        if self.toggle_in_progress {
             debug!("Kill switch toggle already in progress, skipping enable");
             return Ok(());
         }
-        let _guard = scopeguard::guard((), |_| {
-            TOGGLE_IN_PROGRESS.store(false, Ordering::SeqCst);
-        });
+        self.toggle_in_progress = true;
 
+        let result = self.enable_inner().await;
+        self.toggle_in_progress = false;
+        result
+    }
+
+    async fn enable_inner(&mut self) -> Result<(), KillSwitchError> {
         // Check cooldown
         if !self.check_toggle_cooldown() {
             return Ok(());
@@ -1024,15 +1030,19 @@ impl KillSwitch {
     ///
     /// Returns [`KillSwitchError::Write`] if nftables rules cannot be written to stdin (nft backend only).
     pub async fn disable(&mut self) -> Result<(), KillSwitchError> {
-        // RACE PREVENTION: Acquire toggle lock
-        if TOGGLE_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+        // RACE PREVENTION: Check toggle flag (SHROUD-VULN-033: struct-owned, not static)
+        if self.toggle_in_progress {
             debug!("Kill switch toggle already in progress, skipping disable");
             return Ok(());
         }
-        let _guard = scopeguard::guard((), |_| {
-            TOGGLE_IN_PROGRESS.store(false, Ordering::SeqCst);
-        });
+        self.toggle_in_progress = true;
 
+        let result = self.disable_inner().await;
+        self.toggle_in_progress = false;
+        result
+    }
+
+    async fn disable_inner(&mut self) -> Result<(), KillSwitchError> {
         // Check cooldown
         if !self.check_toggle_cooldown() {
             return Ok(());
