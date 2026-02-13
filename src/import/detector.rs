@@ -23,7 +23,15 @@ pub fn detect_config_type(path: &Path) -> Option<VpnConfigType> {
     match extension.to_lowercase().as_str() {
         "ovpn" => Some(VpnConfigType::OpenVpn),
         "conf" => {
-            let contents = fs::read_to_string(path).ok()?;
+            // Read only the first 4KB — enough to detect [Interface] and PrivateKey
+            // without loading potentially large non-WireGuard .conf files.
+            let contents = {
+                use std::io::Read;
+                let mut buf = vec![0u8; 4096];
+                let mut file = fs::File::open(path).ok()?;
+                let n = file.read(&mut buf).ok()?;
+                String::from_utf8_lossy(&buf[..n]).to_string()
+            };
             if is_wireguard_config(&contents) {
                 Some(VpnConfigType::WireGuard)
             } else {

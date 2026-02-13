@@ -67,9 +67,12 @@ pub fn validate_openvpn(path: &Path) -> Result<(), ValidationError> {
         return Err(ValidationError::EmptyFile);
     }
 
+    // Require an actual 'remote' directive. The <connection> tag is a container
+    // that should contain 'remote' inside it — accepting <connection> alone would
+    // pass validation for configs with no server to connect to.
     let has_remote = contents.lines().any(|l| {
         let trimmed = l.trim();
-        trimmed.starts_with("remote ") || trimmed.starts_with("<connection>")
+        trimmed.starts_with("remote ")
     });
 
     if !has_remote {

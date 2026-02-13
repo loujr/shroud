@@ -101,12 +101,18 @@ impl RotatingWriter {
                 fs::create_dir_all(parent)?;
             }
         }
-        let file = OpenOptions::new().create(true).append(true).open(&path)?;
+        // Create with restricted permissions from the start (no TOCTOU window)
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
-        }
+        let file = {
+            use std::os::unix::fs::OpenOptionsExt;
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .mode(0o600)
+                .open(&path)?
+        };
+        #[cfg(not(unix))]
+        let file = OpenOptions::new().create(true).append(true).open(&path)?;
         let bytes_written = file.metadata()?.len();
         Ok(Self {
             path,
@@ -126,14 +132,22 @@ impl RotatingWriter {
         let rotated = self.path.with_extension("log.1");
         let _ = fs::rename(&self.path, rotated);
         // Reopen fresh file
-        self.file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.path)?;
+        // Create with restricted permissions from the start (no TOCTOU window)
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&self.path, fs::Permissions::from_mode(0o600))?;
+            use std::os::unix::fs::OpenOptionsExt;
+            self.file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .mode(0o600)
+                .open(&self.path)?;
+        }
+        #[cfg(not(unix))]
+        {
+            self.file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&self.path)?;
         }
         self.bytes_written = 0;
         Ok(())

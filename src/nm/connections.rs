@@ -1,17 +1,7 @@
 //! NetworkManager VPN connection helpers with type info.
 
 use tokio::process::Command;
-
-/// Get the nmcli command path.
-///
-/// In test builds, supports `SHROUD_NMCLI` env override for mocking.
-fn nmcli_command() -> String {
-    #[cfg(test)]
-    if let Ok(path) = std::env::var("SHROUD_NMCLI") {
-        return path;
-    }
-    "nmcli".to_string()
-}
+use tokio::time::{timeout, Duration};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -38,16 +28,22 @@ impl std::fmt::Display for VpnType {
     }
 }
 
+/// Timeout for nmcli commands in connections module
+const NMCLI_TIMEOUT_SECS: u64 = 30;
+
 /// Get all VPN connections with their types
 pub async fn list_vpn_connections_with_types() -> Vec<VpnConnection> {
-    let output = Command::new(nmcli_command())
-        .args(["-t", "-f", "NAME,TYPE,UUID", "connection", "show"])
-        .output()
-        .await;
+    let output = timeout(
+        Duration::from_secs(NMCLI_TIMEOUT_SECS),
+        Command::new(super::nmcli_command())
+            .args(["-t", "-f", "NAME,TYPE,UUID", "connection", "show"])
+            .output(),
+    )
+    .await;
 
     let mut connections = Vec::new();
 
-    if let Ok(output) = output {
+    if let Ok(Ok(output)) = output {
         let stdout = String::from_utf8_lossy(&output.stdout);
 
         for line in stdout.lines() {
@@ -81,12 +77,15 @@ pub async fn list_vpn_connections_with_types() -> Vec<VpnConnection> {
 
 /// Get VPN type for a specific connection
 pub async fn get_vpn_type(name: &str) -> VpnType {
-    let output = Command::new(nmcli_command())
-        .args(["-t", "-f", "connection.type", "connection", "show", name])
-        .output()
-        .await;
+    let output = timeout(
+        Duration::from_secs(NMCLI_TIMEOUT_SECS),
+        Command::new(super::nmcli_command())
+            .args(["-t", "-f", "connection.type", "connection", "show", name])
+            .output(),
+    )
+    .await;
 
-    if let Ok(output) = output {
+    if let Ok(Ok(output)) = output {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let type_str = stdout.trim().trim_start_matches("connection.type:");
 
@@ -166,7 +165,7 @@ mod tests {
     #[test]
     fn test_nmcli_command_returns_string() {
         // nmcli_command() should return a non-empty string regardless of env
-        let cmd = nmcli_command();
+        let cmd = crate::nm::nmcli_command();
         assert!(!cmd.is_empty());
         // Should be either "nmcli" or a custom path
         assert!(cmd == "nmcli" || cmd.starts_with('/'));

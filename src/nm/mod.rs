@@ -10,6 +10,17 @@ pub mod mock;
 pub mod parsing;
 pub mod traits;
 
+/// Get the nmcli command path (centralized for all NM modules).
+///
+/// In test builds, supports `SHROUD_NMCLI` env override for mocking.
+pub(crate) fn nmcli_command() -> String {
+    #[cfg(test)]
+    if let Ok(path) = std::env::var("SHROUD_NMCLI") {
+        return path;
+    }
+    "nmcli".to_string()
+}
+
 #[allow(unused_imports)]
 pub use client::{
     connect, disconnect, get_active_vpn, get_active_vpn_with_state, get_all_active_vpns,

@@ -35,20 +35,9 @@ pub enum NmError {
 /// Timeout for nmcli commands in seconds
 const NMCLI_TIMEOUT_SECS: u64 = 30;
 
-/// Get the nmcli command path.
-///
-/// In test builds, supports `SHROUD_NMCLI` env override for mocking.
-fn nmcli_command() -> String {
-    #[cfg(test)]
-    if let Ok(path) = std::env::var("SHROUD_NMCLI") {
-        return path;
-    }
-    "nmcli".to_string()
-}
-
 /// Run nmcli and return the output, handling timeout and errors
 async fn run_nmcli(args: &[&str]) -> Option<std::process::Output> {
-    let nmcli = nmcli_command();
+    let nmcli = super::nmcli_command();
     match timeout(
         Duration::from_secs(NMCLI_TIMEOUT_SECS),
         Command::new(&nmcli)
@@ -247,7 +236,7 @@ pub async fn connect(connection_name: &str) -> Result<(), NmError> {
         return Ok(());
     }
 
-    let nmcli = nmcli_command();
+    let nmcli = super::nmcli_command();
     let output = match timeout(
         Duration::from_secs(NMCLI_TIMEOUT_SECS),
         Command::new(&nmcli)
@@ -312,7 +301,7 @@ pub async fn disconnect(connection_name: &str) -> Result<(), NmError> {
         debug!("Attempting disconnect by UUID: {}", uuid);
         let output_result = timeout(
             Duration::from_secs(NMCLI_TIMEOUT_SECS),
-            Command::new(nmcli_command())
+            Command::new(super::nmcli_command())
                 .args(["con", "down", "uuid", &uuid])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -349,7 +338,7 @@ pub async fn disconnect(connection_name: &str) -> Result<(), NmError> {
     debug!("Attempting disconnect by name: {}", connection_name);
     let output = match timeout(
         Duration::from_secs(NMCLI_TIMEOUT_SECS),
-        Command::new(nmcli_command())
+        Command::new(super::nmcli_command())
             .args(["con", "down", connection_name])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -392,7 +381,7 @@ pub async fn disconnect(connection_name: &str) -> Result<(), NmError> {
 async fn disconnect_vpn_device() -> Result<(), NmError> {
     let dev_output = match timeout(
         Duration::from_secs(NMCLI_TIMEOUT_SECS),
-        Command::new(nmcli_command())
+        Command::new(super::nmcli_command())
             .args(["-t", "-f", "DEVICE,TYPE", "dev"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -423,7 +412,7 @@ async fn disconnect_vpn_device() -> Result<(), NmError> {
 
                 let disconnect_output = match timeout(
                     Duration::from_secs(NMCLI_TIMEOUT_SECS),
-                    Command::new(nmcli_command())
+                    Command::new(super::nmcli_command())
                         .args(["dev", "disconnect", device])
                         .stdout(Stdio::piped())
                         .stderr(Stdio::piped())

@@ -15,9 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.16.0] - 2026-02-13
 
 ### Fixed
-- **reconnect**: `RECONNECT_IN_PROGRESS` moved from `static AtomicBool` to `TimingState` struct field. The static survived supervisor restart, permanently blocking reconnection after a restart. Now resets when the supervisor is dropped.
-- **nmcli**: `parse_vpn_uuid()` fixed for VPN names containing colons. Uses `split_once`/`rsplit_once` instead of `rsplitn(3)` which misaligned fields when the middle NAME field contained `:`.
-- **event loop**: wake-from-sleep handling no longer blocks the event loop with a 2-second `sleep`. IPC commands, D-Bus events, and tray interactions are now processed immediately during system wake. Health check suspension (10s) provides the stabilization window.
+- **nm**: centralized `nmcli_command()` into `nm/mod.rs` — eliminates duplicate definitions in `client.rs` and `connections.rs` that could diverge. `connections.rs` now uses the shared function with timeout protection.
+- **nm**: fixed `parse_vpn_uuid` colon-in-name bug in both `client.rs` and `parsing.rs` — uses `split_once`/`rsplit_once` instead of `rsplitn(3)` which misaligned UUID/NAME/TYPE fields when VPN names contained `:`.
+- **import**: OpenVPN validator now requires `remote` directive or complete `<connection>...</connection>` block. Previously accepted bare `<connection>` tag without closing tag or remote.
+- **import**: `.conf` file detector reads only first 4KB instead of entire file. Prevents loading large non-WireGuard configs during directory import.
+- **reconnect**: `RECONNECT_IN_PROGRESS` moved from `static AtomicBool` to `TimingState` struct field. The static survived supervisor restart, permanently blocking reconnection.
+- **event loop**: wake-from-sleep handling no longer blocks with 2-second sleep. IPC/D-Bus/tray commands process immediately during system wake.
 
 ## [1.15.5] - 2026-02-13
 
