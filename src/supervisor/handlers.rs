@@ -1542,13 +1542,26 @@ fn resolve_restart_path() -> Result<std::path::PathBuf, String> {
         return Ok(exe_path);
     }
 
-    // SECURITY: Do NOT fall back to user-writable paths like ~/.local/bin or
-    // ~/.cargo/bin. If the running binary is deleted (e.g., during update),
-    // an attacker could place a malicious binary there. Refuse to restart
-    // and instruct the user to restart manually (SHROUD-VULN-036).
-    Err(
-        "Running binary has been deleted or replaced. Cannot safely restart. \
+    // Handle the update scenario: binary was replaced at the same path.
+    // On Linux, /proc/self/exe shows "/path/to/shroud (deleted)" when the
+    // original inode is removed, even if a new binary exists at the same path.
+    // This is the normal flow during `scripts/update.sh` (rm + cp).
+    if exe_display.contains(" (deleted)") {
+        let original_path = exe_display.trim_end_matches(" (deleted)");
+        let original = std::path::PathBuf::from(original_path);
+        if original.exists() {
+            info!(
+                "Running binary was replaced (update). Using new binary at: {}",
+                original.display()
+            );
+            return Ok(original);
+        }
+    }
+
+    // SECURITY: Do NOT fall back to arbitrary user-writable paths.
+    // If the running binary is deleted and no replacement exists at the
+    // same path, refuse to restart (SHROUD-VULN-036).
+    Err("Running binary has been deleted. Cannot safely restart. \
          Please restart manually: shroud"
-            .to_string(),
-    )
+        .to_string())
 }
