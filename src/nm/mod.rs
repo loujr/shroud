@@ -12,9 +12,9 @@ pub mod traits;
 
 /// Get the nmcli command path (centralized for all NM modules).
 ///
-/// In test builds, supports `SHROUD_NMCLI` env override for mocking.
+/// Supports `SHROUD_NMCLI` env override for non-standard installations (NixOS,
+/// custom prefix) and for test mocking.
 pub(crate) fn nmcli_command() -> String {
-    #[cfg(test)]
     if let Ok(path) = std::env::var("SHROUD_NMCLI") {
         return path;
     }

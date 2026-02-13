@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use thiserror::Error;
 use tracing::{debug, error, info, warn};
 
+use crate::killswitch::cleanup_logic::{self, SHROUD_CHAINS};
 use crate::killswitch::paths::{ip6tables, iptables, nft};
 
 /// Default timeout for cleanup operations
@@ -78,61 +79,56 @@ pub fn rules_exist_ipv6() -> Result<bool, CleanupError> {
 fn run_cleanup_command() -> Result<(), CleanupError> {
     // Use sudo -n to avoid password prompts that would cause hangs
     let mut failures: Vec<String> = Vec::new();
+    let bins: &[&str] = &[iptables(), ip6tables()];
 
-    // CRITICAL: Remove ALL duplicate jump rules (race conditions can create many)
-    // Loop until -D fails (meaning no more rules to delete)
-    for _ in 0..100 {
-        // Safety limit
-        let status = Command::new("sudo")
-            .args(["-n", iptables(), "-D", "OUTPUT", "-j", "SHROUD_KILLSWITCH"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if !matches!(status, Ok(s) if s.success()) {
-            break;
+    // Phase 1: Remove ALL duplicate jump rules for every Shroud chain
+    // (race conditions can create many)
+    for chain in SHROUD_CHAINS {
+        let jump_args = cleanup_logic::build_remove_jump("OUTPUT", chain);
+        for bin in bins {
+            for _ in 0..100 {
+                // Safety limit
+                let mut full_args = vec!["-n".to_string(), bin.to_string()];
+                full_args.extend(jump_args.clone());
+                let status = Command::new("sudo")
+                    .args(&full_args)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+                if !matches!(status, Ok(s) if s.success()) {
+                    break;
+                }
+            }
         }
     }
 
-    for _ in 0..100 {
-        let status = Command::new("sudo")
-            .args(["-n", ip6tables(), "-D", "OUTPUT", "-j", "SHROUD_KILLSWITCH"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if !matches!(status, Ok(s) if s.success()) {
-            break;
-        }
-    }
+    // Phase 2 & 3: Flush then delete each chain
+    for chain in SHROUD_CHAINS {
+        let flush_args = cleanup_logic::build_flush_chain(chain);
+        let delete_args = cleanup_logic::build_delete_chain(chain);
 
-    // Now flush and delete the chains — track failures
-    let cmds: &[(&str, &[&str])] = &[
-        (iptables(), &["-F", "SHROUD_KILLSWITCH"]),
-        (iptables(), &["-X", "SHROUD_KILLSWITCH"]),
-        (ip6tables(), &["-F", "SHROUD_KILLSWITCH"]),
-        (ip6tables(), &["-X", "SHROUD_KILLSWITCH"]),
-    ];
-
-    for (bin, args) in cmds {
-        let mut full_args = vec!["-n", *bin];
-        full_args.extend_from_slice(args);
-        match Command::new("sudo")
-            .args(&full_args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-        {
-            Ok(s) if !s.success() => {
-                // -X fails when chain doesn't exist — that's fine (idempotent cleanup).
-                // Only log, don't treat as hard failure. The post-check verifies state.
-                debug!("cleanup command failed: sudo {}", full_args.join(" "));
+        for args in [&flush_args, &delete_args] {
+            for bin in bins {
+                let mut full_args = vec!["-n".to_string(), bin.to_string()];
+                full_args.extend(args.clone());
+                match Command::new("sudo")
+                    .args(&full_args)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                {
+                    Ok(s) if !s.success() => {
+                        // -X/-F fails when chain doesn't exist — idempotent cleanup.
+                        debug!("cleanup command failed: sudo {}", full_args.join(" "));
+                    }
+                    Err(e) => {
+                        failures.push(format!("sudo {} {}: {}", bin, args.join(" "), e));
+                    }
+                    _ => {}
+                }
             }
-            Err(e) => {
-                failures.push(format!("sudo {} {}: {}", bin, args.join(" "), e));
-            }
-            _ => {}
         }
     }
 
@@ -215,12 +211,10 @@ pub fn cleanup_with_fallback() -> CleanupResult {
             error!("Your firewall rules may still be blocking network traffic.");
             error!("To manually clean up, run:");
             error!("");
-            error!("  sudo {} -D OUTPUT -j SHROUD_KILLSWITCH", iptables());
-            error!("  sudo {} -F SHROUD_KILLSWITCH", iptables());
-            error!("  sudo {} -X SHROUD_KILLSWITCH", iptables());
-            error!("  sudo {} -D OUTPUT -j SHROUD_KILLSWITCH", ip6tables());
-            error!("  sudo {} -F SHROUD_KILLSWITCH", ip6tables());
-            error!("  sudo {} -X SHROUD_KILLSWITCH", ip6tables());
+            for line in cleanup_logic::manual_cleanup_instructions(iptables(), ip6tables()).lines()
+            {
+                error!("{}", line);
+            }
             error!("");
             error!("To avoid this in the future, install the sudoers rule:");
             error!("  ./setup.sh --install-sudoers");
@@ -281,20 +275,16 @@ fn boot_chain_exists() -> Result<bool, CleanupError> {
 }
 
 fn log_manual_cleanup_instructions() {
-    error!("");
-    error!("Manual cleanup commands:");
-    error!("  sudo {} -D OUTPUT -j SHROUD_KILLSWITCH", iptables());
-    error!("  sudo {} -F SHROUD_KILLSWITCH", iptables());
-    error!("  sudo {} -X SHROUD_KILLSWITCH", iptables());
-    error!("  sudo ip6tables -D OUTPUT -j SHROUD_KILLSWITCH");
-    error!("  sudo ip6tables -F SHROUD_KILLSWITCH");
-    error!("  sudo ip6tables -X SHROUD_KILLSWITCH");
-    error!("");
+    for line in cleanup_logic::manual_cleanup_instructions(iptables(), ip6tables()).lines() {
+        error!("{}", line);
+    }
 }
 
 /// Clean up all kill switch rules (iptables, ip6tables, nft, boot chain).
 ///
-/// Used during shutdown to ensure no rules are left behind.
+/// Uses `cleanup_logic::SHROUD_CHAINS` as the single source of truth for
+/// chain names — ensures both `SHROUD_KILLSWITCH` and `SHROUD_BOOT_KS`
+/// are cleaned. Principle III: Leave No Trace.
 ///
 /// # Errors
 ///
@@ -303,65 +293,11 @@ fn log_manual_cleanup_instructions() {
 pub fn cleanup_all() -> Result<(), CleanupError> {
     let mut errors: Vec<String> = Vec::new();
 
-    // Clean main kill switch
-    if let Err(e) = cleanup_with_timeout(CLEANUP_TIMEOUT) {
-        errors.push(format!("main kill switch: {}", e));
+    // run_cleanup_command() handles all chains in SHROUD_CHAINS
+    // (SHROUD_KILLSWITCH + SHROUD_BOOT_KS) for both iptables and ip6tables
+    if let Err(e) = run_cleanup_command() {
+        errors.push(format!("cleanup commands: {}", e));
     }
-
-    // Clean boot kill switch chain
-    // CRITICAL: Remove ALL duplicate jump rules (race conditions can create many)
-    for _ in 0..100 {
-        let status = Command::new("sudo")
-            .args(["-n", iptables(), "-D", "OUTPUT", "-j", "SHROUD_BOOT_KS"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if !matches!(status, Ok(s) if s.success()) {
-            break;
-        }
-    }
-
-    for _ in 0..100 {
-        let status = Command::new("sudo")
-            .args(["-n", ip6tables(), "-D", "OUTPUT", "-j", "SHROUD_BOOT_KS"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if !matches!(status, Ok(s) if s.success()) {
-            break;
-        }
-    }
-
-    // Flush and delete the boot chains
-    let _ = Command::new("sudo")
-        .args(["-n", iptables(), "-F", "SHROUD_BOOT_KS"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-
-    let _ = Command::new("sudo")
-        .args(["-n", iptables(), "-X", "SHROUD_BOOT_KS"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-
-    let _ = Command::new("sudo")
-        .args(["-n", ip6tables(), "-F", "SHROUD_BOOT_KS"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-
-    let _ = Command::new("sudo")
-        .args(["-n", ip6tables(), "-X", "SHROUD_BOOT_KS"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
 
     // Verify nothing is left behind
     let ipv4_remain = rules_exist().unwrap_or(false);

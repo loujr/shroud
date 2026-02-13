@@ -86,7 +86,7 @@ fn regression_nmcli_env_override() {
     let content = include_str!("../src/nm/mod.rs");
     assert!(
         content.contains("SHROUD_NMCLI"),
-        "nm module must support SHROUD_NMCLI env var for testing"
+        "nm module must support SHROUD_NMCLI env var override"
     );
 }
 

@@ -2,6 +2,12 @@
 //!
 //! Builds cleanup command lists and parses iptables output without
 //! actually running any commands.
+//!
+//! Some functions (`chain_exists_in_output`, `find_shroud_rules`,
+//! `build_chain_cleanup`) are used by tests and available for future
+//! use by `verify.rs`. Suppress dead-code warnings on the module.
+
+#![allow(dead_code)]
 
 /// Chain names managed by Shroud.
 pub const SHROUD_CHAINS: &[&str] = &["SHROUD_KILLSWITCH", "SHROUD_BOOT_KS"];

@@ -12,6 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.16.4] - 2026-02-13
+
+### Fixed
+- **killswitch**: `cleanup_logic.rs` promoted from `#[cfg(test)]` to production module. `cleanup.rs` now uses `cleanup_logic::SHROUD_CHAINS`, `build_remove_jump()`, `build_flush_chain()`, `build_delete_chain()`, and `manual_cleanup_instructions()` instead of hardcoding chain names and iptables argument arrays inline. This was the last shadow module in the codebase.
+- **killswitch**: `run_cleanup_command()` now cleans **all** Shroud chains (`SHROUD_KILLSWITCH` + `SHROUD_BOOT_KS`) via the `SHROUD_CHAINS` constant. Previously `run_cleanup_command()` only cleaned `SHROUD_KILLSWITCH` — the boot chain cleanup was duplicated separately in `cleanup_all()` with `let _ =` on every result. Single source of truth for chain names. Principle III: Leave No Trace.
+- **killswitch**: `cleanup_all()` simplified from 60+ lines of duplicated chain cleanup to a single `run_cleanup_command()` call + post-verification. The boot chain `let _ =` error swallowing is eliminated.
+- **killswitch**: `cleanup_with_fallback()` and `log_manual_cleanup_instructions()` now use `cleanup_logic::manual_cleanup_instructions()` — instructions include both `SHROUD_KILLSWITCH` and `SHROUD_BOOT_KS` chains automatically.
+- **health**: fixed stale doc comment on `HealthChecker::check()` — said "Returns Healthy immediately if checks are suspended" but code returns `HealthResult::Suspended`. Doc now accurately describes the `Suspended` return.
+- **supervisor**: `dispatch()` comment changed from "Always sync shared state" to "Best-effort sync" with `debug!` log when `try_write()` is contended. The comment was misleading — `try_write()` can skip the sync, which is architecturally correct (the subsequent `sync_shared_state().await` guarantees consistency) but the comment implied guaranteed behavior. Principle VII: State Is Sacred.
+- **nm**: `SHROUD_NMCLI` environment variable override now works in release builds, not just `#[cfg(test)]`. Users on NixOS or custom-prefix installations can set `SHROUD_NMCLI=/path/to/nmcli` to use a non-standard nmcli location. Principle VI: Speak the System’s Language.
+
+### Removed
+- **supervisor**: deleted dead `WAKE_EVENT_DELAY_MS` constant (2000ms). It had a comment explaining why it’s dead and an `#[allow(dead_code)]` suppressing the warning. The health check suspension (10s) replaced its purpose. Dead code with an apology is still dead code.
+
+---
+
 ## [1.16.3] - 2026-02-13
 
 ### Removed

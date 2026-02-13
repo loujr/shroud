@@ -21,12 +21,6 @@ pub const TIME_JUMP_THRESHOLD_SECS: u64 = NM_POLL_INTERVAL_SECS * 3;
 /// Only one wake event per cooldown window
 pub const TIME_JUMP_COOLDOWN_SECS: u64 = 5;
 
-/// Delay before dispatching wake event (allows system to stabilize)
-/// NOTE: No longer used inline — wake handling is non-blocking.
-/// The health check suspension (10s) serves as the stabilization window.
-#[allow(dead_code)]
-pub const WAKE_EVENT_DELAY_MS: u64 = 2000;
-
 impl super::VpnSupervisor {
     /// Run the supervisor's main loop
     #[instrument(skip(self))]

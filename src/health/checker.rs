@@ -123,7 +123,8 @@ impl HealthChecker {
     /// Returns the health status of the VPN tunnel.
     /// Only returns Degraded after consecutive_degraded threshold is reached
     /// to avoid false positives during temporary system load (builds, updates).
-    /// Returns Healthy immediately if checks are suspended.
+    /// Returns `Suspended` immediately if checks are suspended — callers should
+    /// leave state unchanged (neither affirm health nor declare failure).
     pub async fn check(&mut self) -> HealthResult {
         // Check if suspended (e.g., during system wake)
         if self.is_suspended() {

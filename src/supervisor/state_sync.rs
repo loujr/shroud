@@ -27,9 +27,12 @@ impl super::VpnSupervisor {
             }
         }
 
-        // Always sync shared state after event processing
+        // Best-effort sync: try_write() avoids blocking the synchronous dispatch
+        // path. The subsequent sync_shared_state().await guarantees eventual consistency.
         if let Ok(mut state) = self.shared_state.try_write() {
             state.state = self.machine.state.clone();
+        } else {
+            debug!("dispatch: shared_state write lock contended, deferring to sync_shared_state");
         }
 
         reason

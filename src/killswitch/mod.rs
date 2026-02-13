@@ -5,7 +5,6 @@
 
 pub mod boot;
 pub mod cleanup;
-#[cfg(test)]
 pub mod cleanup_logic;
 pub mod firewall;
 pub mod paths;
