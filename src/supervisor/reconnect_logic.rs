@@ -80,12 +80,14 @@ impl Default for ReconnectTracker {
 
 /// Calculate the backoff delay for a given attempt.
 ///
-/// Uses linear backoff: `base_delay * (attempt + 1)`, capped at `max_delay`.
-/// This matches the actual supervisor implementation.
+/// Delegates to [`crate::util::backoff::linear_backoff_secs`] — single source of truth.
+/// Formula: `base_delay * attempt`, capped at `max_delay`.
 pub fn calculate_delay(config: &ReconnectConfig, attempt: u32) -> Duration {
-    let delay_secs = config.base_delay.as_secs() * (attempt as u64 + 1);
-    let capped = delay_secs.min(config.max_delay.as_secs());
-    Duration::from_secs(capped)
+    crate::util::backoff::linear_backoff_secs(
+        config.base_delay.as_secs(),
+        config.max_delay.as_secs(),
+        attempt,
+    )
 }
 
 /// Reconnect decision result.
@@ -222,8 +224,8 @@ mod tests {
         #[test]
         fn test_first_attempt() {
             let c = ReconnectConfig::default();
-            // base(2) * (0+1) = 2
-            assert_eq!(calculate_delay(&c, 0), Duration::from_secs(2));
+            // base(2) * 0 = 0 (first attempt has no delay)
+            assert_eq!(calculate_delay(&c, 0), Duration::from_secs(0));
         }
 
         #[test]
@@ -233,10 +235,11 @@ mod tests {
                 max_delay: Duration::from_secs(100),
                 ..Default::default()
             };
-            assert_eq!(calculate_delay(&c, 0), Duration::from_secs(2));
-            assert_eq!(calculate_delay(&c, 1), Duration::from_secs(4));
-            assert_eq!(calculate_delay(&c, 2), Duration::from_secs(6));
-            assert_eq!(calculate_delay(&c, 4), Duration::from_secs(10));
+            // base * attempt
+            assert_eq!(calculate_delay(&c, 0), Duration::from_secs(0));
+            assert_eq!(calculate_delay(&c, 1), Duration::from_secs(2));
+            assert_eq!(calculate_delay(&c, 2), Duration::from_secs(4));
+            assert_eq!(calculate_delay(&c, 4), Duration::from_secs(8));
         }
 
         #[test]
@@ -290,7 +293,7 @@ mod tests {
             };
             let mut t = ReconnectTracker::new();
             t.last_attempt = Some(Instant::now());
-            t.attempt = 0;
+            t.attempt = 1; // attempt 1 → delay = base * 1 = 10s
             match decide_reconnect(&c, &t) {
                 ReconnectDecision::WaitFor(d) => {
                     assert!(d <= Duration::from_secs(10));

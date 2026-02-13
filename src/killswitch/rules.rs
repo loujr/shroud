@@ -188,8 +188,14 @@ pub const DOH_PROVIDERS: &[&str] = &[
     "8.8.4.4",         // Google
     "9.9.9.9",         // Quad9
     "149.112.112.112", // Quad9
-    "208.67.222.222",  // OpenDNS
-    "208.67.220.220",  // OpenDNS
+    "208.67.222.222",  // OpenDNS (Cisco)
+    "208.67.220.220",  // OpenDNS (Cisco)
+    "94.140.14.14",    // AdGuard
+    "94.140.15.15",    // AdGuard
+    "185.228.168.168", // CleanBrowsing
+    "185.228.169.168", // CleanBrowsing
+    "8.26.56.26",      // Comodo
+    "8.20.247.20",     // Comodo
 ];
 
 /// VPN tunnel interface prefixes.

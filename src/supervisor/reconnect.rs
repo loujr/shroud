@@ -75,6 +75,23 @@ impl super::VpnSupervisor {
         self.timing.reconnect_in_progress = true;
         self.attempt_reconnect_inner(connection_name).await;
         self.timing.reconnect_in_progress = false;
+
+        // Drain any commands that arrived during the reconnect loop
+        while let Some(cmd) = self.deferred_commands.pop_front() {
+            info!("Processing deferred command after reconnect: {:?}", cmd);
+            match cmd {
+                VpnCommand::Connect(server) => self.handle_connect(&server).await,
+                VpnCommand::Disconnect => self.handle_disconnect().await,
+                VpnCommand::ToggleAutoReconnect => self.toggle_auto_reconnect().await,
+                VpnCommand::ToggleKillSwitch => self.toggle_kill_switch().await,
+                VpnCommand::ToggleAutostart => self.toggle_autostart().await,
+                VpnCommand::ToggleDebugLogging => self.toggle_debug_logging().await,
+                VpnCommand::OpenLogFile => self.open_log_file(),
+                VpnCommand::RefreshConnections => self.refresh_connections().await,
+                VpnCommand::Restart => self.handle_restart().await,
+                VpnCommand::Quit => self.handle_quit().await,
+            }
+        }
     }
 
     async fn attempt_reconnect_inner(&mut self, connection_name: &str) {
@@ -207,8 +224,9 @@ impl super::VpnSupervisor {
                         return;
                     }
                     Ok(other_cmd) => {
-                        // Queue other commands to be processed later? For now, log and ignore
-                        debug!("Ignoring command during reconnect: {:?}", other_cmd);
+                        // Queue commands to be processed after the reconnect loop
+                        debug!("Deferring command during reconnect: {:?}", other_cmd);
+                        self.deferred_commands.push_back(other_cmd);
                     }
                     Err(_) => {
                         // No pending command, continue waiting

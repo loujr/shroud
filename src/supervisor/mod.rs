@@ -38,6 +38,7 @@ pub(crate) use tray_bridge::TrayBridge;
 #[cfg(test)]
 mod tests;
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{mpsc, RwLock};
@@ -138,6 +139,13 @@ pub(crate) struct TimingState {
     pub(crate) reconnect_cancelled: bool,
     /// Guard flag: true while a reconnect loop is running. Struct-owned, not
     /// static, so it resets when the supervisor is dropped (e.g., restart).
+    ///
+    /// # Safety invariant
+    ///
+    /// This is a plain `bool`, not an `AtomicBool`. It is safe **only** because
+    /// `VpnSupervisor` holds `&mut self` in a single-task tokio event loop —
+    /// no concurrent access is possible. If the supervisor is ever shared
+    /// across tasks, this must be changed to an `AtomicBool`.
     pub(crate) reconnect_in_progress: bool,
 }
 
@@ -187,6 +195,8 @@ pub struct VpnSupervisor {
     pub(crate) switch_ctx: SwitchContext,
     /// Exit state
     pub(crate) exit_state: ExitState,
+    /// Commands deferred during reconnect (drained after reconnect completes)
+    pub(crate) deferred_commands: VecDeque<VpnCommand>,
 }
 
 impl VpnSupervisor {
@@ -273,6 +283,7 @@ impl VpnSupervisor {
             timing: TimingState::default(),
             switch_ctx: SwitchContext::default(),
             exit_state: ExitState::default(),
+            deferred_commands: VecDeque::new(),
         }
     }
 }

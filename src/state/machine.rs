@@ -70,15 +70,6 @@ impl StateMachine {
         self.config.max_retries
     }
 
-    /// Calculate the backoff delay for the current retry attempt
-    #[allow(dead_code)]
-    pub fn backoff_delay_secs(&self) -> u64 {
-        std::cmp::min(
-            self.config.base_delay_secs * (self.retries as u64 + 1),
-            self.config.max_delay_secs,
-        )
-    }
-
     /// Handle an event and potentially transition to a new state
     ///
     /// Returns the transition reason if a transition occurred, None otherwise.
@@ -425,24 +416,6 @@ mod tests {
         // Third timeout -> Failed
         let _ = sm.handle_event(Event::Timeout);
         assert!(matches!(sm.state, VpnState::Failed { .. }));
-    }
-
-    #[test]
-    fn test_backoff_delay() {
-        let config = StateMachineConfig {
-            max_retries: 10,
-            base_delay_secs: 2,
-            max_delay_secs: 30,
-        };
-        let mut sm = StateMachine::with_config(config);
-
-        assert_eq!(sm.backoff_delay_secs(), 2); // 2 * 1
-        sm.retries = 1;
-        assert_eq!(sm.backoff_delay_secs(), 4); // 2 * 2
-        sm.retries = 5;
-        assert_eq!(sm.backoff_delay_secs(), 12); // 2 * 6
-        sm.retries = 20;
-        assert_eq!(sm.backoff_delay_secs(), 30); // capped at max
     }
 
     // ---- Extended state transition tests ----

@@ -74,8 +74,32 @@ pub async fn run_headless(config: Config) -> Result<(), Box<dyn std::error::Erro
     // Step 4: Start D-Bus monitor for NetworkManager events
     let nm_monitor = NmMonitor::new(dbus_tx);
     let dbus_handle = tokio::spawn(async move {
-        if let Err(e) = nm_monitor.run().await {
-            error!("D-Bus monitor failed: {}. Falling back to polling only.", e);
+        use crate::util::backoff::{jitter_millis, linear_backoff_secs};
+
+        let mut attempt: u32 = 0;
+        const MAX_BACKOFF_SECS: u64 = 60;
+        const BASE_DELAY_SECS: u64 = 2;
+
+        let tx = nm_monitor.into_tx();
+        loop {
+            let monitor = NmMonitor::new(tx.clone());
+            match monitor.run().await {
+                Ok(()) => {
+                    warn!("D-Bus monitor stream ended. Reconnecting...");
+                }
+                Err(e) => {
+                    error!("D-Bus monitor failed: {}. Retrying...", e);
+                }
+            }
+            attempt = attempt.saturating_add(1);
+            let delay = linear_backoff_secs(BASE_DELAY_SECS, MAX_BACKOFF_SECS, attempt)
+                + jitter_millis(500);
+            warn!(
+                "D-Bus monitor reconnect attempt {} in {:.1}s (polling fallback active)",
+                attempt,
+                delay.as_secs_f32()
+            );
+            tokio::time::sleep(delay).await;
         }
     });
 

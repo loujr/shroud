@@ -12,6 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.16.2] - 2026-02-13
+
+### Fixed
+- **backoff**: unified three competing backoff implementations into one. `reconnect_logic::calculate_delay()` now delegates to `util::backoff::linear_backoff_secs()` (formula: `base * attempt`, capped at max). Removed dead `StateMachine::backoff_delay_secs()` method which used a different formula (`base * (attempt + 1)`) and was never called outside its own test. The actual reconnect path in `reconnect.rs` already used `linear_backoff_secs` — this change makes `reconnect_logic.rs` consistent with it.
+- **killswitch**: `DOH_PROVIDER_IPS` in `firewall.rs` and `DOH_PROVIDERS` in `rules.rs` were two separate lists that had drifted — `firewall.rs` had 16 entries (AdGuard, CleanBrowsing, Comodo) while `rules.rs` had only 8. Deduplicated into single canonical list in `rules::DOH_PROVIDERS` (now 14 entries). `firewall.rs` uses a `use ... as` alias. A DNS leak from adding a provider to one list but not the other is no longer possible.
+- **killswitch**: `cleanup_all()` no longer swallows errors. Previously every `Command` result was ignored with `let _ =` and the function always returned `Ok(())`. Now tracks errors from `cleanup_with_timeout()`, verifies no iptables/ip6tables/boot rules remain after cleanup, and returns `Err(CleanupError::CommandFailed)` if rules persist. Transient errors where rules were still successfully removed are logged as warnings.
+- **killswitch**: `select_backend()` now prefers nftables over iptables when both are available. nftables applies rules atomically (no traffic gap during rule updates); iptables applies rules sequentially with a brief unprotected window. Falls back to iptables/iptables-legacy only when `nft` is unavailable.
+- **config**: `Config::default()` `health_degraded_threshold_ms` changed from `2000` to `5000` to match `HealthConfig::default()` and the TOML schema comment. The 5000ms value was the intentional one (increased from 2000ms to avoid false degradation during builds/updates). The mismatch meant the value a user got depended on whether the supervisor constructed `HealthConfig` from config (2000ms) or used `HealthConfig::default()` directly (5000ms).
+- **dbus**: D-Bus monitor (`NmMonitor`) now reconnects with linear backoff + jitter instead of silently exiting on stream end. Previously, if D-Bus restarted or the socket disconnected, the spawned task logged one error and exited — leaving the supervisor in poll-only mode (2s latency) with no indication to the user. Both `main.rs` and `headless/runtime.rs` spawn paths are fixed. Added `NmMonitor::into_tx()` for sender reuse across reconnect iterations.
+- **supervisor**: non-Disconnect commands received during reconnect are now queued in a `VecDeque<VpnCommand>` and drained after the reconnect loop completes. Previously `ToggleKillSwitch`, `Connect(different_server)`, `Quit`, and all other commands were silently dropped during reconnect backoff. Added `deferred_commands` field to `VpnSupervisor`.
+
+### Changed
+- **docs**: `toggle_in_progress` in `KillSwitch` and `reconnect_in_progress` in `TimingState` now have explicit safety-invariant doc comments explaining why a plain `bool` (not `AtomicBool`) is safe — both are guarded by the single-task `&mut self` event loop. Documents the exact condition under which they would need to change.
+
+---
+
 ## [1.16.1] - 2026-02-13
 
 ### Fixed

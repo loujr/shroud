@@ -48,6 +48,11 @@ impl NmMonitor {
         }
     }
 
+    /// Consume this monitor and return the sender for reuse in a reconnect loop.
+    pub fn into_tx(self) -> mpsc::Sender<NmEvent> {
+        self.tx
+    }
+
     /// Check if an event should be processed or is a duplicate
     ///
     /// Returns true if the event should be processed, false if it's a duplicate

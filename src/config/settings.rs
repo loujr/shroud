@@ -223,7 +223,7 @@ impl Default for Config {
             auto_reconnect: true,
             last_server: None,
             health_check_interval_secs: 30,
-            health_degraded_threshold_ms: 2000,
+            health_degraded_threshold_ms: 5000,
             health_check_endpoints: Vec::new(),
             max_reconnect_attempts: 10,
             kill_switch_enabled: false,

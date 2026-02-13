@@ -46,36 +46,14 @@ const NFT_TABLE: &str = "shroud_killswitch";
 /// Prevents race conditions from rapid enable/disable
 const TOGGLE_COOLDOWN_MS: u64 = 500;
 
+/// Re-export for local use — single source of truth is `rules::DOH_PROVIDERS`.
+use crate::killswitch::rules::DOH_PROVIDERS as DOH_PROVIDER_IPS;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FirewallBackend {
     Iptables,
     Nftables,
 }
-
-/// Known DNS-over-HTTPS provider IP addresses
-const DOH_PROVIDER_IPS: &[&str] = &[
-    // Cloudflare
-    "1.1.1.1",
-    "1.0.0.1",
-    // Google
-    "8.8.8.8",
-    "8.8.4.4",
-    // Quad9
-    "9.9.9.9",
-    "149.112.112.112",
-    // OpenDNS (Cisco)
-    "208.67.222.222",
-    "208.67.220.220",
-    // AdGuard
-    "94.140.14.14",
-    "94.140.15.15",
-    // CleanBrowsing
-    "185.228.168.168",
-    "185.228.169.168",
-    // Comodo
-    "8.26.56.26",
-    "8.20.247.20",
-];
 
 /// Errors that can occur during kill switch operations.
 #[derive(Error, Debug)]
@@ -144,7 +122,15 @@ pub struct KillSwitch {
     use_legacy: bool,
     /// Timestamp of last toggle operation (for cooldown)
     last_toggle_time: Option<Instant>,
-    /// Flag to prevent concurrent toggle operations (struct-owned, not static)
+    /// Flag to prevent concurrent toggle operations.
+    ///
+    /// # Safety invariant
+    ///
+    /// This is a plain `bool`, not an `AtomicBool`. It is safe **only** because
+    /// `KillSwitch` is owned by `VpnSupervisor` which holds `&mut self` in a
+    /// single-task tokio event loop — no concurrent access is possible. If
+    /// `KillSwitch` is ever shared (e.g., `Arc<Mutex<KillSwitch>>`), this must
+    /// be changed to an `AtomicBool` or guarded by the outer lock.
     toggle_in_progress: bool,
 }
 
@@ -866,14 +852,19 @@ impl KillSwitch {
     }
 
     async fn select_backend(&mut self) -> Result<FirewallBackend, KillSwitchError> {
+        // Prefer nftables: atomic rule application means no traffic gap during updates.
+        // Fall back to iptables/iptables-legacy if nft is unavailable.
+        if Self::nft_is_available().await {
+            info!("nftables available — using atomic backend");
+            return Ok(FirewallBackend::Nftables);
+        }
+
         match Self::check_sudo_access() {
             Ok(()) => Ok(FirewallBackend::Iptables),
             Err(err) if Self::should_fallback_to_nft(&err) => {
                 if Self::check_iptables_legacy_access().unwrap_or(false) {
                     self.use_legacy = true;
                     Ok(FirewallBackend::Iptables)
-                } else if Self::nft_is_available().await {
-                    Ok(FirewallBackend::Nftables)
                 } else {
                     Err(err)
                 }
@@ -2434,8 +2425,8 @@ mod ks_expanded_tests {
         );
         let count = DOH_PROVIDER_IPS.len();
         assert!(
-            count >= 10,
-            "Should have at least 10 DoH providers, got {}",
+            count >= 12,
+            "Should have at least 12 DoH providers, got {}",
             count
         );
     }

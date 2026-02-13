@@ -288,12 +288,15 @@ fn log_manual_cleanup_instructions() {
 ///
 /// # Errors
 ///
-/// Currently returns `Ok(())`; internal cleanup failures are logged and ignored. If error propagation is added,
-/// this may return [`CleanupError::Timeout`] when sudo prompts block cleanup, or [`CleanupError::CommandFailed`]
-/// if rules remain after cleanup commands.
+/// Returns [`CleanupError::CommandFailed`] if any cleanup step fails and
+/// firewall rules remain after the attempt.
 pub fn cleanup_all() -> Result<(), CleanupError> {
+    let mut errors: Vec<String> = Vec::new();
+
     // Clean main kill switch
-    let _ = cleanup_with_timeout(CLEANUP_TIMEOUT);
+    if let Err(e) = cleanup_with_timeout(CLEANUP_TIMEOUT) {
+        errors.push(format!("main kill switch: {}", e));
+    }
 
     // Clean boot kill switch chain
     // CRITICAL: Remove ALL duplicate jump rules (race conditions can create many)
@@ -349,6 +352,40 @@ pub fn cleanup_all() -> Result<(), CleanupError> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
+
+    // Verify nothing is left behind
+    let ipv4_remain = rules_exist().unwrap_or(false);
+    let ipv6_remain = rules_exist_ipv6().unwrap_or(false);
+    let boot_remain = boot_chain_exists().unwrap_or(false);
+
+    if ipv4_remain || ipv6_remain || boot_remain {
+        let remaining: Vec<&str> = [
+            if ipv4_remain { Some("iptables") } else { None },
+            if ipv6_remain { Some("ip6tables") } else { None },
+            if boot_remain {
+                Some("boot chain")
+            } else {
+                None
+            },
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let msg = format!(
+            "Rules still present after cleanup: {}",
+            remaining.join(", ")
+        );
+        error!("{}", msg);
+        return Err(CleanupError::CommandFailed(msg));
+    }
+
+    if !errors.is_empty() {
+        // Cleanup commands reported errors but rules are gone — log but succeed
+        warn!(
+            "Cleanup had transient errors (rules removed): {}",
+            errors.join("; ")
+        );
+    }
 
     Ok(())
 }

@@ -51,7 +51,7 @@ mod util;
 use std::process::ExitCode;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use tracing::{error, info, Level};
+use tracing::{error, info, warn, Level};
 
 use crate::daemon::{acquire_instance_lock, release_instance_lock};
 use crate::dbus::NmMonitor;
@@ -171,8 +171,34 @@ async fn run_daemon_mode(args: cli::Args) {
     // Start D-Bus monitor for real-time NetworkManager events
     let nm_monitor = NmMonitor::new(dbus_tx);
     tokio::spawn(async move {
-        if let Err(e) = nm_monitor.run().await {
-            error!("D-Bus monitor failed: {}. Falling back to polling only.", e);
+        use crate::util::backoff::{jitter_millis, linear_backoff_secs};
+
+        let mut attempt: u32 = 0;
+        const MAX_BACKOFF_SECS: u64 = 60;
+        const BASE_DELAY_SECS: u64 = 2;
+
+        // First run consumes the monitor; subsequent runs create fresh instances.
+        // The channel `tx` is cloned per-iteration since NmMonitor::new takes ownership.
+        let tx = nm_monitor.into_tx();
+        loop {
+            let monitor = NmMonitor::new(tx.clone());
+            match monitor.run().await {
+                Ok(()) => {
+                    warn!("D-Bus monitor stream ended. Reconnecting...");
+                }
+                Err(e) => {
+                    error!("D-Bus monitor failed: {}. Retrying...", e);
+                }
+            }
+            attempt = attempt.saturating_add(1);
+            let delay = linear_backoff_secs(BASE_DELAY_SECS, MAX_BACKOFF_SECS, attempt)
+                + jitter_millis(500);
+            warn!(
+                "D-Bus monitor reconnect attempt {} in {:.1}s (polling fallback active)",
+                attempt,
+                delay.as_secs_f32()
+            );
+            tokio::time::sleep(delay).await;
         }
     });
 
