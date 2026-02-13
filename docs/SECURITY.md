@@ -131,3 +131,45 @@ Security through clarity.
 Every firewall rule should be auditable. Every design decision should be explainable. If users can't understand what Shroud is doing, they won't trust it.
 
 We'd rather have fewer features that we're confident in than more features with hidden risks.
+
+---
+
+## Threat Model: Local Attacker Limitations
+
+Shroud protects against **network-level threats**: ISP surveillance, open WiFi sniffing, accidental VPN disconnection, DNS leaks, and IPv6 leaks.
+
+Shroud **does not protect** against a local attacker running as the same user. This is an inherent architectural constraint of user-level security tools, not a bug.
+
+### What a same-user attacker can do
+
+The IPC socket (`$XDG_RUNTIME_DIR/shroud.sock`) accepts commands from any process running as the same UID. A local attacker can:
+
+- Send IPC commands to disconnect the VPN or disable the kill switch
+- Read the debug log for VPN connection history
+- Modify the config file (though security-critical downgrades via config reload are refused — explicit IPC commands are required)
+
+### Why this is acceptable
+
+Shroud runs as the user it protects. The alternative — running as a system service with a separate UID — would require polkit integration, a client-server architecture, and significant complexity. This contradicts Principles V (Complexity Is Debt) and VIII (One Binary, One Purpose).
+
+If an attacker has a shell as your user, they can already:
+- Read your SSH keys, browser cookies, and GPG keys
+- Install keyloggers via `.bashrc`
+- Modify any file in your home directory
+
+Shroud's job is to be the armor around your VPN. Protecting against local malware is the job of your OS, your login security, and your endpoint protection.
+
+### Mitigations in place
+
+- IPC commands are logged with the peer PID and source identification
+- Security-critical config changes via file reload are refused
+- The socket is created with 0600 permissions and symlink protection
+- All firewall commands use `Command::new().args()` (no shell expansion)
+- VPN names are validated against shell metacharacters
+- Sudoers rules are scoped to SHROUD_* chains (no bare `iptables -F` or `nft -f /path`)
+
+### Debug Logs
+
+Shroud's debug log (`~/.local/share/shroud/debug.log`) contains VPN connection details including server names, IPs, connection timestamps, and state transitions. This file has `0600` permissions and is only readable by the running user.
+
+Any process running as the same user can read this file. If you are concerned about local malware, consider disabling file logging (`--log-level error`) or configuring log rotation via the config file.

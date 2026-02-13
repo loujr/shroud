@@ -188,7 +188,21 @@ allow_lan = true
 |------|---------|
 | boolean | `true` |
 
-Allow traffic to local network (192.168.x.x, 10.x.x.x, 172.16.x.x). You probably want this so you can still print and access local shares.
+Allow traffic to local network. Shroud auto-detects your actual LAN subnet and only allows traffic to that range (not the entire RFC1918 space). You probably want this so you can still print and access local shares.
+
+### `lan_restrict_ports`
+
+| Type | Default |
+|------|---------|
+| boolean | `false` |
+
+When `true`, only allow common local-service ports to LAN devices: printing (631), file sharing (445), mDNS (5353), SSDP (1900), DNS (53), ICMP, and NetBIOS (137-139). Blocks arbitrary TCP/UDP to LAN. Useful on semi-trusted networks.
+
+```toml
+[killswitch]
+allow_lan = true
+lan_restrict_ports = true
+```
 
 ---
 

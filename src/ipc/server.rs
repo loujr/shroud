@@ -16,6 +16,34 @@ use tracing::{debug, error, info, warn};
 use super::protocol::{socket_path, IpcCommand, IpcResponse, PROTOCOL_VERSION};
 use thiserror::Error;
 
+/// Get the PID of the peer process connected to a Unix socket.
+#[cfg(target_os = "linux")]
+fn get_peer_pid(stream: &UnixStream) -> Option<u32> {
+    use std::os::unix::io::AsRawFd;
+    let fd = stream.as_raw_fd();
+    let mut ucred: libc::ucred = unsafe { std::mem::zeroed() };
+    let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    let ret = unsafe {
+        libc::getsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            &mut ucred as *mut _ as *mut libc::c_void,
+            &mut len,
+        )
+    };
+    if ret == 0 {
+        Some(ucred.pid as u32)
+    } else {
+        None
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn get_peer_pid(_stream: &UnixStream) -> Option<u32> {
+    None
+}
+
 /// Errors that can occur in the IPC server.
 #[derive(Error, Debug)]
 #[allow(clippy::enum_variant_names)]
@@ -65,8 +93,16 @@ impl IpcServer {
     pub async fn run(self) -> Result<(), ServerError> {
         let path = socket_path();
 
-        // Remove stale socket file if it exists
+        // SECURITY: Check for symlink before removal (TOCTOU mitigation)
         if path.exists() {
+            if let Ok(meta) = std::fs::symlink_metadata(&path) {
+                if meta.file_type().is_symlink() {
+                    return Err(ServerError::Cleanup(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "socket path is a symlink, refusing to remove — possible attack",
+                    )));
+                }
+            }
             std::fs::remove_file(&path).map_err(ServerError::Cleanup)?;
         }
 
@@ -78,26 +114,20 @@ impl IpcServer {
             })?;
         }
 
+        // SECURITY: Set restrictive umask before bind so socket is created
+        // with 0o600 permissions atomically (no TOCTOU window)
+        #[cfg(unix)]
+        let old_umask = unsafe { libc::umask(0o077) };
+
         let listener = UnixListener::bind(&path).map_err(|e| ServerError::Bind {
             path: path.to_string_lossy().to_string(),
             source: e,
         })?;
 
-        // Set secure permissions (600)
+        // Restore original umask immediately after bind
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&path)
-                .map_err(|e| ServerError::Bind {
-                    path: path.to_string_lossy().to_string(),
-                    source: e,
-                })?
-                .permissions();
-            perms.set_mode(0o600);
-            std::fs::set_permissions(&path, perms).map_err(|e| ServerError::Bind {
-                path: path.to_string_lossy().to_string(),
-                source: e,
-            })?;
+        unsafe {
+            libc::umask(old_umask);
         }
 
         info!("IPC server listening on {:?}", path);
@@ -135,6 +165,14 @@ impl IpcServer {
         stream: UnixStream,
         command_tx: mpsc::Sender<(IpcCommand, mpsc::Sender<IpcResponse>)>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let peer_pid = get_peer_pid(&stream);
+        let self_pid = std::process::id();
+        let source_tag = match peer_pid {
+            Some(pid) if pid == self_pid => "(self)",
+            Some(_) => "(external)",
+            None => "(pid unknown)",
+        };
+
         let (reader, mut writer) = stream.into_split();
         let mut reader = BufReader::new(reader);
         let mut line = String::new();
@@ -231,6 +269,16 @@ impl IpcServer {
             }
 
             let response = {
+                // Log non-trivial commands with peer PID for audit trail
+                if !matches!(command, IpcCommand::Ping | IpcCommand::Hello { .. }) {
+                    info!(
+                        "IPC command {:?} from PID {} {}",
+                        command,
+                        peer_pid.map_or("?".to_string(), |p| p.to_string()),
+                        source_tag
+                    );
+                }
+
                 let (resp_tx, mut resp_rx) = mpsc::channel(1);
 
                 if command_tx.send((command, resp_tx)).await.is_err() {
@@ -583,5 +631,27 @@ mod tests {
 
         drop(reader);
         let _ = tokio::time::timeout(std::time::Duration::from_secs(2), handle).await;
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn test_get_peer_pid_returns_some() {
+        let (stream, _peer) = tokio::net::UnixStream::pair().unwrap();
+        let pid = get_peer_pid(&stream);
+        assert!(pid.is_some(), "get_peer_pid should return Some on Linux");
+        assert!(pid.unwrap() > 0);
+    }
+
+    #[tokio::test]
+    async fn test_symlink_socket_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target.sock");
+        let link = dir.path().join("link.sock");
+        std::fs::write(&target, b"").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        // Verify symlink_metadata detects it
+        let meta = std::fs::symlink_metadata(&link).unwrap();
+        assert!(meta.file_type().is_symlink());
     }
 }

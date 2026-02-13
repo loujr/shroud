@@ -4,6 +4,7 @@ use std::time::Instant;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, instrument, warn};
 
+use crate::config::{DnsMode, Ipv6Mode};
 use crate::daemon::lock::release_instance_lock;
 use crate::dbus::NmEvent;
 use crate::health::HealthResult;
@@ -1072,21 +1073,104 @@ impl super::VpnSupervisor {
         self.tray.update(&self.shared_state);
     }
 
-    async fn reload_configuration(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        info!("Reloading configuration from disk");
-        let new_config = self.config_store.reload();
-
-        self.kill_switch.set_config(
-            new_config.dns_mode,
-            new_config.ipv6_mode,
-            new_config.block_doh,
-            new_config.custom_doh_blocklist.clone(),
+    async fn reload_configuration(
+        &mut self,
+        source: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        info!(
+            "Reloading configuration from disk (triggered by: {})",
+            source
         );
+        let new_config = self.config_store.reload();
+        let old_config = &self.config_store.config;
+
+        // SECURITY: Refuse security-critical downgrades via config file reload.
+        // Explicit IPC commands (KillSwitch, AutoReconnect, etc.) still work.
+        let mut refused = Vec::new();
+
+        let apply_kill_switch = if old_config.kill_switch_enabled && !new_config.kill_switch_enabled
+        {
+            refused.push("kill_switch_enabled: true → false");
+            false
+        } else {
+            true
+        };
+
+        let apply_auto_reconnect = if old_config.auto_reconnect && !new_config.auto_reconnect {
+            refused.push("auto_reconnect: true → false");
+            false
+        } else {
+            true
+        };
+
+        let apply_dns_mode = {
+            let old_secure = matches!(old_config.dns_mode, DnsMode::Tunnel | DnsMode::Strict);
+            let new_insecure = matches!(new_config.dns_mode, DnsMode::Localhost | DnsMode::Any);
+            if old_secure && new_insecure {
+                refused.push("dns_mode: secure → less secure");
+                false
+            } else {
+                true
+            }
+        };
+
+        let apply_ipv6_mode = {
+            let old_block = matches!(old_config.ipv6_mode, Ipv6Mode::Block);
+            let new_weaker = matches!(new_config.ipv6_mode, Ipv6Mode::Tunnel | Ipv6Mode::Off);
+            if old_block && new_weaker {
+                refused.push("ipv6_mode: block → weaker");
+                false
+            } else {
+                true
+            }
+        };
+
+        let apply_block_doh = if old_config.block_doh && !new_config.block_doh {
+            refused.push("block_doh: true → false");
+            false
+        } else {
+            true
+        };
+
+        for msg in &refused {
+            warn!(
+                "Security downgrade refused via config reload: {}. Use explicit IPC command to change security settings.",
+                msg
+            );
+        }
+
+        // Apply firewall config — only the fields not refused
+        let dns = if apply_dns_mode {
+            new_config.dns_mode
+        } else {
+            old_config.dns_mode
+        };
+        let ipv6 = if apply_ipv6_mode {
+            new_config.ipv6_mode
+        } else {
+            old_config.ipv6_mode
+        };
+        let doh = if apply_block_doh {
+            new_config.block_doh
+        } else {
+            old_config.block_doh
+        };
+
+        self.kill_switch
+            .set_config(dns, ipv6, doh, new_config.custom_doh_blocklist.clone());
 
         {
             let mut state = self.shared_state.write().await;
-            state.auto_reconnect = new_config.auto_reconnect;
-            state.kill_switch = new_config.kill_switch_enabled;
+            state.auto_reconnect = if apply_auto_reconnect {
+                new_config.auto_reconnect
+            } else {
+                old_config.auto_reconnect
+            };
+            state.kill_switch = if apply_kill_switch {
+                new_config.kill_switch_enabled
+            } else {
+                old_config.kill_switch_enabled
+            };
         }
 
         self.sync_shared_state().await;
@@ -1378,7 +1462,7 @@ impl super::VpnSupervisor {
             }
             IpcCommand::Reload => {
                 info!("Configuration reload requested via IPC");
-                match self.reload_configuration().await {
+                match self.reload_configuration("IPC").await {
                     Ok(()) => IpcResponse::OkMessage {
                         message: "Configuration reloaded successfully".to_string(),
                     },

@@ -154,11 +154,19 @@ impl Default for HeadlessConfig {
 pub struct KillSwitchConfig {
     /// Allow LAN traffic when kill switch is active
     pub allow_lan: bool,
+    /// When true, only allow common local-service ports to LAN
+    /// (printing, file sharing, mDNS, DNS, DHCP, ICMP).
+    /// Blocks arbitrary TCP/UDP to LAN devices.
+    #[serde(default)]
+    pub lan_restrict_ports: bool,
 }
 
 impl Default for KillSwitchConfig {
     fn default() -> Self {
-        Self { allow_lan: true }
+        Self {
+            allow_lan: true,
+            lan_restrict_ports: false,
+        }
     }
 }
 
@@ -1003,7 +1011,10 @@ kill_switch_enabled = true
 
     #[test]
     fn test_killswitch_config_roundtrip() {
-        let kc = KillSwitchConfig { allow_lan: false };
+        let kc = KillSwitchConfig {
+            allow_lan: false,
+            ..Default::default()
+        };
         let s = toml::to_string(&kc).unwrap();
         let parsed: KillSwitchConfig = toml::from_str(&s).unwrap();
         assert!(!parsed.allow_lan);

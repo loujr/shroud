@@ -9,7 +9,6 @@ pub mod cleanup;
 pub mod cleanup_logic;
 pub mod firewall;
 pub mod paths;
-#[cfg(test)]
 pub mod rules;
 pub mod sudo_check;
 pub mod verify;

@@ -823,12 +823,12 @@ mod security_tests {
     }
 
     #[test]
-    fn test_vpn_name_shell_chars_allowed() {
+    fn test_vpn_name_shell_chars_rejected() {
         let args = vec!["connect".to_string(), "$(whoami)".to_string()];
         let result = parse_args_from(&args);
         assert!(
-            result.is_ok(),
-            "Shell chars should be allowed (handled safely)"
+            result.is_err(),
+            "Shell chars should be rejected by validation"
         );
     }
 

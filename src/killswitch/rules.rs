@@ -4,6 +4,8 @@
 //! validating DNS modes, and classifying network traffic.
 //! No system calls, no I/O.
 
+#![allow(dead_code)]
+
 use std::net::IpAddr;
 
 /// LAN subnets that should always be allowed (RFC 1918 + link-local).
@@ -13,6 +15,127 @@ pub const LAN_SUBNETS: &[&str] = &[
     "192.168.0.0/16",
     "169.254.0.0/16", // Link-local
 ];
+
+/// Detect actual local network subnets from system interfaces.
+///
+/// Returns CIDR strings for non-loopback, non-tunnel interfaces.
+/// Falls back to full RFC1918 ranges if detection fails.
+pub fn detect_local_subnets() -> Vec<String> {
+    let output = match std::process::Command::new("ip")
+        .args(["-o", "-4", "addr", "show", "scope", "global"])
+        .output()
+    {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+        _ => {
+            tracing::warn!("Failed to detect local subnets, using RFC1918 fallback");
+            return LAN_SUBNETS.iter().map(|s| s.to_string()).collect();
+        }
+    };
+
+    let mut subnets = Vec::new();
+    for line in output.lines() {
+        // Format: "N: iface    inet addr/prefix ..."
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        // Skip tunnel/VPN interfaces
+        if let Some(iface) = parts.get(1) {
+            if iface.starts_with("tun")
+                || iface.starts_with("tap")
+                || iface.starts_with("wg")
+                || *iface == "lo"
+            {
+                continue;
+            }
+        }
+        // Extract addr/prefix (4th field after "inet")
+        if let Some(pos) = parts.iter().position(|&p| p == "inet") {
+            if let Some(addr_prefix) = parts.get(pos + 1) {
+                if let Some((addr_str, prefix_str)) = addr_prefix.split_once('/') {
+                    if let (Ok(addr), Ok(prefix)) = (
+                        addr_str.parse::<std::net::Ipv4Addr>(),
+                        prefix_str.parse::<u32>(),
+                    ) {
+                        // Mask host bits to get network CIDR
+                        let mask = if prefix == 0 {
+                            0u32
+                        } else {
+                            !0u32 << (32 - prefix)
+                        };
+                        let net = u32::from(addr) & mask;
+                        let net_addr = std::net::Ipv4Addr::from(net);
+                        subnets.push(format!("{}/{}", net_addr, prefix));
+                    }
+                }
+            }
+        }
+    }
+
+    // Always include link-local for mDNS/device discovery
+    subnets.push("169.254.0.0/16".to_string());
+
+    if subnets.len() <= 1 {
+        // Only link-local detected — fall back to RFC1918
+        tracing::debug!("No LAN subnets detected, using RFC1918 fallback");
+        return LAN_SUBNETS.iter().map(|s| s.to_string()).collect();
+    }
+
+    tracing::debug!("Detected local subnets: {:?}", subnets);
+    subnets
+}
+
+/// Build LAN allow rules for specific subnets.
+pub fn build_lan_rules_for_subnets(chain: &str, subnets: &[String]) -> Vec<String> {
+    subnets
+        .iter()
+        .map(|subnet| format!("iptables -A {} -d {} -j ACCEPT", chain, subnet))
+        .collect()
+}
+
+/// Build LAN rules with port restrictions (only common services).
+pub fn build_lan_restricted_rules(chain: &str, subnets: &[String]) -> Vec<String> {
+    let mut rules = Vec::new();
+    for subnet in subnets {
+        // ICMP (ping)
+        rules.push(format!(
+            "iptables -A {} -d {} -p icmp -j ACCEPT",
+            chain, subnet
+        ));
+        // DNS to LAN resolvers
+        rules.push(format!(
+            "iptables -A {} -d {} -p udp --dport 53 -j ACCEPT",
+            chain, subnet
+        ));
+        // mDNS/Bonjour
+        rules.push(format!(
+            "iptables -A {} -d {} -p udp --dport 5353 -j ACCEPT",
+            chain, subnet
+        ));
+        // SSDP/UPnP
+        rules.push(format!(
+            "iptables -A {} -d {} -p udp --dport 1900 -j ACCEPT",
+            chain, subnet
+        ));
+        // Printing (IPP)
+        rules.push(format!(
+            "iptables -A {} -d {} -p tcp --dport 631 -j ACCEPT",
+            chain, subnet
+        ));
+        // SMB
+        rules.push(format!(
+            "iptables -A {} -d {} -p tcp --dport 445 -j ACCEPT",
+            chain, subnet
+        ));
+        // NetBIOS
+        rules.push(format!(
+            "iptables -A {} -d {} -p udp --dport 137:138 -j ACCEPT",
+            chain, subnet
+        ));
+        rules.push(format!(
+            "iptables -A {} -d {} -p tcp --dport 139 -j ACCEPT",
+            chain, subnet
+        ));
+    }
+    rules
+}
 
 /// Well-known DoH provider IPs to block.
 pub const DOH_PROVIDERS: &[&str] = &[
@@ -77,12 +200,10 @@ pub fn build_loopback_rule(chain: &str) -> String {
     format!("iptables -A {} -o lo -j ACCEPT", chain)
 }
 
-/// Build LAN allow rules.
+/// Build LAN allow rules (using full RFC1918 fallback ranges).
 pub fn build_lan_rules(chain: &str) -> Vec<String> {
-    LAN_SUBNETS
-        .iter()
-        .map(|subnet| format!("iptables -A {} -d {} -j ACCEPT", chain, subnet))
-        .collect()
+    let fallback: Vec<String> = LAN_SUBNETS.iter().map(|s| s.to_string()).collect();
+    build_lan_rules_for_subnets(chain, &fallback)
 }
 
 /// Build VPN interface allow rules.
@@ -118,16 +239,26 @@ pub fn build_dns_tunnel_rules(chain: &str) -> Vec<String> {
     rules
 }
 
-/// Build DNS localhost-mode rules (allow DNS only to 127.0.0.0/8).
+/// Build DNS localhost-mode rules (allow DNS only to 127.0.0.1 and 127.0.0.53).
 pub fn build_dns_localhost_rules(chain: &str) -> Vec<String> {
     let mut rules = Vec::new();
 
+    // SECURITY: Only allow DNS to specific loopback addresses,
+    // not the entire 127.0.0.0/8 range.
     rules.push(format!(
-        "iptables -A {} -d 127.0.0.0/8 -p udp --dport 53 -j ACCEPT",
+        "iptables -A {} -d 127.0.0.1 -p udp --dport 53 -j ACCEPT",
         chain
     ));
     rules.push(format!(
-        "iptables -A {} -d 127.0.0.0/8 -p tcp --dport 53 -j ACCEPT",
+        "iptables -A {} -d 127.0.0.1 -p tcp --dport 53 -j ACCEPT",
+        chain
+    ));
+    rules.push(format!(
+        "iptables -A {} -d 127.0.0.53 -p udp --dport 53 -j ACCEPT",
+        chain
+    ));
+    rules.push(format!(
+        "iptables -A {} -d 127.0.0.53 -p tcp --dport 53 -j ACCEPT",
         chain
     ));
 
@@ -393,7 +524,7 @@ mod tests {
             let rules = build_dns_localhost_rules(CHAIN);
             assert!(rules
                 .iter()
-                .any(|r| r.contains("127.0.0.0/8") && r.contains("ACCEPT")));
+                .any(|r| r.contains("127.0.0.1") && r.contains("ACCEPT")));
         }
 
         #[test]

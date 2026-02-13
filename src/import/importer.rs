@@ -51,32 +51,33 @@ impl ImportSummary {
 }
 
 fn nmcli_command() -> Command {
+    #[cfg(test)]
     if let Ok(path) = std::env::var("SHROUD_NMCLI") {
-        Command::new(path)
-    } else {
-        Command::new("nmcli")
+        return Command::new(path);
     }
+    Command::new("nmcli")
 }
 
 async fn nmcli_output(args: &[&str]) -> std::io::Result<std::process::Output> {
+    #[cfg(test)]
     if let Ok(path) = std::env::var("SHROUD_NMCLI") {
         let output = Command::new(&path).args(args).output().await;
-        match output {
+        return match output {
             Ok(out) => Ok(out),
             Err(_) => Command::new("sh").arg(path).args(args).output().await,
-        }
-    } else {
-        Command::new("nmcli").args(args).output().await
+        };
     }
+    Command::new("nmcli").args(args).output().await
 }
 
 async fn nmcli_output_with_path(
     args: &[&str],
     path: &Path,
 ) -> std::io::Result<std::process::Output> {
+    #[cfg(test)]
     if let Ok(cmd_path) = std::env::var("SHROUD_NMCLI") {
         let output = Command::new(&cmd_path).args(args).arg(path).output().await;
-        match output {
+        return match output {
             Ok(out) => Ok(out),
             Err(_) => {
                 Command::new("sh")
@@ -86,10 +87,9 @@ async fn nmcli_output_with_path(
                     .output()
                     .await
             }
-        }
-    } else {
-        Command::new("nmcli").args(args).arg(path).output().await
+        };
     }
+    Command::new("nmcli").args(args).arg(path).output().await
 }
 
 /// Check if NetworkManager is running

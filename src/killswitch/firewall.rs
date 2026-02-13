@@ -16,7 +16,7 @@
 //! Controlled by `dns_mode` config:
 //! - `tunnel`: DNS only via VPN tunnel interfaces (most secure)
 //! - `strict`: tunnel + DoH/DoT blocking (maximum protection)
-//! - `localhost`: DNS only to 127.0.0.0/8, ::1, 127.0.0.53
+//! - `localhost`: DNS only to 127.0.0.1, 127.0.0.53, ::1
 //! - `any`: DNS to any destination (legacy, least secure)
 //!
 //! ## IPv6 Leak Protection
@@ -247,6 +247,15 @@ impl KillSwitch {
         self.enabled
     }
 
+    /// Return the name of the active firewall backend.
+    #[allow(dead_code)]
+    pub fn backend_name(&self) -> &'static str {
+        match self.backend {
+            FirewallBackend::Iptables => "iptables",
+            FirewallBackend::Nftables => "nftables",
+        }
+    }
+
     /// Set the VPN server IP to allow through the firewall
     #[allow(dead_code)]
     pub fn set_vpn_server(&mut self, ip: Option<IpAddr>) {
@@ -389,6 +398,7 @@ impl KillSwitch {
 
         match backend {
             FirewallBackend::Iptables => {
+                debug!("iptables backend uses non-atomic rule application; brief traffic gap possible during rule updates. nftables backend is atomic.");
                 let script = self.build_complete_script(&vpn_server_ips);
                 match self.run_single_script(&script).await {
                     Ok(()) => {}
@@ -424,12 +434,9 @@ impl KillSwitch {
         // Note: Cleanup is handled by robust_iptables_cleanup() before this is called
         // We just need to create the chain and add rules
 
-        // Create chain
+        // Create chain (no jump rule yet — chain must be fully populated first
+        // to avoid a window where traffic hits an incomplete chain)
         s.push_str(&format!("{} -N SHROUD_KILLSWITCH\n", iptables()));
-        s.push_str(&format!(
-            "{} -I OUTPUT 1 -j SHROUD_KILLSWITCH\n",
-            iptables()
-        ));
 
         // Rules
         s.push_str(&format!(
@@ -468,18 +475,15 @@ impl KillSwitch {
             }
         }
 
-        s.push_str(&format!(
-            "{} -A SHROUD_KILLSWITCH -d 192.168.0.0/16 -j ACCEPT\n",
-            iptables()
-        ));
-        s.push_str(&format!(
-            "{} -A SHROUD_KILLSWITCH -d 10.0.0.0/8 -j ACCEPT\n",
-            iptables()
-        ));
-        s.push_str(&format!(
-            "{} -A SHROUD_KILLSWITCH -d 172.16.0.0/12 -j ACCEPT\n",
-            iptables()
-        ));
+        // LAN access rules — use detected subnets instead of full RFC1918
+        let lan_subnets = crate::killswitch::rules::detect_local_subnets();
+        for subnet in &lan_subnets {
+            s.push_str(&format!(
+                "{} -A SHROUD_KILLSWITCH -d {} -j ACCEPT\n",
+                iptables(),
+                subnet
+            ));
+        }
         s.push_str(&format!(
             "{} -A SHROUD_KILLSWITCH -p udp --dport 67 -j ACCEPT\n",
             iptables()
@@ -494,6 +498,13 @@ impl KillSwitch {
             iptables()
         ));
         s.push_str(&format!("{} -A SHROUD_KILLSWITCH -j DROP\n", iptables()));
+
+        // SECURITY: Insert jump rule LAST — chain is now fully populated,
+        // so traffic is never directed to an incomplete rule chain.
+        s.push_str(&format!(
+            "{} -I OUTPUT 1 -j SHROUD_KILLSWITCH\n",
+            iptables()
+        ));
 
         // IPv6
         match self.ipv6_mode {
@@ -586,12 +597,23 @@ impl KillSwitch {
             }
             DnsMode::Localhost => {
                 s.push_str("# DNS Leak Protection (Localhost)\n");
+                // SECURITY: Only allow DNS to 127.0.0.1 and 127.0.0.53 (systemd-resolved),
+                // not the entire 127.0.0.0/8 range, to prevent rogue resolvers on other
+                // loopback addresses.
                 s.push_str(&format!(
-                    "{} -A SHROUD_KILLSWITCH -d 127.0.0.0/8 -p udp --dport 53 -j ACCEPT\n",
+                    "{} -A SHROUD_KILLSWITCH -d 127.0.0.1 -p udp --dport 53 -j ACCEPT\n",
                     iptables()
                 ));
                 s.push_str(&format!(
-                    "{} -A SHROUD_KILLSWITCH -d 127.0.0.0/8 -p tcp --dport 53 -j ACCEPT\n",
+                    "{} -A SHROUD_KILLSWITCH -d 127.0.0.1 -p tcp --dport 53 -j ACCEPT\n",
+                    iptables()
+                ));
+                s.push_str(&format!(
+                    "{} -A SHROUD_KILLSWITCH -d 127.0.0.53 -p udp --dport 53 -j ACCEPT\n",
+                    iptables()
+                ));
+                s.push_str(&format!(
+                    "{} -A SHROUD_KILLSWITCH -d 127.0.0.53 -p tcp --dport 53 -j ACCEPT\n",
                     iptables()
                 ));
                 s.push_str(&format!(
@@ -1333,8 +1355,8 @@ table inet {table} {{
                 rules.push_str(
                     r#"
         # === DNS LEAK PROTECTION (localhost) ===
-        ip daddr 127.0.0.0/8 udp dport 53 accept
-        ip daddr 127.0.0.0/8 tcp dport 53 accept
+        ip daddr 127.0.0.1 udp dport 53 accept
+        ip daddr 127.0.0.1 tcp dport 53 accept
         ip daddr 127.0.0.53 udp dport 53 accept
         ip daddr 127.0.0.53 tcp dport 53 accept
 "#,
@@ -1607,8 +1629,34 @@ impl Default for KillSwitch {
 impl Drop for KillSwitch {
     fn drop(&mut self) {
         if self.enabled {
-            warn!("Kill switch dropped while enabled - rules may persist!");
-            warn!("Run 'sudo iptables -F {}' to clean up", CHAIN_NAME);
+            warn!("Kill switch dropped while enabled — attempting emergency cleanup");
+            match self.backend {
+                FirewallBackend::Iptables => {
+                    let _ = std::process::Command::new("sudo")
+                        .args(["-n", iptables(), "-D", "OUTPUT", "-j", CHAIN_NAME])
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status();
+                    let _ = std::process::Command::new("sudo")
+                        .args(["-n", iptables(), "-F", CHAIN_NAME])
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status();
+                    let _ = std::process::Command::new("sudo")
+                        .args(["-n", iptables(), "-X", CHAIN_NAME])
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status();
+                }
+                FirewallBackend::Nftables => {
+                    let _ = std::process::Command::new("sudo")
+                        .args(["-n", nft(), "delete", "table", "inet", NFT_TABLE])
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status();
+                }
+            }
+            info!("Emergency kill switch cleanup attempted");
         }
     }
 }
@@ -1680,8 +1728,8 @@ mod tests {
         let ks = KillSwitch::with_config(DnsMode::Localhost, Ipv6Mode::Block, true, Vec::new());
         let rules = ks.build_rules_preview(&[]);
 
-        assert!(rules.contains("-d 127.0.0.0/8 -p udp --dport 53 -j ACCEPT"));
-        assert!(rules.contains("-d 127.0.0.0/8 -p tcp --dport 53 -j ACCEPT"));
+        assert!(rules.contains("-d 127.0.0.1 -p udp --dport 53 -j ACCEPT"));
+        assert!(rules.contains("-d 127.0.0.1 -p tcp --dport 53 -j ACCEPT"));
         assert!(rules.contains("-d ::1 -p udp --dport 53 -j ACCEPT"));
         assert!(rules.contains("-d ::1 -p tcp --dport 53 -j ACCEPT"));
         assert!(rules.contains("-p udp --dport 53 -j DROP"));
@@ -1779,7 +1827,7 @@ mod leak_tests {
 
         let rules = get_iptables_rules().expect("Failed to get iptables rules");
 
-        // Should allow localhost (127.0.0.0/8)
+        // Should allow localhost (127.0.0.1/127.0.0.53)
         assert!(
             rules.contains("127.0.0.0") || rules.contains("lo"),
             "Kill switch should allow localhost. Got:\n{}",
@@ -2096,7 +2144,7 @@ mod nft_tests {
     fn test_nft_dns_localhost_mode() {
         let ks = KillSwitch::with_config(DnsMode::Localhost, Ipv6Mode::Off, true, Vec::new());
         let rules = ks.build_nft_ruleset(&[]);
-        assert!(rules.contains("ip daddr 127.0.0.0/8 udp dport 53 accept"));
+        assert!(rules.contains("ip daddr 127.0.0.1 udp dport 53 accept"));
         assert!(rules.contains("ip daddr 127.0.0.53 udp dport 53 accept"));
         assert!(rules.contains("udp dport 53 drop"));
     }
@@ -2297,9 +2345,17 @@ mod ks_expanded_tests {
     fn test_build_complete_script_lan_allowed() {
         let ks = KillSwitch::new();
         let script = ks.build_complete_script(&[]);
-        assert!(script.contains("192.168.0.0/16"));
-        assert!(script.contains("10.0.0.0/8"));
-        assert!(script.contains("172.16.0.0/12"));
+        // LAN rules now use auto-detected subnets (or RFC1918 fallback).
+        // In CI/test, detect_local_subnets() falls back to RFC1918 or finds real interfaces.
+        // Just verify that some subnet-level ACCEPT rule exists.
+        assert!(
+            script.contains("-j ACCEPT")
+                && (script.contains("192.168.")
+                    || script.contains("10.0.")
+                    || script.contains("172.16.")
+                    || script.contains("169.254.")),
+            "Script should contain LAN subnet ACCEPT rules"
+        );
     }
 
     #[test]

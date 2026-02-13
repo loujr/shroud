@@ -2,9 +2,15 @@
 
 use tokio::process::Command;
 
-/// Get the nmcli command path (supports SHROUD_NMCLI env override for testing)
+/// Get the nmcli command path.
+///
+/// In test builds, supports `SHROUD_NMCLI` env override for mocking.
 fn nmcli_command() -> String {
-    std::env::var("SHROUD_NMCLI").unwrap_or_else(|_| "nmcli".to_string())
+    #[cfg(test)]
+    if let Ok(path) = std::env::var("SHROUD_NMCLI") {
+        return path;
+    }
+    "nmcli".to_string()
 }
 
 #[derive(Debug, Clone)]

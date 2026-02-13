@@ -12,6 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.15.0] - 2026-02-13
+
+### Added
+- **security**: IPC peer PID logging — every non-trivial command is logged with the peer process ID and `(self)`/`(external)` source tag via `SO_PEERCRED` (SHROUD-VULN-001).
+- **security**: config reload refuses security downgrades — `kill_switch_enabled`, `auto_reconnect`, `dns_mode`, `ipv6_mode`, and `block_doh` cannot be weakened via config file reload. Explicit IPC commands still work (SHROUD-VULN-002).
+- **security**: reload trigger source logging — reload_configuration logs whether triggered by IPC, SIGHUP, or startup (NEW-C).
+- **killswitch**: `lan_restrict_ports` config option — when true, only allows common LAN service ports (printing, file sharing, mDNS, SSDP, DNS, ICMP) instead of blanket LAN access (SHROUD-VULN-007).
+- **killswitch**: auto-detect actual LAN subnets from system interfaces instead of hardcoding full RFC1918 ranges. Falls back to RFC1918 if detection fails (SHROUD-VULN-007).
+- **killswitch**: `backend_name()` method for backend identification (NEW-A).
+- **killswitch**: `Drop` implementation attempts emergency synchronous cleanup of firewall rules (NEW-B).
+- **docs**: comprehensive threat model in `docs/SECURITY.md` documenting local attacker limitations and mitigations.
+
+### Changed
+- **security**: IPC socket created with restrictive umask (`0o077`) before `bind()` — eliminates TOCTOU permission window. Symlink check before stale socket removal prevents symlink attacks (SHROUD-VULN-004).
+- **security**: `SHROUD_NMCLI` environment override gated behind `#[cfg(test)]` — production builds always use `nmcli` from PATH (SHROUD-VULN-005).
+- **killswitch**: iptables jump rule (`-I OUTPUT -j SHROUD_KILLSWITCH`) now inserted LAST in script — chain is fully populated before traffic is directed to it, eliminating partial-chain window (SHROUD-VULN-006).
+- **killswitch**: localhost DNS mode restricted to `127.0.0.1` and `127.0.0.53` only (was `127.0.0.0/8`), preventing rogue resolver attacks on other loopback addresses (SHROUD-VULN-009).
+- **security**: sudoers rules (v3) scoped to `SHROUD_*` chain operations — bare `iptables -F`, bare `nft -f /path` no longer permitted. Only `nft -f -` (stdin) allowed (SHROUD-VULN-003).
+- **security**: setup script logs moved from world-readable `/tmp` to `$XDG_DATA_HOME/shroud/` with `0600` permissions and cleanup-on-success trap (SHROUD-VULN-010).
+- **validation**: VPN names now reject shell metacharacters (`;|&$\`<>!`) and ANSI escape sequences. Real-world names with `@`, `()`, Unicode still accepted (SHROUD-VULN-012).
+
 ## [1.14.0] - 2026-02-13
 
 ### Removed

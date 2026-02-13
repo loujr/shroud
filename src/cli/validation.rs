@@ -167,6 +167,20 @@ pub fn validate_vpn_name(value: &str) -> ValidationResult<String> {
         ));
     }
 
+    // SECURITY: Reject shell metacharacters and ANSI escape sequences.
+    // VPN names are passed to nmcli via Command::new().args() (safe from shell
+    // injection), but they also appear in log messages and iptables comments.
+    const DENIED_CHARS: &[char] = &[';', '|', '&', '$', '`', '\\', '<', '>', '!'];
+    const ANSI_ESCAPE: char = '\x1b';
+
+    if trimmed.contains(ANSI_ESCAPE) || trimmed.chars().any(|c| DENIED_CHARS.contains(&c)) {
+        return Err(ValidationError::new(
+            "VPN name",
+            value,
+            "contains potentially dangerous characters (shell metacharacters or escape sequences are not allowed)",
+        ));
+    }
+
     Ok(trimmed.to_string())
 }
 
@@ -410,10 +424,22 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_vpn_name_shell_chars_allowed() {
-        assert!(validate_vpn_name("vpn; ls").is_ok());
-        assert!(validate_vpn_name("$(whoami)").is_ok());
-        assert!(validate_vpn_name("vpn | cat").is_ok());
+    fn test_validate_vpn_name_shell_chars_rejected() {
+        assert!(validate_vpn_name("vpn; ls").is_err());
+        assert!(validate_vpn_name("$(whoami)").is_err());
+        assert!(validate_vpn_name("vpn | cat").is_err());
+        assert!(validate_vpn_name("vpn & bg").is_err());
+        assert!(validate_vpn_name("vpn`id`").is_err());
+        assert!(validate_vpn_name("vpn\x1b[31m").is_err());
+    }
+
+    #[test]
+    fn test_validate_vpn_name_real_world_names_accepted() {
+        assert!(validate_vpn_name("user@company").is_ok());
+        assert!(validate_vpn_name("VPN (office)").is_ok());
+        assert!(validate_vpn_name("müllvad-se2").is_ok());
+        assert!(validate_vpn_name("my.vpn.connection").is_ok());
+        assert!(validate_vpn_name("vpn #3").is_ok());
     }
 
     #[test]

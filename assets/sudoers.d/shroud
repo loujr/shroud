@@ -1,8 +1,9 @@
 # Shroud VPN Kill Switch - Sudoers Configuration
-# Version: 2
+# Version: 3
 #
-# This file allows passwordless iptables/ip6tables/nft for kill switch management.
-# Supports multiple Linux distributions with different binary locations.
+# SECURITY: Rules are scoped to Shroud's chain operations.
+# iptables/ip6tables: only SHROUD_* chain management + OUTPUT chain jumps.
+# nft: only shroud table operations and stdin-only ruleset loading (no -f /path).
 #
 # Compatibility:
 #   - Arch Linux, Manjaro: /usr/bin/*
@@ -14,33 +15,113 @@
 # Reinstall with: ./setup.sh --install-sudoers
 
 # Wheel group (Arch, Fedora, RHEL, openSUSE)
-%wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables
-%wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables-legacy
-%wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables-nft
-%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables
-%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables-legacy
-%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables-nft
-%wheel ALL=(ALL) NOPASSWD: /usr/bin/nft
-%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables
-%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables-legacy
-%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables-nft
-%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables
-%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables-legacy
-%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables-nft
-%wheel ALL=(ALL) NOPASSWD: /usr/sbin/nft
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables -N SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables -F SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables -X SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables -A SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables -D *
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables -I OUTPUT *
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables -C OUTPUT *
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables -L *
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables -S *
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables -t filter *
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/iptables --version
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -N SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -F SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -X SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -A SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -D *
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -I OUTPUT *
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -C OUTPUT *
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -L *
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -S *
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -t filter *
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/ip6tables --version
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/nft --version
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/nft list *
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/nft add *
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/nft delete *
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/nft -f -
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables -N SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables -F SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables -X SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables -A SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables -D *
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables -I OUTPUT *
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables -C OUTPUT *
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables -L *
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables -S *
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables -t filter *
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/iptables --version
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -N SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -F SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -X SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -A SHROUD_*
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -D *
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -I OUTPUT *
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -C OUTPUT *
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -L *
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -S *
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -t filter *
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables --version
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/nft --version
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/nft list *
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/nft add *
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/nft delete *
+%wheel ALL=(ALL) NOPASSWD: /usr/sbin/nft -f -
 
 # Sudo group (Debian, Ubuntu)
-%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables
-%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables-legacy
-%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables-nft
-%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables
-%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables-legacy
-%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables-nft
-%sudo ALL=(ALL) NOPASSWD: /usr/bin/nft
-%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables
-%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables-legacy
-%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables-nft
-%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables
-%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables-legacy
-%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables-nft
-%sudo ALL=(ALL) NOPASSWD: /usr/sbin/nft
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables -N SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables -F SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables -X SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables -A SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables -D *
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables -I OUTPUT *
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables -C OUTPUT *
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables -L *
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables -S *
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables -t filter *
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/iptables --version
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -N SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -F SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -X SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -A SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -D *
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -I OUTPUT *
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -C OUTPUT *
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -L *
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -S *
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables -t filter *
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/ip6tables --version
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/nft --version
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/nft list *
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/nft add *
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/nft delete *
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/nft -f -
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables -N SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables -F SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables -X SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables -A SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables -D *
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables -I OUTPUT *
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables -C OUTPUT *
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables -L *
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables -S *
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables -t filter *
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/iptables --version
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -N SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -F SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -X SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -A SHROUD_*
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -D *
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -I OUTPUT *
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -C OUTPUT *
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -L *
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -S *
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables -t filter *
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables --version
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/nft --version
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/nft list *
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/nft add *
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/nft delete *
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/nft -f -
