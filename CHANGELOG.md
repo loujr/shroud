@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.16.5] - 2026-02-13
+
+### Fixed
+- **headless**: `disable_boot_killswitch()` error no longer swallowed with `let _ =` after auto-connect. Now logs the error at `warn!` level. If the boot kill switch can’t be disabled after VPN connects, the user now sees it in logs instead of silently running with both boot and runtime chains active. Principle II: Fail Loud.
+- **headless**: `shutdown()` now uses `tokio::join!` for concurrent task cancellation instead of sequential `.await` inside a 5-second timeout. Previously, if the supervisor took 4.9s to respond to abort, the remaining three tasks had only 100ms total and could be abandoned. Now all four tasks share the full timeout concurrently. Principle III: Leave No Trace.
+- **headless**: SIGHUP handler no longer logs "Received SIGHUP, reloading config" (misleading — reload is not implemented). Changed to single `info!` message: "Received SIGHUP (config reload not yet implemented, ignoring)".
+- **ipc**: deleted `SOCKET_PATH` legacy constant (`/tmp/shroud.sock`) — a `pub` world-readable path with no user isolation. The real `socket_path()` function uses `XDG_RUNTIME_DIR` with UID-suffixed `/tmp` fallback. Any accidental use of the constant would create a socket accessible to all users.
+- **ipc**: `IpcCommand::List` validation now accepts `"all"` as a valid VPN type filter, consistent with the doc comment (`wireguard/openvpn/all`). Previously `"all"` was rejected with "Invalid VPN type filter" despite being documented as valid.
+
+---
+
 ## [1.16.4] - 2026-02-13
 
 ### Fixed

@@ -134,7 +134,12 @@ pub async fn run_headless(config: Config) -> Result<(), Box<dyn std::error::Erro
 
                     // Transition from boot kill switch to runtime kill switch
                     if config.headless.kill_switch_on_boot {
-                        let _ = disable_boot_killswitch();
+                        if let Err(e) = disable_boot_killswitch() {
+                            warn!(
+                                "Failed to disable boot kill switch after auto-connect: {}",
+                                e
+                            );
+                        }
                     }
                 }
                 Err(e) => {
@@ -188,9 +193,7 @@ pub async fn run_headless(config: Config) -> Result<(), Box<dyn std::error::Erro
             _ = sigterm.recv() => break "SIGTERM",
             _ = sigint.recv() => break "SIGINT",
             _ = sighup.recv() => {
-                info!("Received SIGHUP, reloading config");
-                warn!("Config reload not yet implemented");
-                // Don't shutdown on SIGHUP, just log and continue
+                info!("Received SIGHUP (config reload not yet implemented, ignoring)");
                 continue;
             }
             _ = sigusr1.recv() => {
@@ -316,13 +319,10 @@ async fn shutdown(
     dbus_handle.abort();
     supervisor_handle.abort();
 
-    // Await task termination with timeout
+    // Await task termination with timeout (concurrent, not sequential)
     let timeout = tokio::time::Duration::from_secs(5);
     let _ = tokio::time::timeout(timeout, async {
-        let _ = watchdog_handle.await;
-        let _ = ipc_handle.await;
-        let _ = dbus_handle.await;
-        let _ = supervisor_handle.await;
+        let _ = tokio::join!(watchdog_handle, ipc_handle, dbus_handle, supervisor_handle,);
     })
     .await;
 

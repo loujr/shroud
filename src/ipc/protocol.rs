@@ -20,7 +20,7 @@ pub const PROTOCOL_VERSION: u32 = 1;
 /// Path to the IPC Unix domain socket.
 ///
 /// Uses XDG_RUNTIME_DIR for proper user isolation.
-/// Falls back to /tmp if XDG_RUNTIME_DIR is not set.
+/// Falls back to /tmp with UID suffix if XDG_RUNTIME_DIR is not set.
 pub fn socket_path() -> PathBuf {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
         PathBuf::from(runtime_dir).join("shroud.sock")
@@ -28,10 +28,6 @@ pub fn socket_path() -> PathBuf {
         PathBuf::from("/tmp").join(format!("shroud-{}.sock", unsafe { libc::getuid() }))
     }
 }
-
-/// Legacy constant for compatibility - prefer socket_path() function
-#[allow(dead_code)]
-pub const SOCKET_PATH: &str = "/tmp/shroud.sock";
 
 /// Commands sent from CLI client to daemon.
 ///
@@ -185,7 +181,8 @@ impl IpcCommand {
             IpcCommand::List { vpn_type } => {
                 if let Some(value) = vpn_type {
                     let normalized = value.to_lowercase();
-                    if normalized != "wireguard" && normalized != "openvpn" {
+                    // "all" is equivalent to no filter (accepted but ignored)
+                    if normalized != "wireguard" && normalized != "openvpn" && normalized != "all" {
                         return Err("Invalid VPN type filter".to_string());
                     }
                 }
