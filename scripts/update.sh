@@ -18,7 +18,20 @@ chmod 755 ~/.local/bin/.shroud.new
 mv ~/.local/bin/.shroud.new ~/.local/bin/shroud
 
 echo "Restarting daemon..."
-shroud restart 2>/dev/null || echo "Daemon not running"
+# Stop the old daemon gracefully, then start the new binary directly.
+# We can't rely on IPC 'restart' because the old daemon may have a different
+# version of resolve_restart_path() that can't find the new binary.
+shroud quit 2>/dev/null || true
+sleep 1
+# Start the new daemon (the binary at ~/.local/bin/shroud is now the new version)
+nohup ~/.local/bin/shroud > /dev/null 2>&1 &
+sleep 1
+# Verify it's running
+if shroud ping > /dev/null 2>&1; then
+    echo "Daemon restarted successfully"
+else
+    echo "Warning: Daemon may not have started. Run 'shroud' manually."
+fi
 
 echo ""
 shroud --version
