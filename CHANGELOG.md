@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **nm**: fixed `parse_vpn_uuid()` in `nm/parsing.rs` for VPN names containing colons (same fix as `client.rs` from v1.16.0).
 - **logging**: log file creation uses `OpenOptionsExt::mode(0o600)` directly instead of post-creation `chmod`. Eliminates TOCTOU window where log files were briefly world-readable during creation and rotation.
 - **import**: OpenVPN validator no longer accepts `<connection>` tag as substitute for `remote` directive. Prevents validation pass on malformed configs with no server address.
+- **import**: `.conf` file detector reads only first 4KB instead of entire file. Prevents loading large non-WireGuard configs during directory import.
+- **tests**: regression test `regression_nmcli_env_override` updated to check `nm/mod.rs` (where `nmcli_command()` now lives) instead of `nm/client.rs`.
 
 ## [1.16.0] - 2026-02-13
 
