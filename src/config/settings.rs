@@ -1049,84 +1049,113 @@ kill_switch_enabled = true
 
     #[test]
     fn test_validate_health_interval_too_low() {
-        let mut config = Config::default();
-        config.health_check_interval_secs = 5;
+        let config = Config {
+            health_check_interval_secs: 5,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_health_interval_zero_ok() {
-        let mut config = Config::default();
-        config.health_check_interval_secs = 0;
+        let config = Config {
+            health_check_interval_secs: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_validate_health_interval_too_high() {
-        let mut config = Config::default();
-        config.health_check_interval_secs = 999;
+        let config = Config {
+            health_check_interval_secs: 999,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_health_endpoint_http_rejected() {
-        let mut config = Config::default();
-        config.health_check_endpoints = vec!["http://evil.com".to_string()];
+        let config = Config {
+            health_check_endpoints: vec!["http://evil.com".to_string()],
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_health_endpoint_https_ok() {
-        let mut config = Config::default();
-        config.health_check_endpoints = vec!["https://1.1.1.1/cdn-cgi/trace".to_string()];
+        let config = Config {
+            health_check_endpoints: vec!["https://1.1.1.1/cdn-cgi/trace".to_string()],
+            ..Default::default()
+        };
         assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_validate_health_endpoints_too_many() {
-        let mut config = Config::default();
-        config.health_check_endpoints = (0..11).map(|i| format!("https://ep{}.com", i)).collect();
+        let config = Config {
+            health_check_endpoints: (0..11).map(|i| format!("https://ep{}.com", i)).collect(),
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_reconnect_attempts_too_high() {
-        let mut config = Config::default();
-        config.max_reconnect_attempts = 200;
+        let config = Config {
+            max_reconnect_attempts: 200,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_degraded_threshold_bounds() {
-        let mut config = Config::default();
-        config.health_degraded_threshold_ms = 50;
-        assert!(config.validate().is_err());
-        config.health_degraded_threshold_ms = 50000;
-        assert!(config.validate().is_err());
-        config.health_degraded_threshold_ms = 5000;
-        assert!(config.validate().is_ok());
+        let config_low = Config {
+            health_degraded_threshold_ms: 50,
+            ..Default::default()
+        };
+        assert!(config_low.validate().is_err());
+        let config_high = Config {
+            health_degraded_threshold_ms: 50000,
+            ..Default::default()
+        };
+        assert!(config_high.validate().is_err());
+        let config_ok = Config {
+            health_degraded_threshold_ms: 5000,
+            ..Default::default()
+        };
+        assert!(config_ok.validate().is_ok());
     }
 
     #[test]
     fn test_validate_custom_doh_blocklist_valid() {
-        let mut config = Config::default();
-        config.custom_doh_blocklist = vec!["1.1.1.1".to_string(), "8.8.8.8".to_string()];
+        let config = Config {
+            custom_doh_blocklist: vec!["1.1.1.1".to_string(), "8.8.8.8".to_string()],
+            ..Default::default()
+        };
         assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_validate_custom_doh_blocklist_injection_rejected() {
-        let mut config = Config::default();
         // SHROUD-VULN-022: nft injection via custom_doh_blocklist
-        config.custom_doh_blocklist =
-            vec!["1.1.1.1 tcp dport 443 drop\n}\n}\ntable inet evil".to_string()];
+        let config = Config {
+            custom_doh_blocklist: vec![
+                "1.1.1.1 tcp dport 443 drop\n}\n}\ntable inet evil".to_string()
+            ],
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_custom_doh_blocklist_non_ip_rejected() {
-        let mut config = Config::default();
-        config.custom_doh_blocklist = vec!["not-an-ip".to_string()];
+        let config = Config {
+            custom_doh_blocklist: vec!["not-an-ip".to_string()],
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 }
