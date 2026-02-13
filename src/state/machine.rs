@@ -381,10 +381,7 @@ mod tests {
 
     #[test]
     fn test_retry_exhaustion() {
-        let config = StateMachineConfig {
-            max_retries: 3,
-            ..Default::default()
-        };
+        let config = StateMachineConfig { max_retries: 3 };
         let mut sm = StateMachine::with_config(config);
         sm.state = VpnState::Connecting {
             server: "test".into(),
@@ -534,10 +531,7 @@ mod tests {
 
     #[test]
     fn test_reconnecting_timeout_increments() {
-        let config = StateMachineConfig {
-            max_retries: 5,
-            ..Default::default()
-        };
+        let config = StateMachineConfig { max_retries: 5 };
         let mut sm = StateMachine::with_config(config);
         sm.state = VpnState::Reconnecting {
             server: "vpn1".into(),
@@ -621,10 +615,7 @@ mod tests {
 
     #[test]
     fn test_connecting_nm_vpn_down() {
-        let config = StateMachineConfig {
-            max_retries: 5,
-            ..Default::default()
-        };
+        let config = StateMachineConfig { max_retries: 5 };
         let mut sm = StateMachine::with_config(config);
         sm.state = VpnState::Connecting {
             server: "vpn1".into(),
@@ -715,10 +706,7 @@ mod tests {
 
     #[test]
     fn test_max_retries_accessor() {
-        let config = StateMachineConfig {
-            max_retries: 42,
-            ..Default::default()
-        };
+        let config = StateMachineConfig { max_retries: 42 };
         let sm = StateMachine::with_config(config);
         assert_eq!(sm.max_retries(), 42);
     }
@@ -753,10 +741,7 @@ mod tests {
 
     #[test]
     fn test_full_lifecycle() {
-        let config = StateMachineConfig {
-            max_retries: 3,
-            ..Default::default()
-        };
+        let config = StateMachineConfig { max_retries: 3 };
         let mut sm = StateMachine::with_config(config);
 
         // Disconnected -> Connecting
