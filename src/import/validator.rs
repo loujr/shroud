@@ -20,37 +20,49 @@ pub enum ValidationError {
     EmptyFile,
 }
 
+/// Maximum config file size (1 MB). WireGuard configs are typically <1KB,
+/// OpenVPN configs <100KB. Anything larger is not a VPN config.
+const MAX_CONFIG_SIZE: u64 = 1_048_576;
+
 /// Validate a WireGuard config file
 pub fn validate_wireguard(path: &Path) -> Result<(), ValidationError> {
+    let meta = fs::metadata(path)?;
+    if meta.len() > MAX_CONFIG_SIZE {
+        return Err(ValidationError::MissingField(
+            "file too large for VPN config (>1MB)".into(),
+        ));
+    }
+
     let contents = fs::read_to_string(path)?;
 
     if contents.trim().is_empty() {
         return Err(ValidationError::EmptyFile);
     }
 
-    if !contents.to_lowercase().contains("[interface]") {
+    let lower = contents.to_lowercase();
+
+    if !lower.contains("[interface]") {
         return Err(ValidationError::MissingSection("Interface".into()));
     }
 
-    if !contents.to_lowercase().contains("privatekey") {
+    if !lower.contains("privatekey") {
         return Err(ValidationError::MissingField("PrivateKey".into()));
     }
 
-    if !contents.to_lowercase().contains("[peer]") {
+    if !lower.contains("[peer]") {
         return Err(ValidationError::MissingSection("Peer".into()));
     }
 
-    let peer_section = contents.to_lowercase();
-    let peer_start = peer_section.find("[peer]").unwrap();
-    let peer_content = &contents[peer_start..];
+    // Use the lowercased copy for all searches to avoid byte-index
+    // misalignment between original and lowercased strings on multi-byte UTF-8.
+    let peer_start = lower.find("[peer]").unwrap();
+    let peer_content = &lower[peer_start..];
 
-    if !peer_content.to_lowercase().contains("publickey") {
+    if !peer_content.contains("publickey") {
         return Err(ValidationError::MissingField("Peer.PublicKey".into()));
     }
 
-    if !peer_content.to_lowercase().contains("endpoint")
-        && !peer_content.to_lowercase().contains("allowedips")
-    {
+    if !peer_content.contains("endpoint") && !peer_content.contains("allowedips") {
         return Err(ValidationError::MissingField(
             "Peer.Endpoint or Peer.AllowedIPs".into(),
         ));
@@ -61,6 +73,13 @@ pub fn validate_wireguard(path: &Path) -> Result<(), ValidationError> {
 
 /// Validate an OpenVPN config file
 pub fn validate_openvpn(path: &Path) -> Result<(), ValidationError> {
+    let meta = fs::metadata(path)?;
+    if meta.len() > MAX_CONFIG_SIZE {
+        return Err(ValidationError::MissingField(
+            "file too large for VPN config (>1MB)".into(),
+        ));
+    }
+
     let contents = fs::read_to_string(path)?;
 
     if contents.trim().is_empty() {

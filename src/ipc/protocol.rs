@@ -19,13 +19,18 @@ pub const PROTOCOL_VERSION: u32 = 1;
 
 /// Path to the IPC Unix domain socket.
 ///
-/// Uses XDG_RUNTIME_DIR for proper user isolation.
-/// Falls back to /tmp with UID suffix if XDG_RUNTIME_DIR is not set.
+/// Uses `XDG_RUNTIME_DIR` for proper user isolation (set by systemd on all
+/// modern Linux systems). Falls back to `~/.local/share/shroud/` which is
+/// user-owned — avoids `/tmp` where a local attacker could pre-create the
+/// socket to DoS daemon startup (sticky bit prevents removal of others' files).
 pub fn socket_path() -> PathBuf {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
         PathBuf::from(runtime_dir).join("shroud.sock")
     } else {
-        PathBuf::from("/tmp").join(format!("shroud-{}.sock", unsafe { libc::getuid() }))
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        let dir = PathBuf::from(home).join(".local/share/shroud");
+        let _ = std::fs::create_dir_all(&dir);
+        dir.join("shroud.sock")
     }
 }
 

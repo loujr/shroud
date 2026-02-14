@@ -1,6 +1,6 @@
 [package]
 name = "shroud"
-version = "1.16.7"
+version = "1.16.8"
 edition = "2021"
 authors = ["loujr"]
 description = "A provider-agnostic VPN connection manager for Linux with kill switch, auto-reconnect, and system tray integration"
@@ -67,7 +67,7 @@ libc = "0.2"
 thiserror = "1"
 ureq = "3"
 
-# Random number generation (for jitter in exponential backoff)
+# Random number generation (for jitter in linear backoff)
 rand = "0.9"
 
 # Scope-based cleanup for reconnect guard

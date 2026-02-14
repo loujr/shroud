@@ -12,6 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.16.8] - 2026-02-13
+
+### Fixed
+- **import**: `validate_wireguard()` and `validate_openvpn()` now reject files larger than 1MB before reading (`MAX_CONFIG_SIZE`). Previously `fs::read_to_string()` read the entire file unbounded — a crafted multi-GB `.conf` file passing the 4KB detector could OOM the CLI import process.
+- **import**: `validate_wireguard()` byte-index safety fix — now searches the lowercased copy consistently for `[Peer]` section content instead of using a byte offset from the lowercased string to index into the original. The old pattern could misalign on multi-byte UTF-8 characters before `[Peer]` (theoretical — WireGuard configs are ASCII, but correctness matters).
+- **import**: `importer.rs` no longer has its own duplicate `nmcli_command()` / `nmcli_output()` / `nmcli_output_with_path()` functions with `#[cfg(test)]`-gated `SHROUD_NMCLI` overrides. Now delegates to centralized `crate::nm::nmcli_command()` (consolidated in v1.16.0 for `nm/client.rs` and `nm/connections.rs` but the importer was missed). Retains `sh` fallback for test stub compatibility.
+- **ipc**: `socket_path()` fallback changed from `/tmp/shroud-{uid}.sock` to `~/.local/share/shroud/shroud.sock`. The `/tmp` path was predictable and DoS-able — a local attacker could pre-create the socket file (sticky bit prevents the daemon from removing others' files), preventing daemon startup. The new fallback uses a user-owned directory. `XDG_RUNTIME_DIR` remains the primary path (set by systemd on all modern systems).
+
+### Removed
+- **tray**: deleted dead modules `drawing.rs` (icon drawing primitives) and `state.rs` (TrayIcon, MenuItem, build_menu) — compiled into the binary but never called by `service.rs` which uses ksni types directly. Both had `#[allow(dead_code)]` on their `pub mod` declarations.
+- **cli**: deleted dead modules `install.rs` and `output.rs` — both `#[allow(dead_code)]`, zero consumers anywhere in the codebase.
+- **deps**: removed unused `libc::getuid()` call from `socket_path()` fallback.
+- **cargo**: fixed rand dependency comment from "exponential backoff" to "linear backoff" (exponential was removed in v1.16.2).
+
+---
+
 ## [1.16.7] - 2026-02-13
 
 ### Fixed

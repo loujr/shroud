@@ -51,45 +51,39 @@ impl ImportSummary {
 }
 
 fn nmcli_command() -> Command {
-    #[cfg(test)]
-    if let Ok(path) = std::env::var("SHROUD_NMCLI") {
-        return Command::new(path);
-    }
-    Command::new("nmcli")
+    Command::new(crate::nm::nmcli_command())
 }
 
 async fn nmcli_output(args: &[&str]) -> std::io::Result<std::process::Output> {
-    #[cfg(test)]
-    if let Ok(path) = std::env::var("SHROUD_NMCLI") {
-        let output = Command::new(&path).args(args).output().await;
-        return match output {
-            Ok(out) => Ok(out),
-            Err(_) => Command::new("sh").arg(path).args(args).output().await,
-        };
+    let nmcli = crate::nm::nmcli_command();
+    let output = Command::new(&nmcli).args(args).output().await;
+    match output {
+        Ok(out) => Ok(out),
+        Err(_) => {
+            // Fallback: try running through sh (handles test stubs
+            // and non-standard shebang on some systems)
+            Command::new("sh").arg(&nmcli).args(args).output().await
+        }
     }
-    Command::new("nmcli").args(args).output().await
 }
 
 async fn nmcli_output_with_path(
     args: &[&str],
     path: &Path,
 ) -> std::io::Result<std::process::Output> {
-    #[cfg(test)]
-    if let Ok(cmd_path) = std::env::var("SHROUD_NMCLI") {
-        let output = Command::new(&cmd_path).args(args).arg(path).output().await;
-        return match output {
-            Ok(out) => Ok(out),
-            Err(_) => {
-                Command::new("sh")
-                    .arg(cmd_path)
-                    .args(args)
-                    .arg(path)
-                    .output()
-                    .await
-            }
-        };
+    let nmcli = crate::nm::nmcli_command();
+    let output = Command::new(&nmcli).args(args).arg(path).output().await;
+    match output {
+        Ok(out) => Ok(out),
+        Err(_) => {
+            Command::new("sh")
+                .arg(&nmcli)
+                .args(args)
+                .arg(path)
+                .output()
+                .await
+        }
     }
-    Command::new("nmcli").args(args).arg(path).output().await
 }
 
 /// Check if NetworkManager is running
