@@ -126,6 +126,16 @@ impl super::VpnSupervisor {
                 true
             }
 
+            // We think we're degraded, but VPN is gone — silent death
+            (VpnState::Degraded { ref server }, None) => {
+                info!("State sync: VPN '{}' died while in Degraded state", server);
+                self.machine
+                    .set_state(VpnState::Disconnected, TransitionReason::VpnLost);
+                self.sync_shared_state().await;
+                self.tray.update(&self.shared_state);
+                true
+            }
+
             // We're connecting but no VPN and not auto-reconnecting
             (VpnState::Connecting { .. }, None) if !auto_reconnect => {
                 info!("State sync: Connection attempt seems to have failed");

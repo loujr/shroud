@@ -15,7 +15,7 @@
 //! - `event_loop.rs` - Main tokio::select! event loop (run method)
 //! - `handlers.rs` - Command and event handlers
 //! - `state_sync.rs` - State synchronization utilities
-//! - `reconnect.rs` - Reconnection logic with exponential backoff
+//! - `reconnect.rs` - Reconnection logic with linear backoff
 
 mod config_store;
 mod event_loop;

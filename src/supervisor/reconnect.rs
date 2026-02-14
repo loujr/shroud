@@ -62,7 +62,7 @@ impl super::VpnSupervisor {
         }
     }
 
-    /// Attempt to reconnect with exponential backoff (triggered by connection drop)
+    /// Attempt to reconnect with linear backoff (triggered by connection drop)
     #[instrument(skip(self), fields(connection = %connection_name))]
     pub(crate) async fn attempt_reconnect(&mut self, connection_name: &str) {
         // RACE PREVENTION: Check if reconnect is already in progress.

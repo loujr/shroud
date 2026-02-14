@@ -3,9 +3,7 @@
 //! Provides categorized, configurable notifications for VPN events
 //! with throttling, deduplication, and per-category enable/disable.
 
-#[allow(dead_code)]
 pub mod manager;
-#[allow(dead_code)]
 pub mod types;
 
 pub use manager::NotificationManager;

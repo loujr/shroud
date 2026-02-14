@@ -1,4 +1,9 @@
 //! Notification types and categories — pure data, easily testable.
+//!
+//! Some variants and methods are part of the public API surface but not
+//! yet called by the supervisor (which routes through `TrayBridge::notify`).
+
+#![allow(dead_code)]
 
 use std::time::Duration;
 

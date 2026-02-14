@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.16.9] - 2026-02-13
+
+### Fixed
+- **state**: `sync_state_from_nm()` now handles `Degraded + None` (VPN died silently while in degraded state). Previously this fell through to the wildcard arm which logged "internal state matches NetworkManager" — wrong. The supervisor would stay in `Degraded` forever while no VPN was actually active. Now transitions to `Disconnected` with `VpnLost` reason.
+- **tray**: `TrayBridge::update()` now uses `std::thread::Builder::new().stack_size(64 * 1024)` instead of `std::thread::spawn()`. The default 8MB stack per OS thread wastes virtual address space when many updates queue during VPN flapping (each blocked on the ksni Mutex). 64KB is sufficient for the trivial lock+clone operation.
+- **notifications**: `TrayBridge::notify()` fallback category changed from `Connected` to `FirstRun`. Unrecognized notification titles (first-run tips, "VPN Switched", etc.) were previously categorized as `Connected`, causing them to be throttled/filtered with actual connection notifications.
+- **killswitch**: `detect_local_subnets()` no longer appends a duplicate `169.254.0.0/16` entry when a link-local interface is already detected. Prevents duplicate iptables rules in `iptables -L` output.
+- **ipc**: `socket_path()` fallback now logs `warn!` on `create_dir_all` failure (was `let _ =`) and warns when `HOME` is unset (falls back to `/tmp` which is insecure).
+- **docs**: `reconnect.rs` and `supervisor/mod.rs` doc comments changed from "exponential backoff" to "linear backoff" (matched the Cargo.toml fix from v1.16.8).
+- **notifications**: removed unnecessary `#[allow(dead_code)]` from `notifications/mod.rs` module declarations — both `manager` and `types` are actively used. Moved `#![allow(dead_code)]` into the module files themselves with doc comments explaining these are prepared API surfaces with convenience methods not yet wired into all callers.
+
+---
+
 ## [1.16.8] - 2026-02-13
 
 ### Fixed

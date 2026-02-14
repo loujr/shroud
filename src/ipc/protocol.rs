@@ -27,9 +27,14 @@ pub fn socket_path() -> PathBuf {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
         PathBuf::from(runtime_dir).join("shroud.sock")
     } else {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        let home = std::env::var("HOME").unwrap_or_else(|_| {
+            tracing::warn!("HOME not set, using /tmp — socket path may be insecure");
+            "/tmp".to_string()
+        });
         let dir = PathBuf::from(home).join(".local/share/shroud");
-        let _ = std::fs::create_dir_all(&dir);
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            tracing::warn!("Failed to create socket directory {:?}: {}", dir, e);
+        }
         dir.join("shroud.sock")
     }
 }

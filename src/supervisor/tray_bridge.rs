@@ -47,25 +47,30 @@ impl TrayBridge {
         };
 
         let tray_handle = self.handle.clone();
-        std::thread::spawn(move || {
-            if let Ok(handle_guard) = tray_handle.lock() {
-                if let Some(handle) = handle_guard.as_ref() {
-                    let result = handle.update(move |tray: &mut VpnTray| {
-                        if let Ok(mut cached) = tray.cached_state.write() {
-                            debug!("Tray cached_state updated to: {:?}", current_state.state);
-                            *cached = current_state.clone();
+        // Use small stack (64KB) — tray updates are trivial lock+clone
+        // operations. Default 8MB stack per thread wastes address space
+        // when many updates queue during VPN flapping.
+        let _ = std::thread::Builder::new()
+            .stack_size(64 * 1024)
+            .spawn(move || {
+                if let Ok(handle_guard) = tray_handle.lock() {
+                    if let Some(handle) = handle_guard.as_ref() {
+                        let result = handle.update(move |tray: &mut VpnTray| {
+                            if let Ok(mut cached) = tray.cached_state.write() {
+                                debug!("Tray cached_state updated to: {:?}", current_state.state);
+                                *cached = current_state.clone();
+                            }
+                        });
+                        if result.is_none() {
+                            warn!("Tray handle.update() returned None - service may be shutdown");
                         }
-                    });
-                    if result.is_none() {
-                        warn!("Tray handle.update() returned None - service may be shutdown");
+                    } else {
+                        warn!("Tray handle is None");
                     }
                 } else {
-                    warn!("Tray handle is None");
+                    warn!("Failed to lock tray_handle");
                 }
-            } else {
-                warn!("Failed to lock tray_handle");
-            }
-        });
+            });
     }
 
     /// Show a desktop notification (delegates to NotificationManager).
@@ -92,7 +97,7 @@ impl TrayBridge {
                 NotificationCategory::HealthDegraded
             }
             t if t.contains("error") || t.contains("failed") => NotificationCategory::Error,
-            _ => NotificationCategory::Connected, // fallback
+            _ => NotificationCategory::FirstRun, // fallback for unmatched titles
         };
 
         self.notifications

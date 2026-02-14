@@ -1,4 +1,10 @@
 //! Notification manager with throttling and configuration.
+//!
+//! Convenience methods (`vpn_connected`, `vpn_disconnected`, etc.) are
+//! available for future callers; the supervisor currently uses `show()`
+//! via `TrayBridge::notify()`.
+
+#![allow(dead_code)]
 
 use super::types::{Notification, NotificationCategory};
 use std::collections::HashMap;

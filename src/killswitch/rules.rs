@@ -112,8 +112,12 @@ pub fn detect_local_subnets() -> Vec<String> {
         }
     }
 
-    // Always include link-local for mDNS/device discovery
-    subnets.push("169.254.0.0/16".to_string());
+    // Always include link-local for mDNS/device discovery (avoid duplicates
+    // if a link-local interface was already detected above)
+    let link_local = "169.254.0.0/16".to_string();
+    if !subnets.contains(&link_local) {
+        subnets.push(link_local);
+    }
 
     if subnets.len() <= 1 {
         // Only link-local detected — fall back to RFC1918
