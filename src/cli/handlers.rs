@@ -602,6 +602,16 @@ fn handle_response(response: IpcResponse, args: &Args) -> i32 {
 fn handle_autostart_command(action: ToggleAction, args: &Args) -> i32 {
     use crate::autostart::Autostart;
 
+    // Helper: couple auto_connect config with autostart state
+    fn sync_auto_connect(enabled: bool) {
+        let manager = crate::config::ConfigManager::new();
+        let mut config = manager.load();
+        config.auto_connect = enabled;
+        if let Err(e) = manager.save(&config) {
+            eprintln!("Warning: failed to save auto_connect setting: {}", e);
+        }
+    }
+
     match action {
         ToggleAction::On => {
             if let Ok(Some(path)) = Autostart::cleanup_old_systemd() {
@@ -610,15 +620,16 @@ fn handle_autostart_command(action: ToggleAction, args: &Args) -> i32 {
 
             match Autostart::enable() {
                 Ok(()) => {
+                    sync_auto_connect(true);
                     let status = Autostart::status();
-                    println!("✓ Autostart enabled");
+                    println!("✓ Autostart enabled (auto-connect on login)");
                     if let Some(ref path) = status.binary_path {
                         println!("  Binary: {}", path.display());
                     }
                     if let Some(ref path) = status.desktop_file {
                         println!("  Desktop file: {}", path.display());
                     }
-                    println!("\nShroud will start automatically on next login.");
+                    println!("\nShroud will start and auto-connect on next login.");
                     0
                 }
                 Err(e) => {
@@ -629,7 +640,8 @@ fn handle_autostart_command(action: ToggleAction, args: &Args) -> i32 {
         }
         ToggleAction::Off => match Autostart::disable() {
             Ok(()) => {
-                println!("✓ Autostart disabled");
+                sync_auto_connect(false);
+                println!("✓ Autostart and auto-connect disabled");
                 0
             }
             Err(e) => {
@@ -638,12 +650,13 @@ fn handle_autostart_command(action: ToggleAction, args: &Args) -> i32 {
             }
         },
         ToggleAction::Toggle => match Autostart::toggle() {
-            Ok(true) => {
-                println!("✓ Autostart enabled");
-                0
-            }
-            Ok(false) => {
-                println!("✓ Autostart disabled");
+            Ok(enabled) => {
+                sync_auto_connect(enabled);
+                if enabled {
+                    println!("✓ Autostart enabled (auto-connect on login)");
+                } else {
+                    println!("✓ Autostart and auto-connect disabled");
+                }
                 0
             }
             Err(e) => {

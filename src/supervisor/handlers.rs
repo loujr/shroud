@@ -1027,12 +1027,27 @@ impl super::VpnSupervisor {
     }
 
     /// Toggle autostart on login
+    ///
+    /// Also couples `auto_connect` with autostart: "start on login" means
+    /// "start AND connect on login".
     pub(crate) async fn toggle_autostart(&mut self) {
         match crate::autostart::Autostart::toggle() {
             Ok(enabled) => {
+                info!("Autostart toggled to: {}", enabled);
+
+                // Couple auto_connect with autostart
+                self.config_store.config.auto_connect = enabled;
+                self.config_store.save();
+
                 self.tray.update(&self.shared_state);
-                self.tray
-                    .notify("Autostart", if enabled { "Enabled" } else { "Disabled" });
+                self.tray.notify(
+                    "Autostart",
+                    if enabled {
+                        "Shroud will start and auto-connect on login"
+                    } else {
+                        "Autostart and auto-connect disabled"
+                    },
+                );
             }
             Err(e) => {
                 error!("Failed to toggle autostart: {}", e);

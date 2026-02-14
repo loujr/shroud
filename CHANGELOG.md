@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.16.14] - 2026-02-14
+
+### Fixed
+- **supervisor**: auto-connect on startup now actually works for existing users. The `auto_connect` field added in v1.16.13 defaulted to `false` with no migration — users who had autostart enabled and `last_server` set would still get an idle daemon after reboot. Three changes fix this:
+  1. **Migration block**: if autostart is enabled but `auto_connect` is `false`, the startup path enables `auto_connect` and saves config. Runs once, subsequent boots load the saved value.
+  2. **NM initialization delay**: 3-second sleep + `refresh_connections()` re-fetch before auto-connect. On login, NetworkManager may not have loaded VPN profiles yet — the initial connection list can be empty.
+  3. **Fallback to first VPN**: if `last_server` is missing or refers to a deleted connection, auto-connect uses the first available VPN in NM instead of silently skipping.
+- **supervisor**: `toggle_autostart()` now couples `auto_connect` with autostart state. When autostart is toggled ON, `auto_connect` is set to `true` and saved. When toggled OFF, `auto_connect` is set to `false`. Notification text updated to reflect this: "Shroud will start and auto-connect on login" / "Autostart and auto-connect disabled".
+- **cli**: `shroud autostart on` / `off` / `toggle` now couples `auto_connect` with autostart state, matching the tray toggle behavior. CLI output updated: "Autostart enabled (auto-connect on login)" / "Autostart and auto-connect disabled".
+- **docs**: `CONFIGURATION.md` updated — `auto_connect` description notes autostart coupling and first-VPN fallback. Added to defaults block and full example.
+
+---
+
 ## [1.16.13] - 2026-02-14
 
 ### Added

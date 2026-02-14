@@ -11,6 +11,7 @@ When you first run Shroud, it creates a config with sensible defaults:
 ```toml
 version = 1
 auto_reconnect = true
+auto_connect = false
 kill_switch_enabled = false
 dns_mode = "tunnel"
 block_doh = true
@@ -54,9 +55,9 @@ When the VPN drops, try to reconnect automatically.
 |------|--------|
 | boolean | `false` |
 
-When enabled and `last_server` is set, Shroud automatically connects to the last used VPN on startup. Only applies to desktop mode (headless mode has its own `[headless]` `auto_connect` setting).
+Automatically connect to a VPN when Shroud starts. Connects to `last_server` if set, otherwise connects to the first available VPN in NetworkManager.
 
-Pair with `shroud autostart on` for automatic VPN protection on login.
+Managed automatically by `shroud autostart on/off`. You can also set it independently by editing the config.
 ### `kill_switch_enabled`
 
 | Type | Default |
@@ -289,6 +290,9 @@ version = 1
 
 # Reconnect automatically when VPN drops
 auto_reconnect = true
+
+# Auto-connect to last VPN on startup (managed by 'shroud autostart on/off')
+auto_connect = true
 
 # Last connected VPN (managed by Shroud)
 last_server = "mullvad-us1"

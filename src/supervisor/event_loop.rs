@@ -64,28 +64,63 @@ impl super::VpnSupervisor {
             }
         }
 
+        // Migration: if autostart is enabled but auto_connect is not, the user
+        // upgraded from a version before auto_connect existed. Enable it so their
+        // "start on login" actually connects on login.
+        if crate::autostart::Autostart::is_enabled() && !self.config_store.config.auto_connect {
+            info!("Migration: autostart enabled but auto_connect disabled — enabling auto_connect");
+            self.config_store.config.auto_connect = true;
+            self.config_store.save();
+        }
+
         // Auto-connect on startup (desktop mode)
-        // If auto_connect is enabled, last_server is set, and no VPN is active,
-        // connect to the last used VPN. This gives "start on login = protect on login"
-        // behavior when paired with `shroud autostart on`.
+        // If auto_connect is enabled, connect to last_server (or first available VPN).
+        // This gives "start on login = protect on login" behavior when paired with
+        // `shroud autostart on`.
         if matches!(self.machine.state, VpnState::Disconnected)
             && self.config_store.config.auto_connect
         {
-            if let Some(ref server) = self.config_store.config.last_server {
-                if !server.is_empty() {
-                    let connections = self.shared_state.read().await.connections.clone();
-                    if connections.iter().any(|c| c == server) {
-                        info!("Auto-connecting to last server: {}", server);
-                        self.tray
-                            .notify("Shroud", &format!("Auto-connecting to {}...", server));
-                        let server_clone = server.clone();
-                        self.handle_connect(&server_clone).await;
+            // Wait for NetworkManager to finish loading VPN profiles.
+            // On login, NM may still be bringing up interfaces — the initial
+            // refresh_connections() above may have returned an empty list.
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            self.refresh_connections().await;
+
+            let connections = self.shared_state.read().await.connections.clone();
+
+            // Determine target: prefer last_server, fall back to first available VPN
+            let target_server = self
+                .config_store
+                .config
+                .last_server
+                .as_ref()
+                .filter(|s| !s.is_empty() && connections.iter().any(|c| c == *s))
+                .cloned()
+                .or_else(|| {
+                    if connections.is_empty() {
+                        None
                     } else {
                         warn!(
-                            "Auto-connect: last_server '{}' not found in available connections, skipping",
-                            server
+                            "auto_connect: last_server not set or not found, using first available VPN: {}",
+                            connections[0]
                         );
+                        Some(connections[0].clone())
                     }
+                });
+
+            match target_server {
+                Some(server) => {
+                    info!("Auto-connecting to: {}", server);
+                    self.tray
+                        .notify("Shroud", &format!("Auto-connecting to {}...", server));
+                    self.handle_connect(&server).await;
+                }
+                None => {
+                    warn!("auto_connect enabled but no VPN connections found in NetworkManager");
+                    self.tray.notify(
+                        "Shroud",
+                        "Auto-connect enabled but no VPN connections configured",
+                    );
                 }
             }
         }
