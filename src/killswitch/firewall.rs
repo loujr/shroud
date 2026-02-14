@@ -343,6 +343,11 @@ impl KillSwitch {
         }
         self.toggle_in_progress = true;
 
+        // NOTE: scopeguard::defer! would be ideal here but borrows &mut self,
+        // conflicting with enable_inner(&mut self). The manual reset below is
+        // safe because enable_inner() returns a Result (flag resets on both
+        // Ok and Err). The only risk is panic — which is caught by the panic
+        // hook that preserves kill switch rules (fail-closed).
         let result = self.enable_inner().await;
         self.toggle_in_progress = false;
         result
@@ -1024,6 +1029,8 @@ impl KillSwitch {
         }
         self.toggle_in_progress = true;
 
+        // NOTE: scopeguard::defer! would be ideal here but borrows &mut self,
+        // conflicting with disable_inner(&mut self). See enable() comment.
         let result = self.disable_inner().await;
         self.toggle_in_progress = false;
         result

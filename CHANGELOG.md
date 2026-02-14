@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.16.12] - 2026-02-13
+
+### Fixed
+- **killswitch**: `enable()` and `disable()` `toggle_in_progress` flag now has explicit doc comment explaining why `scopeguard::defer!` cannot be used (borrows `&mut self`, conflicting with `enable_inner(&mut self)`). The manual `flag = true; let result = inner().await; flag = false; result` pattern is safe because `inner()` returns a `Result` (flag resets on both `Ok` and `Err`). The only unhandled case is panic — which is caught by the panic hook that preserves kill switch rules (fail-closed).
+- **import**: `validate_wireguard()` `.unwrap()` changed to `.expect("contains check above")` for self-documenting intent on the `[peer]` find after a confirmed `.contains()` check.
+- **health**: `check_endpoint()` doc now documents the `spawn_blocking` thread leak behavior — if `ureq` hangs on DNS timeout (up to 30s on some resolvers), the outer `tokio::time::timeout` cancels the future but the blocking thread persists until `ureq` returns. At most one leaked thread per health check interval.
+
+### Changed
+- **nm**: cleaned up `nm/mod.rs` re-exports. Removed three `#[allow(unused_imports)]` blocks. Only re-exports that are actually used externally remain: `connect`, `get_active_vpn` (headless runtime), `get_vpn_type`, `list_vpn_connections_with_types` (supervisor handlers), `NmCliClient`, `NmClient` (supervisor constructor). `NmError` re-exported under `#[cfg(test)]` only.
+- **nm**: `nmcli_command()` doc now includes security note explaining why `SHROUD_NMCLI` env var is trusted (daemon environment set at launch by owning user, IPC clients cannot influence it).
+
+---
+
 ## [1.16.11] - 2026-02-13
 
 ### Fixed

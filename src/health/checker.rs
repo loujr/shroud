@@ -194,6 +194,13 @@ impl HealthChecker {
     /// Check a single endpoint using native HTTP (ureq)
     ///
     /// Returns latency in milliseconds on success.
+    /// Check a single health endpoint.
+    ///
+    /// Uses `spawn_blocking` + `ureq` (synchronous HTTP). The outer
+    /// `tokio::time::timeout` cancels the future if the blocking thread
+    /// takes too long, but the thread itself continues until `ureq` returns
+    /// (DNS timeout can be 30s+ on some resolvers). At most one leaked thread
+    /// per health check interval — acceptable given 30s default interval.
     async fn check_endpoint(&self, endpoint: &str) -> Result<u64, String> {
         let url = endpoint.to_string();
         let timeout_secs = self.config.timeout_secs;

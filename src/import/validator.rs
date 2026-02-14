@@ -55,7 +55,7 @@ pub fn validate_wireguard(path: &Path) -> Result<(), ValidationError> {
 
     // Use the lowercased copy for all searches to avoid byte-index
     // misalignment between original and lowercased strings on multi-byte UTF-8.
-    let peer_start = lower.find("[peer]").unwrap();
+    let peer_start = lower.find("[peer]").expect("contains check above");
     let peer_content = &lower[peer_start..];
 
     if !peer_content.contains("publickey") {
