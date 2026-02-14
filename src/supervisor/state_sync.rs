@@ -126,6 +126,20 @@ impl super::VpnSupervisor {
                 true
             }
 
+            // We think we're degraded, but a different VPN is active — user switched
+            (VpnState::Degraded { ref server }, Some(ref conn)) if server != conn => {
+                info!(
+                    "State sync: Different VPN '{}' active while degraded on '{}', user switched",
+                    conn, server
+                );
+                self.dispatch(Event::NmVpnUp {
+                    server: conn.clone(),
+                });
+                self.sync_shared_state().await;
+                self.tray.update(&self.shared_state);
+                true
+            }
+
             // We think we're degraded, but VPN is gone — silent death
             (VpnState::Degraded { ref server }, None) => {
                 info!("State sync: VPN '{}' died while in Degraded state", server);

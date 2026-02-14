@@ -8,10 +8,10 @@
 //! - Infinite reconnection attempts
 
 #[cfg(test)]
-pub mod config;
+pub mod config; // Test-only config parsing helpers
 pub mod runtime;
 #[cfg(test)]
-pub mod runtime_helpers;
+pub mod runtime_helpers; // Test-only runtime helpers
 pub mod systemd;
 
 #[cfg(test)]

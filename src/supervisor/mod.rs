@@ -47,7 +47,7 @@ use crate::tray::{SharedState, VpnCommand, VpnTray};
 
 // Re-export constants that may be needed elsewhere
 
-/// Base delay for exponential backoff in seconds
+/// Base delay for linear backoff in seconds
 pub(crate) const RECONNECT_BASE_DELAY_SECS: u64 = 2;
 
 /// Cap on reconnect delay in seconds

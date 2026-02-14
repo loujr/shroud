@@ -82,7 +82,10 @@ fn install_panic_hook() {
         eprintln!("\n!!! SHROUD PANIC !!!");
         eprintln!("Kill switch rules are preserved (fail-closed).");
         eprintln!("If you're locked out, run: shroud cleanup");
-        eprintln!("  or: sudo iptables -F SHROUD_KILLSWITCH && sudo iptables -D OUTPUT -j SHROUD_KILLSWITCH && sudo iptables -X SHROUD_KILLSWITCH");
+        eprintln!("  (handles iptables, ip6tables, nftables, and boot chains)");
+        eprintln!("  or manually:");
+        eprintln!("    sudo iptables -D OUTPUT -j SHROUD_KILLSWITCH && sudo iptables -F SHROUD_KILLSWITCH && sudo iptables -X SHROUD_KILLSWITCH");
+        eprintln!("    sudo ip6tables -D OUTPUT -j SHROUD_KILLSWITCH && sudo ip6tables -F SHROUD_KILLSWITCH && sudo ip6tables -X SHROUD_KILLSWITCH");
 
         // Clean up socket file so daemon can restart
         let socket_path = ipc::protocol::socket_path();
@@ -155,7 +158,7 @@ async fn run_daemon_mode(args: cli::Args) {
     .expect("Error setting Ctrl-C handler");
 
     info!("Starting Shroud VPN Manager");
-    let (dbus_tx, dbus_rx) = mpsc::channel(32); // NM events
+    let (dbus_tx, dbus_rx) = mpsc::channel(64); // NM events (larger buffer for VPN flapping)
     let (ipc_tx, ipc_rx) = mpsc::channel(32); // IPC commands
 
     let tray_handle = Arc::new(std::sync::Mutex::new(None));

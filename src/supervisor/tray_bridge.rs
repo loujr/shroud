@@ -50,7 +50,7 @@ impl TrayBridge {
         // Use small stack (64KB) — tray updates are trivial lock+clone
         // operations. Default 8MB stack per thread wastes address space
         // when many updates queue during VPN flapping.
-        let _ = std::thread::Builder::new()
+        if let Err(e) = std::thread::Builder::new()
             .stack_size(64 * 1024)
             .spawn(move || {
                 if let Ok(handle_guard) = tray_handle.lock() {
@@ -70,7 +70,10 @@ impl TrayBridge {
                 } else {
                     warn!("Failed to lock tray_handle");
                 }
-            });
+            })
+        {
+            warn!("Failed to spawn tray update thread: {}", e);
+        }
     }
 
     /// Show a desktop notification (delegates to NotificationManager).

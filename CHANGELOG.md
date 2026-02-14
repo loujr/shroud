@@ -12,6 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.16.10] - 2026-02-13
+
+### Fixed
+- **state**: `sync_state_from_nm()` now handles `Degraded + Some(different)` — if the user manually switches VPNs while in a degraded state, the poll fallback now detects the switch and updates state. Previously fell through to the wildcard arm which logged "internal state matches NetworkManager" (wrong). D-Bus events catch this in real-time, but the poll is the safety net.
+- **import**: force-delete path (`--force` import) now uses `nmcli_output()` with `sh` fallback instead of `nmcli_command()` which lacked it. On NixOS or systems where nmcli needs a shim, `--force` imports would silently fail to delete the old connection. Also removed the now-unused `nmcli_command()` wrapper function.
+- **tray**: `TrayBridge::update()` now logs `warn!` on thread spawn failure instead of `let _ =`. If the system hits RLIMIT_NPROC or runs out of threads, the operator sees it in logs.
+- **main**: panic hook cleanup instructions now include IPv6 (`ip6tables`) and recommend `shroud cleanup` as the primary recovery command. Previously only showed IPv4 iptables commands — users with IPv6 kill switch rules (the default: `ipv6_mode = block`) would remain locked out on IPv6.
+- **supervisor**: `RECONNECT_BASE_DELAY_SECS` doc comment changed from "exponential backoff" to "linear backoff" (third and final location — reconnect.rs and mod.rs module doc were fixed in v1.16.9, this constant doc was missed).
+- **main**: D-Bus event channel capacity increased from 32 to 64. During VPN flapping, NM generates rapid activate/deactivate pairs at machine speed. 32 slots could fill while the supervisor is blocked in a reconnect loop, causing dropped events.
+- **tray**: `SharedState` now derives `Debug` (was `Clone` only). All other state types (`VpnState`, `TimingState`, `SwitchContext`, `ExitState`) derive `Debug` — `SharedState` was the odd one out.
+- **boot**: `detect_local_subnets()` call in boot kill switch documented as intentionally synchronous (no async runtime at boot).
+
+### Removed
+- **config**: removed unused `KillSwitchConfig` re-export from `config/mod.rs` (was `#[allow(unused_imports)]` — the type is only used within `settings.rs`).
+- **import**: removed dead `nmcli_command()` wrapper (sole call site migrated to `nmcli_output()`).
+
+### Changed
+- **headless**: test-only module declarations in `headless/mod.rs` now have clarifying comments (`// Test-only config parsing helpers`, `// Test-only runtime helpers`).
+
+---
+
 ## [1.16.9] - 2026-02-13
 
 ### Fixed

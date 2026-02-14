@@ -50,10 +50,6 @@ impl ImportSummary {
     }
 }
 
-fn nmcli_command() -> Command {
-    Command::new(crate::nm::nmcli_command())
-}
-
 async fn nmcli_output(args: &[&str]) -> std::io::Result<std::process::Output> {
     let nmcli = crate::nm::nmcli_command();
     let output = Command::new(&nmcli).args(args).output().await;
@@ -161,10 +157,7 @@ pub async fn import_file(
     }
 
     if force && connection_exists(conn_name).await {
-        let _ = nmcli_command()
-            .args(["connection", "delete", conn_name])
-            .output()
-            .await;
+        let _ = nmcli_output(&["connection", "delete", conn_name]).await;
     }
 
     let nmcli_type = match config_type {

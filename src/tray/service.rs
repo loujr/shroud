@@ -36,7 +36,7 @@ pub enum VpnCommand {
 }
 
 /// Shared state between the tray and the VPN supervisor
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SharedState {
     /// Current VPN state
     pub state: VpnState,

@@ -127,6 +127,8 @@ fn add_boot_rules(allow_lan: bool) -> Result<(), KillSwitchError> {
 
     // Allow LAN if configured — use detected subnets with RFC1918 fallback
     // (SHROUD-VULN-025: consistent with runtime kill switch)
+    // NOTE: detect_local_subnets() is synchronous (shells out to `ip addr`).
+    // This is intentional at boot — no async runtime is required here.
     if allow_lan {
         let subnets = crate::killswitch::rules::detect_local_subnets();
         for subnet in &subnets {
