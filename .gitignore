@@ -1,9 +1,6 @@
 # Build artifacts
 /target/
 
-# Cargo lock file (optional - remove if this is a library)
-Cargo.lock
-
 # IDE files
 .idea/
 .vscode/
