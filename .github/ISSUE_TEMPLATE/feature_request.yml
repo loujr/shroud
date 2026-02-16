@@ -1,0 +1,60 @@
+name: Feature Request
+description: Suggest an improvement or new capability.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before requesting a feature, check the [Principles](../docs/PRINCIPLES.md). Shroud is deliberately opinionated about what it does and doesn't do.
+
+        Features that conflict with the principles will be declined — but if you think a principle needs revisiting, say so.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: "Describe the problem or friction you're experiencing. Focus on the problem, not a specific solution."
+      placeholder: "When I switch between VPN servers, I have to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like to happen?
+      description: "Describe your ideal outcome. How would Shroud handle this?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: "Have you tried any workarounds? Are there other tools that handle this well?"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Which area does this affect?
+      options:
+        - CLI commands
+        - Kill switch
+        - System tray
+        - Auto-reconnect
+        - VPN import
+        - Headless mode
+        - Configuration
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: "Anything else — examples from other tools, mockups, edge cases to consider."
+    validations:
+      required: false

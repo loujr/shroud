@@ -1,0 +1,115 @@
+name: Bug Report
+description: Something isn't working as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The more detail you provide, the faster this gets fixed.
+
+  - type: input
+    id: version
+    attributes:
+      label: Shroud version
+      description: "Output of `shroud --version`"
+      placeholder: "shroud 1.16.19"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: distro
+    attributes:
+      label: Linux distribution
+      options:
+        - Arch Linux
+        - Debian
+        - Ubuntu
+        - Fedora
+        - openSUSE
+        - NixOS
+        - Other (specify below)
+    validations:
+      required: true
+
+  - type: input
+    id: distro_other
+    attributes:
+      label: Other distribution (if applicable)
+      description: "If you selected 'Other' above, specify here"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: desktop
+    attributes:
+      label: Desktop environment
+      options:
+        - KDE Plasma
+        - GNOME
+        - Xfce
+        - Sway / Wayland compositor
+        - Headless (no GUI)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: vpn_type
+    attributes:
+      label: VPN type
+      options:
+        - OpenVPN
+        - WireGuard
+        - Not applicable
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: "Clear description of the bug. What did you expect? What actually happened?"
+      placeholder: "I ran `shroud connect my-vpn` and..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: "Minimum steps to trigger the bug. Be specific."
+      placeholder: |
+        1. Run `shroud connect my-vpn`
+        2. Wait for connection
+        3. Run `shroud ks on`
+        4. Observe error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Debug logs
+      description: "Run `shroud debug on`, reproduce the bug, then paste relevant output from `shroud debug tail`. Redact any VPN server addresses or IPs you don't want public."
+      render: shell
+    validations:
+      required: false
+
+  - type: dropdown
+    id: kill_switch
+    attributes:
+      label: Kill switch state when bug occurred
+      options:
+        - Enabled
+        - Disabled
+        - Not applicable
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: "Anything else — screenshots, network setup, relevant config (redact sensitive values)."
+    validations:
+      required: false
