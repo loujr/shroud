@@ -202,6 +202,10 @@ pub struct Config {
     /// this IP. A mismatch is treated as a leak (Dead result).
     /// Obtain with: `curl https://ifconfig.me/ip` while connected to VPN.
     pub expected_exit_ip: Option<String>,
+    /// Enable DNS leak detection during health checks.
+    /// Default: true when dns_mode is tunnel or strict, false otherwise.
+    #[serde(default)]
+    pub dns_leak_check: Option<bool>,
     /// Maximum reconnection attempts before giving up
     pub max_reconnect_attempts: u32,
     /// Kill switch enabled (blocks non-VPN traffic)
@@ -242,6 +246,7 @@ impl Default for Config {
             health_degraded_threshold_ms: 5000,
             health_check_endpoints: Vec::new(),
             expected_exit_ip: None,
+            dns_leak_check: None,
             max_reconnect_attempts: 10,
             kill_switch_enabled: false,
             dns_mode: DnsMode::default(),
@@ -645,6 +650,7 @@ mod tests {
             health_degraded_threshold_ms: 3000,
             health_check_endpoints: vec!["https://example.com/health".to_string()],
             expected_exit_ip: None,
+            dns_leak_check: None,
             max_reconnect_attempts: 5,
             kill_switch_enabled: true,
             dns_mode: DnsMode::Localhost,
@@ -829,6 +835,7 @@ mod tests {
             health_degraded_threshold_ms: 1500,
             health_check_endpoints: vec!["https://example.com".to_string()],
             expected_exit_ip: None,
+            dns_leak_check: None,
             max_reconnect_attempts: 5,
             kill_switch_enabled: true,
             dns_mode: DnsMode::Localhost,

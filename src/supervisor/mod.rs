@@ -228,10 +228,17 @@ impl VpnSupervisor {
             NotificationManager::new(config_store.config.notifications.clone());
         let tray = TrayBridge::new(tray_handle, notification_manager);
 
+        // DNS leak check defaults to true when dns_mode is tunnel/strict
+        let dns_leak_check = config_store.config.dns_leak_check.unwrap_or(matches!(
+            config_store.config.dns_mode,
+            crate::config::DnsMode::Tunnel | crate::config::DnsMode::Strict
+        ));
+
         let health_config = if config_store.config.health_check_endpoints.is_empty() {
             HealthConfig {
                 degraded_threshold_ms: config_store.config.health_degraded_threshold_ms,
                 expected_exit_ip: config_store.config.expected_exit_ip.clone(),
+                dns_leak_check,
                 ..Default::default()
             }
         } else {
@@ -239,6 +246,7 @@ impl VpnSupervisor {
                 endpoints: config_store.config.health_check_endpoints.clone(),
                 degraded_threshold_ms: config_store.config.health_degraded_threshold_ms,
                 expected_exit_ip: config_store.config.expected_exit_ip.clone(),
+                dns_leak_check,
                 ..Default::default()
             }
         };

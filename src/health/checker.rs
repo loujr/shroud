@@ -3,9 +3,10 @@
 
 //! Health checker implementation
 //!
-//! Verifies VPN tunnel connectivity by making HTTP requests through the tunnel
-//! and checking for expected responses.
+//! Verifies VPN tunnel connectivity by making HTTP requests through the tunnel,
+//! validating exit IP (if configured), and checking for DNS leaks.
 
+use std::net::IpAddr;
 use std::time::{Duration, Instant};
 use tokio::task::spawn_blocking;
 use tokio::time::timeout;
@@ -42,6 +43,10 @@ pub struct HealthConfig {
     /// Expected VPN exit IP address. If set, health checks verify that the
     /// detected exit IP matches this value. A mismatch is treated as a leak.
     pub expected_exit_ip: Option<String>,
+    /// Enable DNS leak detection. When true, health checks verify that
+    /// system DNS resolvers are localhost or private IPs (not ISP resolvers).
+    /// Should be enabled when dns_mode is `tunnel` or `strict`.
+    pub dns_leak_check: bool,
 }
 
 impl Default for HealthConfig {
@@ -59,6 +64,7 @@ impl Default for HealthConfig {
             // Require 2 consecutive degraded checks before warning
             degraded_threshold: 2,
             expected_exit_ip: None,
+            dns_leak_check: false,
         }
     }
 }
@@ -165,6 +171,22 @@ impl HealthChecker {
                         // If IP couldn't be extracted, skip validation (endpoint
                         // may have changed format). The connectivity check still
                         // succeeded, so we don't fail on extraction issues.
+                    }
+
+                    // DNS leak check (if enabled)
+                    if self.config.dns_leak_check {
+                        match check_dns_leak() {
+                            DnsLeakResult::Secure => {
+                                debug!("DNS leak check passed");
+                            }
+                            DnsLeakResult::Leak { resolvers } => {
+                                warn!("DNS leak detected: non-tunnel resolvers {:?}", resolvers);
+                                return HealthResult::Degraded { latency_ms };
+                            }
+                            DnsLeakResult::Unknown => {
+                                debug!("DNS leak check inconclusive (could not read resolv.conf)");
+                            }
+                        }
                     }
 
                     if latency_ms > self.config.degraded_threshold_ms {
@@ -304,6 +326,118 @@ pub fn extract_ip_from_response(body: &str, endpoint: &str) -> Option<String> {
     }
 }
 
+/// Result of a DNS leak check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DnsLeakResult {
+    /// DNS resolvers are localhost or private IPs — safe.
+    Secure,
+    /// Non-tunnel DNS resolvers detected — potential leak.
+    Leak { resolvers: Vec<String> },
+    /// Could not determine resolver configuration.
+    Unknown,
+}
+
+/// Check for DNS leaks by inspecting system resolver configuration.
+///
+/// Reads `/etc/resolv.conf` and checks that all configured nameservers are
+/// localhost or private IPs. Public IP nameservers indicate the system is
+/// sending DNS queries directly to an ISP or public resolver, bypassing the
+/// VPN tunnel.
+///
+/// This does NOT make network requests — it only reads local configuration.
+pub fn check_dns_leak() -> DnsLeakResult {
+    let content = match std::fs::read_to_string("/etc/resolv.conf") {
+        Ok(c) => c,
+        Err(_) => return DnsLeakResult::Unknown,
+    };
+    check_dns_leak_from_resolv_conf(&content)
+}
+
+/// Parse `/etc/resolv.conf` content and check for DNS leaks.
+///
+/// Extracted as a pure function for testability.
+pub fn check_dns_leak_from_resolv_conf(content: &str) -> DnsLeakResult {
+    let resolvers = parse_resolv_conf(content);
+
+    if resolvers.is_empty() {
+        // No nameservers found — can't determine DNS safety.
+        // This can happen with systemd-resolved stub (127.0.0.53 in resolv.conf
+        // is handled below). If truly empty, we can't tell.
+        return DnsLeakResult::Unknown;
+    }
+
+    let mut leaking: Vec<String> = Vec::new();
+    for resolver in &resolvers {
+        if !is_safe_resolver(resolver) {
+            leaking.push(resolver.to_string());
+        }
+    }
+
+    if leaking.is_empty() {
+        DnsLeakResult::Secure
+    } else {
+        DnsLeakResult::Leak { resolvers: leaking }
+    }
+}
+
+/// Parse nameserver entries from `/etc/resolv.conf` content.
+///
+/// Returns a list of IP address strings from `nameserver` lines.
+pub fn parse_resolv_conf(content: &str) -> Vec<String> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            // Skip comments and empty lines
+            if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+                return None;
+            }
+            // Extract nameserver IP
+            if let Some(rest) = line.strip_prefix("nameserver") {
+                let ip = rest.trim();
+                if !ip.is_empty() {
+                    return Some(ip.to_string());
+                }
+            }
+            None
+        })
+        .collect()
+}
+
+/// Check if a DNS resolver IP is "safe" (localhost or private network).
+///
+/// Safe resolvers:
+/// - `127.0.0.0/8` (loopback, including `127.0.0.53` for systemd-resolved)
+/// - `::1` (IPv6 loopback)
+/// - `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` (RFC 1918 private)
+/// - `169.254.0.0/16` (link-local)
+/// - `fd00::/8` (IPv6 unique local)
+/// - `fe80::/10` (IPv6 link-local)
+///
+/// Public IPs (e.g., `8.8.8.8`, `1.1.1.1`) are NOT safe — they indicate
+/// DNS queries may bypass the VPN tunnel.
+pub fn is_safe_resolver(ip_str: &str) -> bool {
+    let ip: IpAddr = match ip_str.parse() {
+        Ok(ip) => ip,
+        Err(_) => return false, // Can't parse — treat as unsafe
+    };
+
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_loopback()           // 127.0.0.0/8
+                || v4.octets()[0] == 10 // 10.0.0.0/8
+                || (v4.octets()[0] == 172 && (16..=31).contains(&v4.octets()[1])) // 172.16.0.0/12
+                || (v4.octets()[0] == 192 && v4.octets()[1] == 168)              // 192.168.0.0/16
+                || (v4.octets()[0] == 169 && v4.octets()[1] == 254) // 169.254.0.0/16
+        }
+        IpAddr::V6(v6) => {
+            v6.is_loopback()                    // ::1
+                || (v6.segments()[0] & 0xff00) == 0xfd00  // fd00::/8 (unique local)
+                || (v6.segments()[0] & 0xffc0) == 0xfe80 // fe80::/10 (link-local)
+        }
+    }
+}
+
 impl Default for HealthChecker {
     fn default() -> Self {
         Self::new()
@@ -340,6 +474,7 @@ mod tests {
             failure_threshold: 5,
             degraded_threshold: 2,
             expected_exit_ip: None,
+            dns_leak_check: false,
         };
         let checker = HealthChecker::with_config(config.clone());
         assert_eq!(checker.config.timeout_secs, 5);
@@ -638,5 +773,159 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(config.expected_exit_ip, Some("203.0.113.1".to_string()));
+    }
+
+    // ----- DNS leak detection -----
+
+    #[test]
+    fn test_parse_resolv_conf_basic() {
+        let content = "# Generated by NetworkManager\nnameserver 127.0.0.53\n";
+        let resolvers = parse_resolv_conf(content);
+        assert_eq!(resolvers, vec!["127.0.0.53"]);
+    }
+
+    #[test]
+    fn test_parse_resolv_conf_multiple() {
+        let content = "nameserver 8.8.8.8\nnameserver 8.8.4.4\n";
+        let resolvers = parse_resolv_conf(content);
+        assert_eq!(resolvers, vec!["8.8.8.8", "8.8.4.4"]);
+    }
+
+    #[test]
+    fn test_parse_resolv_conf_with_comments() {
+        let content = "# comment\n; another comment\nnameserver 127.0.0.1\n\nsearch example.com\n";
+        let resolvers = parse_resolv_conf(content);
+        assert_eq!(resolvers, vec!["127.0.0.1"]);
+    }
+
+    #[test]
+    fn test_parse_resolv_conf_empty() {
+        let resolvers = parse_resolv_conf("");
+        assert!(resolvers.is_empty());
+    }
+
+    #[test]
+    fn test_parse_resolv_conf_no_nameservers() {
+        let content = "search example.com\noptions ndots:5\n";
+        let resolvers = parse_resolv_conf(content);
+        assert!(resolvers.is_empty());
+    }
+
+    #[test]
+    fn test_is_safe_resolver_loopback() {
+        assert!(is_safe_resolver("127.0.0.1"));
+        assert!(is_safe_resolver("127.0.0.53")); // systemd-resolved
+        assert!(is_safe_resolver("127.0.1.1"));
+        assert!(is_safe_resolver("::1"));
+    }
+
+    #[test]
+    fn test_is_safe_resolver_private() {
+        assert!(is_safe_resolver("10.0.0.1"));
+        assert!(is_safe_resolver("10.200.200.1"));
+        assert!(is_safe_resolver("172.16.0.1"));
+        assert!(is_safe_resolver("172.31.255.254"));
+        assert!(is_safe_resolver("192.168.1.1"));
+        assert!(is_safe_resolver("192.168.0.1"));
+        assert!(is_safe_resolver("169.254.1.1"));
+    }
+
+    #[test]
+    fn test_is_safe_resolver_ipv6_private() {
+        assert!(is_safe_resolver("fd00::1"));
+        assert!(is_safe_resolver("fd12:3456:789a::1"));
+        assert!(is_safe_resolver("fe80::1"));
+    }
+
+    #[test]
+    fn test_is_safe_resolver_public_unsafe() {
+        assert!(!is_safe_resolver("8.8.8.8"));
+        assert!(!is_safe_resolver("8.8.4.4"));
+        assert!(!is_safe_resolver("1.1.1.1"));
+        assert!(!is_safe_resolver("1.0.0.1"));
+        assert!(!is_safe_resolver("208.67.222.222")); // OpenDNS
+        assert!(!is_safe_resolver("9.9.9.9")); // Quad9
+    }
+
+    #[test]
+    fn test_is_safe_resolver_not_an_ip() {
+        assert!(!is_safe_resolver("not-an-ip"));
+        assert!(!is_safe_resolver(""));
+    }
+
+    #[test]
+    fn test_is_safe_resolver_172_boundary() {
+        // 172.15.x.x is NOT private (below 172.16)
+        assert!(!is_safe_resolver("172.15.255.255"));
+        // 172.32.x.x is NOT private (above 172.31)
+        assert!(!is_safe_resolver("172.32.0.1"));
+    }
+
+    #[test]
+    fn test_dns_leak_check_localhost_secure() {
+        let content = "nameserver 127.0.0.53\n";
+        assert_eq!(
+            check_dns_leak_from_resolv_conf(content),
+            DnsLeakResult::Secure
+        );
+    }
+
+    #[test]
+    fn test_dns_leak_check_private_secure() {
+        let content = "nameserver 10.8.0.1\nnameserver 10.8.0.2\n";
+        assert_eq!(
+            check_dns_leak_from_resolv_conf(content),
+            DnsLeakResult::Secure
+        );
+    }
+
+    #[test]
+    fn test_dns_leak_check_public_leaks() {
+        let content = "nameserver 8.8.8.8\nnameserver 8.8.4.4\n";
+        match check_dns_leak_from_resolv_conf(content) {
+            DnsLeakResult::Leak { resolvers } => {
+                assert_eq!(resolvers, vec!["8.8.8.8", "8.8.4.4"]);
+            }
+            other => panic!("Expected Leak, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_dns_leak_check_mixed() {
+        // One safe, one leaking
+        let content = "nameserver 127.0.0.53\nnameserver 8.8.8.8\n";
+        match check_dns_leak_from_resolv_conf(content) {
+            DnsLeakResult::Leak { resolvers } => {
+                assert_eq!(resolvers, vec!["8.8.8.8"]);
+            }
+            other => panic!("Expected Leak, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_dns_leak_check_empty_unknown() {
+        assert_eq!(check_dns_leak_from_resolv_conf(""), DnsLeakResult::Unknown);
+    }
+
+    #[test]
+    fn test_dns_leak_check_no_nameservers_unknown() {
+        let content = "search example.com\noptions ndots:5\n";
+        assert_eq!(
+            check_dns_leak_from_resolv_conf(content),
+            DnsLeakResult::Unknown
+        );
+    }
+
+    #[test]
+    fn test_dns_leak_result_equality() {
+        assert_eq!(DnsLeakResult::Secure, DnsLeakResult::Secure);
+        assert_eq!(DnsLeakResult::Unknown, DnsLeakResult::Unknown);
+        assert_ne!(DnsLeakResult::Secure, DnsLeakResult::Unknown);
+    }
+
+    #[test]
+    fn test_health_config_dns_leak_check_default() {
+        let config = HealthConfig::default();
+        assert!(!config.dns_leak_check);
     }
 }

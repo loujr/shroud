@@ -335,6 +335,7 @@ fn regression_health_checker_thresholds() {
         failure_threshold: 3,
         degraded_threshold: 2,
         expected_exit_ip: None,
+        dns_leak_check: false,
     };
 
     let mut checker = HealthChecker::with_config(config);

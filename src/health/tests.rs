@@ -25,6 +25,7 @@ mod health_tests {
             failure_threshold: 2,
             degraded_threshold: 1,
             expected_exit_ip: None,
+            dns_leak_check: false,
         };
 
         assert_eq!(config.endpoints.len(), 1);
@@ -46,6 +47,7 @@ mod health_tests {
             failure_threshold: 1,
             degraded_threshold: 1,
             expected_exit_ip: None,
+            dns_leak_check: false,
         };
 
         let mut checker = HealthChecker::with_config(config);
