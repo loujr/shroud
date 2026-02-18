@@ -12,6 +12,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.17.0] - 2026-02-17
+
+### Added
+- **health: DNS leak detection** — passive DNS leak detection during health checks. Reads `/etc/resolv.conf` and verifies all nameservers are localhost or RFC 1918 private IPs. Public resolvers (8.8.8.8, 1.1.1.1, etc.) indicate DNS queries may bypass the VPN tunnel. Reports `Degraded` state when leaking DNS is detected. Auto-enabled when `dns_mode` is `tunnel` or `strict`. No network requests — inspects local config only (Principle IV). Config: `dns_leak_check = true/false`.
+- **health: VPN exit IP validation** — optional `expected_exit_ip` config option. When set, health checks extract the detected exit IP from the response body (Cloudflare trace or plain text) and compare against the expected value. Mismatch reports `Dead` with "IP leak detected" reason. No extra HTTP requests — IP extracted from existing health check response. Config: `expected_exit_ip = "203.0.113.1"`.
+- **fuzz testing** — three `cargo-fuzz` targets for critical parser surfaces:
+  - `fuzz_ipc_command` — JSON deserialization of `IpcCommand` with round-trip verification.
+  - `fuzz_config_parse` — TOML deserialization of `Config` with validation round-trip.
+  - `fuzz_vpn_name` — `validate_vpn_name()` with arbitrary string input.
+  - Infrastructure: `fuzz/Cargo.toml`, `scripts/fuzz.sh` convenience runner, `.gitignore` entries for corpus/artifacts.
+  - Added `src/lib.rs` library target exposing `state`, `health`, `config`, `cli::validation`, `ipc::protocol`, and `notifications` modules for fuzz/integration test access.
+- **docs: IPC security model** — comprehensive section in `docs/SECURITY.md` documenting: why IPC is not encrypted (Unix domain sockets are local-only, 0600 permissions), socket path selection (`XDG_RUNTIME_DIR`, `/tmp` avoidance), symlink protection (TOCTOU mitigation), peer PID logging (`SO_PEERCRED`), connection limits (semaphore, 64KB message cap, 100 commands/session), protocol versioning handshake, and trust boundary (Unix user model).
+- **regression tests: behavioral state machine tests** — replaced fragile `include_str!` regression tests with real behavioral tests exercising the actual `StateMachine`, `HealthChecker`, and state types. 7 behavioral tests added: `ConnectionFailed` from Connecting/Reconnecting, retry exhaustion, `UserDisable` from all states, Display/Clone/Debug trait verification, `HealthChecker::with_config`. Remaining `include_str!` tests for killswitch/ipc/nm modules retained with `TODO` markers.
+- **cargo-deny config** — `deny.toml` for automated license compliance enforcement in CI. Allows permissive licenses (MIT, Apache-2.0, BSD, ISC, Unlicense, Zlib, CC0), denies copyleft (GPL, AGPL, SSPL).
+
+### Changed
+- **legal: comprehensive licensing framework overhaul** — all 96+ `.rs` source files and 7 shell scripts now carry correct SPDX headers with `// Copyright (C) 2026 Louis Nelson Jr. <https://lousclues.com>`. Copyright holder updated from alias (`loujr`) to legal name (`Louis Nelson Jr.`) across all legally consequential documents.
+  - `NOTICE` — full identity mapping (Louis Nelson Jr. ↔ loujr ↔ lousclues), license summary, third-party attribution, trademark notice.
+  - `TRADEMARKS.md` — trademark ownership tied to legal name, common-law status documented, detailed permitted/prohibited uses, fork naming policy.
+  - `CONTRIBUTOR-LICENSE.md` — versioned CLA (v1.0) with plain-language summary, patent grant, employer/contractor IP provisions, future licensing acknowledgment.
+  - `LICENSE-COMMERCIAL.md` — formal commercial license template (v1.0) with numbered clauses: grant, restrictions, fees, warranty, liability cap, termination with GPL fallback, audit rights.
+  - `LICENSE-DOCS.md` — CC BY 4.0 with explicit scope (included/excluded files).
+  - `LICENSING.md` — file-type license coverage map, `LicenseRef-Commercial` SPDX definition, canonical header formats, CI verification script template.
+  - `GOVERNANCE.md` — succession plan with three scenarios (temporary absence, permanent unavailability, voluntary transfer), designated successor placeholder.
+  - `DEPENDENCY-AUDIT.md` — dependency license compatibility matrix (20+ license types), all 19 direct deps audited, `cargo-deny` config template, LGPL/static-linking warning.
+- **legal: governing law** — updated LICENSE-COMMERCIAL.md and CONTRIBUTOR-LICENSE.md from vague "United States" to "Commonwealth of Virginia" with conflict-of-laws exclusion.
+- **legal: directory reorganization** — supplementary license files moved to `licenses/` directory (LICENSE-COMMERCIAL.md, LICENSE-DOCS.md, LICENSING.md, CONTRIBUTOR-LICENSE.md, THIRD-PARTY-LICENSES, DEPENDENCY-AUDIT.md). LICENSE, NOTICE, TRADEMARKS.md, GOVERNANCE.md stay in root. All internal cross-references updated.
+- **state machine: retry counter deduplication** — `self.retries` is now the canonical source of truth for retry count. `VpnState::Reconnecting { attempt }` is always derived from `self.retries` at transition time. Fixed 3 transitions (Connected→Reconnecting, Degraded→Reconnecting via HealthDead/NmVpnDown) where `attempt` was set to `1` without updating `self.retries`. Added `debug_assert!` after every Reconnecting transition to catch future desyncs. `max_attempts` always derived from `self.config.max_retries`.
+
+### Fixed
+- **cli: UTF-8 panic in VPN name validation** — `validate_vpn_name()` panicked on multi-byte UTF-8 strings exceeding `MAX_VPN_NAME_LENGTH` due to byte-index slicing (`&value[..50]`). Fixed to use `.chars().take(50)` for safe truncation at character boundaries. Discovered by fuzz testing in <1 second.
+- **formatting** — applied `cargo fmt` to resolve CI lint failures in state machine debug assertion and regression test formatting.
+
+### Security
+- DNS leak detection prevents silent DNS bypass when VPN is connected with kill switch active.
+- VPN exit IP validation prevents health checker from reporting "Healthy" when traffic bypasses the VPN.
+- Fuzz testing covers three critical parser surfaces — found and fixed a real bug immediately.
+
+---
+
 ## [1.16.20] - 2026-02-16
 
 ### Added
