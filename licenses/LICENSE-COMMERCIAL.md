@@ -107,7 +107,7 @@ The Licensor reserves the right, upon reasonable notice (no less than 30 days), 
 
 ### 9. Governing Law
 
-This agreement shall be governed by and construed in accordance with the laws of the United States. Any disputes shall be resolved in the courts of competent jurisdiction in the United States.
+This agreement shall be governed by and construed in accordance with the laws of the Commonwealth of Virginia, without regard to its conflict of laws principles. Any disputes shall be resolved in the state or federal courts located in Virginia.
 
 ### 10. Entire Agreement
 

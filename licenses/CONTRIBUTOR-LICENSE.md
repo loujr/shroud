@@ -95,7 +95,7 @@ For substantial contributions (new modules, architectural changes, or contributi
 
 ## Governing Law
 
-This CLA shall be governed by and construed in accordance with the laws of the United States. Any disputes arising under this CLA shall be resolved in the courts of competent jurisdiction in the United States.
+This CLA shall be governed by and construed in accordance with the laws of the Commonwealth of Virginia, without regard to its conflict of laws principles. Any disputes arising under this CLA shall be resolved in the state or federal courts located in Virginia.
 
 ## Questions
 
