@@ -106,6 +106,55 @@ Kill switch tests need root:
 
 ---
 
+## Fuzz Testing
+
+Shroud includes fuzz targets for critical parsers: IPC commands, config files, and VPN name validation. Fuzzing finds crashes and edge cases that unit tests miss.
+
+### Setup
+
+```bash
+# Install cargo-fuzz (requires nightly)
+cargo install cargo-fuzz
+rustup toolchain install nightly
+```
+
+### Running Fuzz Targets
+
+```bash
+# Run all targets for 60 seconds each
+./scripts/fuzz.sh
+
+# Run a specific target indefinitely (Ctrl+C to stop)
+cargo +nightly fuzz run fuzz_ipc_command
+
+# Run all targets for 5 minutes each
+./scripts/fuzz.sh 300
+```
+
+### Available Targets
+
+| Target | What It Fuzzes | Input |
+|--------|---------------|-------|
+| `fuzz_ipc_command` | IPC JSON command parsing (`IpcCommand`) | Arbitrary bytes as JSON |
+| `fuzz_config_parse` | TOML config parsing (`Config`) | Arbitrary bytes as TOML |
+| `fuzz_vpn_name` | VPN name validation (`validate_vpn_name`) | Arbitrary bytes as string |
+
+### If a Crash Is Found
+
+Crash inputs are saved to `fuzz/artifacts/<target>/`. To reproduce:
+
+```bash
+cargo +nightly fuzz run fuzz_ipc_command fuzz/artifacts/fuzz_ipc_command/crash-<hash>
+```
+
+Fix the crash, then confirm the fix:
+
+```bash
+cargo +nightly fuzz run fuzz_ipc_command fuzz/artifacts/fuzz_ipc_command/
+```
+
+---
+
 ## Code Quality
 
 Before you commit:

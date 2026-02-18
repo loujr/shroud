@@ -144,9 +144,11 @@ pub fn validate_vpn_name(value: &str) -> ValidationResult<String> {
     }
 
     if trimmed.len() > MAX_VPN_NAME_LENGTH {
+        // Truncate at a valid UTF-8 char boundary for the error message
+        let truncated: String = value.chars().take(50).collect();
         return Err(ValidationError::new(
             "VPN name",
-            &format!("{}...", &value[..value.len().min(50)]),
+            &format!("{}...", truncated),
             &format!(
                 "exceeds maximum length of {} characters",
                 MAX_VPN_NAME_LENGTH

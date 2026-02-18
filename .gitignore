@@ -16,3 +16,8 @@ Thumbs.db
 *.tmp
 *.bak
 coverage/
+
+# Fuzz testing artifacts
+fuzz/target/
+fuzz/corpus/
+fuzz/artifacts/
