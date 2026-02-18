@@ -39,6 +39,9 @@ pub struct HealthConfig {
     pub failure_threshold: u32,
     /// Number of consecutive degraded checks before warning
     pub degraded_threshold: u32,
+    /// Expected VPN exit IP address. If set, health checks verify that the
+    /// detected exit IP matches this value. A mismatch is treated as a leak.
+    pub expected_exit_ip: Option<String>,
 }
 
 impl Default for HealthConfig {
@@ -55,6 +58,7 @@ impl Default for HealthConfig {
             failure_threshold: 3,
             // Require 2 consecutive degraded checks before warning
             degraded_threshold: 2,
+            expected_exit_ip: None,
         }
     }
 }
@@ -137,8 +141,31 @@ impl HealthChecker {
 
         for endpoint in &self.config.endpoints {
             match self.check_endpoint(endpoint).await {
-                Ok(latency_ms) => {
+                Ok((latency_ms, body)) => {
                     self.consecutive_failures = 0;
+
+                    // Exit IP validation (if configured)
+                    if let Some(ref expected_ip) = self.config.expected_exit_ip {
+                        let detected_ip = extract_ip_from_response(&body, endpoint);
+                        if let Some(actual_ip) = detected_ip {
+                            if actual_ip != *expected_ip {
+                                warn!(
+                                    "IP leak detected: expected {}, got {}",
+                                    expected_ip, actual_ip
+                                );
+                                return HealthResult::Dead {
+                                    reason: format!(
+                                        "IP leak detected: expected {}, got {}",
+                                        expected_ip, actual_ip
+                                    ),
+                                };
+                            }
+                            debug!("Exit IP verified: {} ({}ms)", actual_ip, latency_ms);
+                        }
+                        // If IP couldn't be extracted, skip validation (endpoint
+                        // may have changed format). The connectivity check still
+                        // succeeded, so we don't fail on extraction issues.
+                    }
 
                     if latency_ms > self.config.degraded_threshold_ms {
                         self.consecutive_degraded += 1;
@@ -194,17 +221,16 @@ impl HealthChecker {
         }
     }
 
-    /// Check a single endpoint using native HTTP (ureq)
-    ///
-    /// Returns latency in milliseconds on success.
     /// Check a single health endpoint.
+    ///
+    /// Returns `(latency_ms, response_body)` on success.
     ///
     /// Uses `spawn_blocking` + `ureq` (synchronous HTTP). The outer
     /// `tokio::time::timeout` cancels the future if the blocking thread
     /// takes too long, but the thread itself continues until `ureq` returns
     /// (DNS timeout can be 30s+ on some resolvers). At most one leaked thread
     /// per health check interval — acceptable given 30s default interval.
-    async fn check_endpoint(&self, endpoint: &str) -> Result<u64, String> {
+    async fn check_endpoint(&self, endpoint: &str) -> Result<(u64, String), String> {
         let url = endpoint.to_string();
         let timeout_secs = self.config.timeout_secs;
 
@@ -223,10 +249,9 @@ impl HealthChecker {
                 match agent.get(&url).call() {
                     Ok(resp) => {
                         let status = resp.status().as_u16();
-                        // Consume body to complete request
-                        let _ = resp.into_body().read_to_string();
+                        let body = resp.into_body().read_to_string().unwrap_or_default();
                         if (200..400).contains(&status) {
-                            Ok(start.elapsed().as_millis() as u64)
+                            Ok((start.elapsed().as_millis() as u64, body))
                         } else {
                             Err(format!("HTTP status: {}", status))
                         }
@@ -241,6 +266,40 @@ impl HealthChecker {
             Ok(Ok(inner)) => inner,
             Ok(Err(e)) => Err(format!("spawn_blocking error: {}", e)),
             Err(_) => Err("timeout".to_string()),
+        }
+    }
+}
+
+/// Extract an IP address from a health check response body.
+///
+/// Handles two formats:
+/// - Cloudflare `cdn-cgi/trace`: multiline key=value, extract the `ip=` line
+/// - Plain text (ifconfig.me, api.ipify.org): the entire body is the IP
+pub fn extract_ip_from_response(body: &str, endpoint: &str) -> Option<String> {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if endpoint.contains("cdn-cgi/trace") {
+        // Cloudflare trace format: "fl=xxx\nip=1.2.3.4\n..."
+        for line in trimmed.lines() {
+            if let Some(ip) = line.strip_prefix("ip=") {
+                let ip = ip.trim();
+                if !ip.is_empty() {
+                    return Some(ip.to_string());
+                }
+            }
+        }
+        None
+    } else {
+        // Plain text format: entire body is the IP address
+        // Take only the first line and validate it looks like an IP
+        let first_line = trimmed.lines().next()?.trim();
+        if first_line.parse::<std::net::IpAddr>().is_ok() {
+            Some(first_line.to_string())
+        } else {
+            None
         }
     }
 }
@@ -280,6 +339,7 @@ mod tests {
             degraded_threshold_ms: 1000,
             failure_threshold: 5,
             degraded_threshold: 2,
+            expected_exit_ip: None,
         };
         let checker = HealthChecker::with_config(config.clone());
         assert_eq!(checker.config.timeout_secs, 5);
@@ -497,5 +557,86 @@ mod tests {
         assert_eq!(checker.consecutive_failures, 0);
         assert_eq!(checker.consecutive_degraded, 0);
         assert!(checker.suspended_until.is_none());
+    }
+
+    // ----- Exit IP extraction -----
+
+    #[test]
+    fn test_extract_ip_from_cloudflare_trace() {
+        let body = "fl=123f456\nh=1.1.1.1\nip=203.0.113.42\nts=1234567890\n";
+        let ip = extract_ip_from_response(body, "https://1.1.1.1/cdn-cgi/trace");
+        assert_eq!(ip, Some("203.0.113.42".to_string()));
+    }
+
+    #[test]
+    fn test_extract_ip_from_cloudflare_trace_ipv6() {
+        let body = "fl=123\nip=2001:db8::1\nts=1234567890\n";
+        let ip = extract_ip_from_response(body, "https://1.1.1.1/cdn-cgi/trace");
+        assert_eq!(ip, Some("2001:db8::1".to_string()));
+    }
+
+    #[test]
+    fn test_extract_ip_from_cloudflare_trace_missing_ip() {
+        let body = "fl=123\nh=1.1.1.1\nts=1234567890\n";
+        let ip = extract_ip_from_response(body, "https://1.1.1.1/cdn-cgi/trace");
+        assert_eq!(ip, None);
+    }
+
+    #[test]
+    fn test_extract_ip_from_plain_text_ipv4() {
+        let body = "203.0.113.42\n";
+        let ip = extract_ip_from_response(body, "https://ifconfig.me/ip");
+        assert_eq!(ip, Some("203.0.113.42".to_string()));
+    }
+
+    #[test]
+    fn test_extract_ip_from_plain_text_ipv6() {
+        let body = "2001:db8::1\n";
+        let ip = extract_ip_from_response(body, "https://ifconfig.me/ip");
+        assert_eq!(ip, Some("2001:db8::1".to_string()));
+    }
+
+    #[test]
+    fn test_extract_ip_from_plain_text_trimmed() {
+        let body = "  203.0.113.42  \n";
+        let ip = extract_ip_from_response(body, "https://api.ipify.org");
+        assert_eq!(ip, Some("203.0.113.42".to_string()));
+    }
+
+    #[test]
+    fn test_extract_ip_from_empty_body() {
+        let ip = extract_ip_from_response("", "https://ifconfig.me/ip");
+        assert_eq!(ip, None);
+    }
+
+    #[test]
+    fn test_extract_ip_from_garbage() {
+        let ip = extract_ip_from_response("not an ip address", "https://ifconfig.me/ip");
+        assert_eq!(ip, None);
+    }
+
+    #[test]
+    fn test_extract_ip_from_html() {
+        // If an endpoint returns HTML instead of plain text, don't extract garbage
+        let body = "<html><body>Your IP is 1.2.3.4</body></html>";
+        let ip = extract_ip_from_response(body, "https://ifconfig.me/ip");
+        assert_eq!(ip, None);
+    }
+
+    // ----- Exit IP validation config -----
+
+    #[test]
+    fn test_health_config_default_no_exit_ip() {
+        let config = HealthConfig::default();
+        assert!(config.expected_exit_ip.is_none());
+    }
+
+    #[test]
+    fn test_health_config_with_exit_ip() {
+        let config = HealthConfig {
+            expected_exit_ip: Some("203.0.113.1".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config.expected_exit_ip, Some("203.0.113.1".to_string()));
     }
 }

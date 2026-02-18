@@ -198,6 +198,10 @@ pub struct Config {
     /// Custom health check endpoints (URLs). If empty, uses built-in defaults.
     #[serde(default)]
     pub health_check_endpoints: Vec<String>,
+    /// Expected VPN exit IP. If set, health checks verify traffic exits through
+    /// this IP. A mismatch is treated as a leak (Dead result).
+    /// Obtain with: `curl https://ifconfig.me/ip` while connected to VPN.
+    pub expected_exit_ip: Option<String>,
     /// Maximum reconnection attempts before giving up
     pub max_reconnect_attempts: u32,
     /// Kill switch enabled (blocks non-VPN traffic)
@@ -237,6 +241,7 @@ impl Default for Config {
             health_check_interval_secs: 30,
             health_degraded_threshold_ms: 5000,
             health_check_endpoints: Vec::new(),
+            expected_exit_ip: None,
             max_reconnect_attempts: 10,
             kill_switch_enabled: false,
             dns_mode: DnsMode::default(),
@@ -317,6 +322,16 @@ impl Config {
                 return Err(format!(
                     "custom_doh_blocklist[{}] is not a valid IPv4 address: {}",
                     i, ip
+                ));
+            }
+        }
+
+        // Validate expected_exit_ip if set
+        if let Some(ref ip) = self.expected_exit_ip {
+            if ip.parse::<std::net::IpAddr>().is_err() {
+                return Err(format!(
+                    "expected_exit_ip is not a valid IP address: {}",
+                    ip
                 ));
             }
         }
@@ -629,6 +644,7 @@ mod tests {
             health_check_interval_secs: 60,
             health_degraded_threshold_ms: 3000,
             health_check_endpoints: vec!["https://example.com/health".to_string()],
+            expected_exit_ip: None,
             max_reconnect_attempts: 5,
             kill_switch_enabled: true,
             dns_mode: DnsMode::Localhost,
@@ -812,6 +828,7 @@ mod tests {
             health_check_interval_secs: 45,
             health_degraded_threshold_ms: 1500,
             health_check_endpoints: vec!["https://example.com".to_string()],
+            expected_exit_ip: None,
             max_reconnect_attempts: 5,
             kill_switch_enabled: true,
             dns_mode: DnsMode::Localhost,

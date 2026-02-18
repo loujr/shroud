@@ -231,12 +231,14 @@ impl VpnSupervisor {
         let health_config = if config_store.config.health_check_endpoints.is_empty() {
             HealthConfig {
                 degraded_threshold_ms: config_store.config.health_degraded_threshold_ms,
+                expected_exit_ip: config_store.config.expected_exit_ip.clone(),
                 ..Default::default()
             }
         } else {
             HealthConfig {
                 endpoints: config_store.config.health_check_endpoints.clone(),
                 degraded_threshold_ms: config_store.config.health_degraded_threshold_ms,
+                expected_exit_ip: config_store.config.expected_exit_ip.clone(),
                 ..Default::default()
             }
         };

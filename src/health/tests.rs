@@ -24,6 +24,7 @@ mod health_tests {
             degraded_threshold_ms: 1000,
             failure_threshold: 2,
             degraded_threshold: 1,
+            expected_exit_ip: None,
         };
 
         assert_eq!(config.endpoints.len(), 1);
@@ -44,6 +45,7 @@ mod health_tests {
             degraded_threshold_ms: 500,
             failure_threshold: 1,
             degraded_threshold: 1,
+            expected_exit_ip: None,
         };
 
         let mut checker = HealthChecker::with_config(config);
