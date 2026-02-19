@@ -104,7 +104,8 @@ Boot-to-VPN in ~2–4s after network is ready (with `auto_connect = true` + head
 
 A system tray icon that stays out of your way. Left-click for the menu. That's it.
 
-<img width="313" alt="Shroud system tray menu" src="https://github.com/user-attachments/assets/7b00be8f-d97f-4b27-aabb-d4e56bb42a81" />
+<img width="306" height="569" alt="shroud3" src="https://github.com/user-attachments/assets/d5c5603a-153e-4d96-9ef9-7a4170b51f1c" />
+
 
 ---
 
