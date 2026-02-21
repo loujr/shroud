@@ -1,6 +1,6 @@
 # Architecture
 
-How Shroud is built. Not the marketing version — the actual structure.
+How Shroud is built. The actual structure, not the marketing version.
 
 ---
 
@@ -322,7 +322,7 @@ These aren't accidents. They're choices.
 
 We use nmcli subprocess calls for VPN connect/disconnect, D-Bus only for events.
 
-**Why:** nmcli handles all the edge cases — secrets, prompts, plugins. D-Bus VPN control is complex and varies by plugin. Principle V: Complexity Is Debt.
+**Why:** nmcli handles all the edge cases. Secrets, prompts, plugins. D-Bus VPN control is complex and varies by plugin. Principle V: Complexity Is Debt.
 
 ### Polling as fallback
 

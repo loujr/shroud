@@ -12,7 +12,7 @@ Shroud is not a VPN. It is the armor around one.
 
 We do not reinvent NetworkManager. We do not rewrite OpenVPN or WireGuard. We do not spawn daemons where none are needed.
 
-The Linux ecosystem already solved these problems — our job is to protect and enhance, not to compete.
+The Linux ecosystem already solved these problems. Our job is to protect and enhance, not to compete.
 
 When you wrap something, you respect its shape. Shroud follows the contours of the tools it surrounds.
 
@@ -22,7 +22,7 @@ When you wrap something, you respect its shape. Shroud follows the contours of t
 
 When something breaks, the user must know. No silent failures. No "connected" lies while packets fall into the void.
 
-But recovery should be graceful. Reconnect without fanfare. Restore state without drama. The user should feel the safety net catch them — not hear it creak.
+But recovery should be graceful. Reconnect without fanfare. Restore state without drama. The user should feel the safety net catch them, not hear it creak.
 
 Silence is for success. Alarms are for failure.
 
@@ -62,7 +62,7 @@ Simplicity is not laziness. It is discipline.
 
 We use NetworkManager because it is there. We use D-Bus because it is the lingua franca. We use XDG paths because that is where config belongs. We use iptables because it is the standard.
 
-Shroud should feel native on any Linux system — not like a foreign ambassador demanding special accommodations.
+Shroud should feel native on any Linux system, not like a foreign ambassador demanding special accommodations.
 
 When in Rome, use systemd.
 
@@ -102,7 +102,7 @@ The user's intent is sovereign.
 
 Most Linux users don't file bug reports. They just stop using software that breaks.
 
-Shroud is for the user who doesn't want to debug. Who doesn't want to read the wiki. Who wants to click "connect" and have it work — today, tomorrow, after a kernel update, after suspend, after three weeks of uptime.
+Shroud is for the user who doesn't want to debug. Who doesn't want to read the wiki. Who wants to click "connect" and have it work. Today, tomorrow, after a kernel update, after suspend, after three weeks of uptime.
 
 We are not building for the enthusiast who enjoys the fight. We are building for the professional who needs it to disappear into the background.
 
@@ -142,6 +142,6 @@ The answer should be obvious.
 
 ---
 
-*These principles are promises — to the user, to the system, and to ourselves.*
+*These principles are promises. To the user, to the system, and to ourselves.*
 
 *Break them only after serious discussion. Update them only when the world changes.*

@@ -93,12 +93,12 @@ You're done. The server is protected.
 
 ## How It Works
 
-When Shroud starts in headless mode:
+When Shroud starts in headless mode, here's what happens:
 
-1. **Boot kill switch activates** — All traffic blocked except loopback and LAN
-2. **VPN connects** — Using the connection named in `startup_server`
-3. **Kill switch transfers** — Boot rules replaced with normal kill switch rules
-4. **Monitoring begins** — Health checks, auto-reconnect, the usual
+1. **Boot kill switch activates** -- all traffic blocked except loopback and LAN
+2. **VPN connects** -- using the connection named in `startup_server`
+3. **Kill switch transfers** -- boot rules replaced with normal kill switch rules
+4. **Monitoring begins** -- health checks, auto-reconnect, the usual
 
 If the VPN drops, Shroud reconnects. If Shroud crashes, systemd restarts it. If the server reboots, everything comes back up automatically.
 
@@ -254,10 +254,10 @@ sudo iptables -X SHROUD_BOOT_KS
 
 ## Security Considerations
 
-- **Runs as root** — Required for iptables. This is intentional.
-- **Boot kill switch** — Blocks ALL traffic until VPN connects. This includes SSH unless you're on the LAN.
-- **persist_kill_switch** — If set to `true`, traffic stays blocked even after Shroud exits. Use carefully.
-- **Config permissions** — Should be 600 (owner read/write only).
+- **Runs as root** -- required for iptables. This is intentional.
+- **Boot kill switch** -- blocks ALL traffic until VPN connects. This includes SSH unless you're on the LAN.
+- **persist_kill_switch** -- if set to `true`, traffic stays blocked even after Shroud exits. Use carefully.
+- **Config permissions** -- should be 600 (owner read/write only).
 
 ---
 

@@ -76,7 +76,7 @@ Shroud has four DNS modes, controlled by `dns_mode` in your config:
 
 ### Blocking DNS-over-HTTPS
 
-Modern browsers love to bypass your DNS settings. Firefox, Chrome, Edge — they all have DNS-over-HTTPS baked in, which can leak queries even with a kill switch.
+Modern browsers love to bypass your DNS settings. Firefox, Chrome, Edge -- they all have DNS-over-HTTPS baked in, which can leak queries even with a kill switch.
 
 When `block_doh = true` (the default), Shroud blocks connections to known DoH provider IPs on port 443. This includes:
 
@@ -217,8 +217,8 @@ A kill switch should be simple enough to trust.
 If you can't understand what it's doing, you'll eventually disable it. We'd rather you keep it on.
 
 That's why every rule is:
-- **Auditable** — `iptables -L` shows you everything
-- **Explainable** — This doc tells you why each rule exists
-- **Removable** — Manual cleanup commands if something goes wrong
+- **Auditable** -- `iptables -L` shows you everything
+- **Explainable** -- this doc tells you why each rule exists
+- **Removable** -- manual cleanup commands if something goes wrong
 
 Your security shouldn't depend on faith. It should depend on clarity.

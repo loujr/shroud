@@ -1,6 +1,6 @@
 # Troubleshooting
 
-When things go wrong, the goal is to get you back online fast. No essay required.
+Something broke. Let's get you back online.
 
 ---
 
@@ -8,7 +8,7 @@ When things go wrong, the goal is to get you back online fast. No essay required
 
 ### "I have no internet"
 
-If Shroud crashed with the kill switch enabled, your traffic is blocked. That's the kill switch doing its job — just a bit too enthusiastically.
+If Shroud crashed with the kill switch enabled, your traffic is blocked. That's the kill switch doing its job, just a bit too enthusiastically.
 
 ```bash
 # Try this first
@@ -115,7 +115,7 @@ nmcli connection show | grep vpn
 nmcli connection up "your-vpn-name"
 ```
 
-If nmcli fails, the problem is upstream — check your VPN config or NetworkManager logs:
+If nmcli fails, the problem is upstream. Check your VPN config or NetworkManager logs:
 ```bash
 journalctl -u NetworkManager -f
 ```
@@ -227,7 +227,7 @@ pkill -f shroud
 rm -f "${XDG_RUNTIME_DIR}/shroud.sock"
 rm -f ~/.local/state/shroud/shroud.lock
 
-# Remove config (optional — you'll lose settings)
+# Remove config (optional -- you'll lose settings)
 rm -f ~/.config/shroud/config.toml
 
 # Clean any stale firewall rules

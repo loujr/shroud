@@ -46,9 +46,9 @@ We'd rather work partially than crash completely.
 
 Shroud periodically verifies its internal state matches reality:
 
-- `sync_state_from_nm()` — Query NM for actual VPN state
-- `sync_killswitch_state()` — Verify iptables rules exist
-- `is_actually_enabled()` — Check rule presence, not just our flag
+- `sync_state_from_nm()` -- query NM for actual VPN state
+- `sync_killswitch_state()` -- verify iptables rules exist
+- `is_actually_enabled()` -- check rule presence, not just our flag
 
 Trust, but verify. Every 30 seconds.
 
@@ -233,9 +233,9 @@ shroud status --json
 ### Log Monitoring
 
 Watch for these in logs:
-- `PANIC` — Something went very wrong
-- `ERROR` — Something failed
-- `kill switch` — Kill switch state changes
+- `PANIC` -- something went very wrong
+- `ERROR` -- something failed
+- `kill switch` -- kill switch state changes
 
 ---
 
@@ -256,7 +256,7 @@ impl Drop for KillSwitch {
 ```
 
 Why not cleanup?
-1. Drop runs during panic — cleanup could panic again
+1. Drop runs during panic. Cleanup could panic again.
 2. User may WANT rules to persist (headless server crash = keep blocking)
 3. Cleanup requires sudo which may prompt
 

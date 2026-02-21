@@ -1,6 +1,6 @@
 # Testing Strategy
 
-This document describes Shroud's testing approach and how to run tests locally.
+How we test Shroud, and how you can run them locally.
 
 ## Test Categories
 
@@ -126,8 +126,7 @@ shroud killswitch disable
 
 ## Why No E2E Tests?
 
-Previously, Shroud had end-to-end tests that spawned the actual binary. These were
-removed because:
+We used to have end-to-end tests that spawned the actual binary. We removed them because:
 
 1. **CI Reliability** - Process lifecycle is fragile across CI environments
 2. **No Coverage Value** - Subprocess instrumentation doesn't work with tarpaulin

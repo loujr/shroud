@@ -2,7 +2,7 @@
 
 You want to help. That's appreciated.
 
-Before you write any code, read the [Principles](docs/PRINCIPLES.md). Every contribution should align with them. If your idea contradicts a principle, let's talk about it first — either the idea needs adjusting, or maybe the principle does.
+Before you write any code, read the [Principles](docs/PRINCIPLES.md). Every contribution should align with them. If your idea contradicts a principle, let's talk about it first. Either the idea needs adjusting, or maybe the principle does.
 
 ---
 
@@ -107,11 +107,11 @@ These run in CI. Save yourself the round trip.
 
 ### Great Contributions
 
-- **Bug fixes** — Especially with tests
-- **Documentation** — Typos, clarity, examples
-- **Performance** — With benchmarks showing the improvement
-- **Cross-distro fixes** — Arch, Debian, Fedora, openSUSE
-- **Security hardening** — Always welcome
+- **Bug fixes** -- especially with tests
+- **Documentation** -- typos, clarity, examples
+- **Performance** -- with benchmarks showing the improvement
+- **Cross-distro fixes** -- Arch, Debian, Fedora, openSUSE
+- **Security hardening** -- always welcome
 
 ### Discuss First
 
@@ -180,12 +180,12 @@ Fixes #123
 ```
 
 **Types:**
-- `fix` — Bug fixes
-- `feat` — New features
-- `docs` — Documentation only
-- `refactor` — Code restructuring
-- `test` — Adding tests
-- `chore` — Build/CI/tooling
+- `fix` -- bug fixes
+- `feat` -- new features
+- `docs` -- documentation only
+- `refactor` -- code restructuring
+- `test` -- adding tests
+- `chore` -- build/CI/tooling
 
 ---
 

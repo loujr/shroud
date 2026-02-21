@@ -34,9 +34,9 @@ That's what Shroud does:
 | Hardens against attack | Hardens against failures and stale state |
 
 The name works on three levels:
-1. **Concealment** — A VPN shrouds your traffic
-2. **Hardware** — Protective armor around the lock
-3. **Architecture** — We wrap existing tools, we don't replace them
+1. **Concealment** -- a VPN shrouds your traffic
+2. **Hardware** -- protective armor around the lock
+3. **Architecture** -- we wrap existing tools, we don't replace them
 
 ---
 
@@ -46,7 +46,7 @@ Most VPN tools want to own your system. They install kernel modules, replace you
 
 Shroud doesn't do any of that.
 
-**We wrap, we don't replace.** NetworkManager already knows how to connect to VPNs. OpenVPN and WireGuard already work. We're not here to reinvent the wheel — we're here to put armor around it.
+**We wrap, we don't replace.** NetworkManager already knows how to connect to VPNs. OpenVPN and WireGuard already work. We're not here to reinvent the wheel. We're here to put armor around it.
 
 **We fail loud, recover quiet.** When something breaks, you'll know. When it heals, you won't need to lift a finger.
 
@@ -90,13 +90,13 @@ Read the full [Principles](docs/PRINCIPLES.md) if you want to understand what we
 ---
 
 ## Why Shroud is Fast
-- One lean Rust binary — no Electron, no heavyweight GUI stack.
-- No provider handshake — we talk straight to NetworkManager with your OpenVPN/WireGuard profiles.
-- Minimal background daemons — a single supervisor, no telemetry or auto-updaters.
-- Tight event loop — async Tokio + formal state machine keep connect/disconnect on the hot path.
-- In-process kill switch — iptables/nft rules applied/cleaned without extra helpers.
+- One lean Rust binary. No Electron, no heavyweight GUI stack.
+- No provider handshake. We talk straight to NetworkManager with your OpenVPN/WireGuard profiles.
+- Minimal background daemons. A single supervisor, no telemetry or auto-updaters.
+- Tight event loop. Async Tokio + formal state machine keep connect/disconnect on the hot path.
+- In-process kill switch. iptables/nft rules applied/cleaned without extra helpers.
 
-Boot-to-VPN in ~2–4s after network is ready (with `auto_connect = true` + headless/systemd autostart).
+Boot-to-VPN in ~2-4s after network is ready (with `auto_connect = true` + headless/systemd autostart).
 
 ---
 
@@ -296,7 +296,7 @@ That's really it.
 
 ## License
 
-Copyright (C) 2026 **Louis Nelson Jr.** — A [lousclues](https://lousclues.com) project.
+Copyright (C) 2026 **Louis Nelson Jr.** -- a [lousclues](https://lousclues.com) project.
 
 Shroud is dual-licensed:
 
@@ -306,7 +306,7 @@ Shroud is dual-licensed:
 | Documentation | Creative Commons Attribution 4.0 (CC BY 4.0) | [LICENSE-DOCS.md](licenses/LICENSE-DOCS.md) |
 | Third-Party Dependencies | MIT, Apache-2.0, and other permissive licenses | [THIRD-PARTY-LICENSES](licenses/THIRD-PARTY-LICENSES) |
 
-**For most users:** The GPL covers you fully. Use Shroud, connect your VPNs, run the daemon — no restrictions beyond the GPL.
+**For most users:** The GPL covers you fully. Use Shroud, connect your VPNs, run the daemon. No restrictions beyond the GPL.
 
 **For proprietary/commercial use:** If you need to embed Shroud in closed-source products or redistribute without GPL obligations, a [commercial license](licenses/LICENSE-COMMERCIAL.md) is available.
 

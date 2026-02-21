@@ -1,6 +1,6 @@
 # Configuration
 
-Shroud stores its config in `~/.config/shroud/config.toml`. It's just TOML. You can edit it with any text editor.
+Shroud stores its config in `~/.config/shroud/config.toml`. Plain TOML. Edit it with any text editor.
 
 ---
 
@@ -146,7 +146,7 @@ How DNS requests are handled:
 |------|---------|
 | boolean | `true` |
 
-Block DNS-over-HTTPS to known providers (Cloudflare, Google, etc). Browsers love to bypass your DNS settings — this stops them.
+Block DNS-over-HTTPS to known providers (Cloudflare, Google, etc). Browsers love to bypass your DNS settings. This stops them.
 
 ### `custom_doh_blocklist`
 

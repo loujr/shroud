@@ -1,6 +1,6 @@
 # Shroud Test Suite
 
-This directory contains all tests for Shroud, organized by type and purpose.
+Every test, organized by type and purpose.
 
 ## Test Categories
 

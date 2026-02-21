@@ -206,8 +206,8 @@ shroud import ~/configs/ --dry-run
 ```
 
 We support:
-- **WireGuard** — `.conf` files with `[Interface]` and `[Peer]` sections
-- **OpenVPN** — `.ovpn` files
+- **WireGuard** -- `.conf` files with `[Interface]` and `[Peer]` sections
+- **OpenVPN** -- `.ovpn` files
 
 Or use nmcli directly:
 ```bash

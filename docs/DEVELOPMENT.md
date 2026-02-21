@@ -1,6 +1,6 @@
 # Development Setup
 
-So you want to hack on Shroud. Excellent.
+You want to hack on Shroud. Good.
 
 This guide gets you from zero to a working development environment. No fluff.
 
@@ -9,10 +9,10 @@ This guide gets you from zero to a working development environment. No fluff.
 ## Prerequisites
 
 You need:
-- **Rust 1.75+** — Some newer features are used
-- **NetworkManager** — With OpenVPN and/or WireGuard plugins
-- **iptables or nftables** — For kill switch testing
-- **A Linux system** — WSL might work, but it's not tested
+- **Rust 1.75+** -- we use some newer features
+- **NetworkManager** -- with OpenVPN and/or WireGuard plugins
+- **iptables or nftables** -- for kill switch testing
+- **A Linux system** -- WSL might work, but it's not tested
 
 ### Arch Linux
 

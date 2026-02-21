@@ -24,11 +24,11 @@ If advisories aren't available, contact the maintainers directly through GitHub.
 
 The more detail, the faster the fix:
 
-- **Description** — What's the vulnerability?
-- **Impact** — What can an attacker do?
-- **Reproduction** — Step-by-step instructions
-- **Affected versions** — Which versions are vulnerable?
-- **Proof of concept** — Code or commands that demonstrate it (if safe to share)
+- **Description** -- what's the vulnerability?
+- **Impact** -- what can an attacker do?
+- **Reproduction** -- step-by-step instructions
+- **Affected versions** -- which versions are vulnerable?
+- **Proof of concept** -- code or commands that demonstrate it (if safe to share)
 
 ---
 
@@ -146,11 +146,11 @@ The IPC socket (`$XDG_RUNTIME_DIR/shroud.sock`) accepts commands from any proces
 
 - Send IPC commands to disconnect the VPN or disable the kill switch
 - Read the debug log for VPN connection history
-- Modify the config file (though security-critical downgrades via config reload are refused — explicit IPC commands are required)
+- Modify the config file (though security-critical downgrades via config reload are refused. Explicit IPC commands are required)
 
 ### Why this is acceptable
 
-Shroud runs as the user it protects. The alternative — running as a system service with a separate UID — would require polkit integration, a client-server architecture, and significant complexity. This contradicts Principles V (Complexity Is Debt) and VIII (One Binary, One Purpose).
+Shroud runs as the user it protects. The alternative, running as a system service with a separate UID, would require polkit integration, a client-server architecture, and significant complexity. This contradicts Principles V (Complexity Is Debt) and VIII (One Binary, One Purpose).
 
 If an attacker has a shell as your user, they can already:
 - Read your SSH keys, browser cookies, and GPG keys
@@ -163,11 +163,11 @@ Shroud's job is to be the armor around your VPN. Protecting against local malwar
 
 - IPC commands are logged with the peer PID and source identification
 - Security-critical config changes via file reload are refused (kill switch, auto-reconnect, DNS/IPv6 mode, DoH blocking)
-- Disconnect does not persist kill switch disable to config — protection restores on next VPN connect
+- Disconnect does not persist kill switch disable to config. Protection restores on next VPN connect
 - Config values are validated: health intervals bounded, endpoints HTTPS-only, reconnect attempts capped
 - The socket is created with 0600 permissions and symlink protection (no TOCTOU)
 - Health checks disable redirect following and enforce connect timeouts
-- Health check suspension returns `Suspended` (not `Healthy`) — no false assurance during wake
+- Health check suspension returns `Suspended` (not `Healthy`). No false assurance during wake
 - All firewall commands use `Command::new().args()` (no shell expansion)
 - VPN names are validated against shell metacharacters and ANSI escapes
 - Sudoers rules are scoped to SHROUD_* chains (no bare `iptables -F` or `nft -f /path`)
@@ -191,7 +191,7 @@ Shroud's CLI communicates with the daemon over a Unix domain socket using JSON m
 
 Adding TLS or any encryption layer to the IPC would add complexity with zero security benefit. Here's why:
 
-1. **Unix domain sockets are local-only.** The kernel enforces this — they cannot be connected to from another machine. There is no network path to intercept.
+1. **Unix domain sockets are local-only.** The kernel enforces this. They cannot be connected to from another machine. There is no network path to intercept.
 
 2. **The socket has `0600` permissions.** Only the owning user can read or write to it. The socket is created with a restrictive umask before `bind()`, so there is no window where other users can access it.
 
@@ -199,11 +199,11 @@ Adding TLS or any encryption layer to the IPC would add complexity with zero sec
 
 4. **Any process that can access the socket already has full user privileges.** It can read your SSH keys, modify your shell config, and do anything you can do. Encrypting IPC against an attacker who is already you is security theater.
 
-5. **Complexity is debt (Principle V).** TLS would require certificate management, key storage, and a trust model — all for protecting a socket that only you can access.
+5. **Complexity is debt (Principle V).** TLS would require certificate management, key storage, and a trust model. All for protecting a socket that only you can access.
 
 ### Socket Path Selection
 
-The socket is placed at `$XDG_RUNTIME_DIR/shroud.sock` when available. If `XDG_RUNTIME_DIR` is not set (rare on modern systems), Shroud falls back to `~/.local/share/shroud/shroud.sock` — a user-owned directory.
+The socket is placed at `$XDG_RUNTIME_DIR/shroud.sock` when available. If `XDG_RUNTIME_DIR` is not set (rare on modern systems), Shroud falls back to `~/.local/share/shroud/shroud.sock`, a user-owned directory.
 
 Shroud **does not** use `/tmp` for the socket. The `/tmp` directory has the sticky bit set, which means other users can create files there that the owning user cannot remove. A local attacker could pre-create a socket at the expected path to prevent the daemon from starting (denial of service). Using `XDG_RUNTIME_DIR` or a user-owned directory eliminates this attack vector.
 
@@ -211,7 +211,7 @@ Shroud **does not** use `/tmp` for the socket. The `/tmp` directory has the stic
 
 Before removing a stale socket file on startup, Shroud checks whether the path is a symlink using `symlink_metadata()`. If the socket path is a symlink, the server refuses to proceed and logs a warning. This prevents a class of TOCTOU (time-of-check-time-of-use) attacks where an attacker replaces the socket file with a symlink to another file.
 
-> **Note:** A small TOCTOU window exists between the symlink check and the `remove_file()` call. This is acceptable because `XDG_RUNTIME_DIR` is mode `0700` — only the owning user can create files there, so there is no attacker who could exploit the window.
+> **Note:** A small TOCTOU window exists between the symlink check and the `remove_file()` call. This is acceptable because `XDG_RUNTIME_DIR` is mode `0700`. Only the owning user can create files there, so there is no attacker who could exploit the window.
 
 ### Peer Identification
 
@@ -241,16 +241,16 @@ The IPC protocol includes a version handshake. The first message from a client m
 
 ### Trust Boundary
 
-Shroud's IPC trust boundary is the Unix user. Any process running as the same user is considered trusted. This matches the POSIX security model — if an attacker has code execution as your user, IPC encryption would not save you. They could attach a debugger to the daemon, read its memory, or replace the binary entirely.
+Shroud's IPC trust boundary is the Unix user. Any process running as the same user is considered trusted. This matches the POSIX security model. If an attacker has code execution as your user, IPC encryption would not save you. They could attach a debugger to the daemon, read its memory, or replace the binary entirely.
 
 What Shroud *does* protect against:
 
-- **Other users on the same system** — socket permissions prevent cross-user access
-- **Remote attackers** — Unix domain sockets have no network exposure
-- **Accidental interference** — protocol validation rejects malformed input
-- **Resource exhaustion** — connection and message limits prevent DoS
+- **Other users on the same system** -- socket permissions prevent cross-user access
+- **Remote attackers** -- Unix domain sockets have no network exposure
+- **Accidental interference** -- protocol validation rejects malformed input
+- **Resource exhaustion** -- connection and message limits prevent DoS
 
 What Shroud *does not* attempt to protect against:
 
-- **Same-user malware** — this is the job of endpoint protection, not a VPN manager
-- **Root-level attackers** — root can do anything, including reading the socket
+- **Same-user malware** -- this is the job of endpoint protection, not a VPN manager
+- **Root-level attackers** -- root can do anything, including reading the socket

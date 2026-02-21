@@ -1,6 +1,6 @@
 # Releasing
 
-How Shroud ships new versions.
+How we ship new versions.
 
 ---
 
