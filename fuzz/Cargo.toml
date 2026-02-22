@@ -58,3 +58,8 @@ doc = false
 name = "fuzz_state_machine_differential"
 path = "fuzz_targets/fuzz_state_machine_differential.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_state_machine_smoke"
+path = "fuzz_targets/fuzz_state_machine_smoke.rs"
+doc = false

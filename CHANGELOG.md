@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.18.1] - 2026-02-21
+
+### Added
+- **fuzz: smoke test target** — `fuzz_state_machine_smoke` runs identical chaos cannon logic as `fuzz_state_machine` but designed for 60-second CI runs. Uses the same shared infrastructure (`state_machine_common.rs`), same 32-slot event generator, same 13 invariants. Proves the fuzz binary compiles, the event generator covers all 14 variants plus chaos strings, and no shallow bugs exist. Not included in the MOAB workflow -- this runs on every push to `main` and every pull request.
+- **ci: fuzz smoke test workflow** — `.github/workflows/fuzz-smoke.yml`. Runs on push to `main` and pull requests when `src/**`, `fuzz/**`, `Cargo.toml`, or `Cargo.lock` change. 15-minute timeout. Builds the smoke target with `cargo +nightly fuzz build`, runs for 60 seconds with `-max_total_time=60`, uploads corpus as artifact with 7-day retention.
+
+### Fixed
+- **ci: MOAB shard timeout** — shards were killed by GitHub Actions' hard 6-hour job limit before libfuzzer could exit cleanly. Setup (apt-get, toolchain, cargo-fuzz, build, seed corpus) consumed ~10-15 minutes, leaving no margin. The report job saw `cancelled` instead of `success`. Three fixes: default hours per shard reduced from 6 to 5, `timeout-minutes` reduced from 400 to 330, `max_total_time` cap reduced from 21600 to 18000 seconds. Leaves ~60 minutes for setup and artifact upload before the hard limit.
+- **ci: missing `libdbus-1-dev` in MOAB workflow** — fuzz build jobs failed because `libdbus-sys` requires `libdbus-1-dev` and `pkg-config` on Ubuntu. Added `apt-get install -y libdbus-1-dev pkg-config` to both the build and fuzz jobs, matching the existing CI workflow.
+
+---
+
 ## [1.18.0] - 2026-02-21
 
 ### Added

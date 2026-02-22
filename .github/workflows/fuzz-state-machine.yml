@@ -8,9 +8,9 @@ on:
         required: false
         default: "all"
       hours_per_shard:
-        description: "Hours per shard (max 6 for GitHub Actions)"
+        description: "Hours per shard (max 5 for GitHub Actions)"
         required: false
-        default: "6"
+        default: "5"
 
 env:
   ALL_TARGETS: "fuzz_state_machine,fuzz_state_machine_determinism,fuzz_state_machine_lifecycle,fuzz_state_machine_config,fuzz_state_machine_differential"
@@ -59,7 +59,7 @@ jobs:
     name: "${{ matrix.target }} [${{ matrix.shard }}/8]"
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 400
+    timeout-minutes: 330
     strategy:
       fail-fast: false
       matrix:
@@ -129,12 +129,13 @@ jobs:
       - name: Run fuzzer
         if: steps.check.outputs.run == 'true'
         run: |
-          HOURS=${{ github.event.inputs.hours_per_shard || '6' }}
+          HOURS=${{ github.event.inputs.hours_per_shard || '5' }}
           SECONDS=$((HOURS * 3600))
 
-          # Cap at 6 hours for GitHub Actions limits
-          if [ "$SECONDS" -gt 21600 ]; then
-            SECONDS=21600
+          # Cap at 5 hours — leaves ~60 min for setup/build/upload
+          # before GitHub's hard 6-hour job limit kills the runner
+          if [ "$SECONDS" -gt 18000 ]; then
+            SECONDS=18000
           fi
 
           echo "=== ${{ matrix.target }} shard ${{ matrix.shard }}/8 ==="

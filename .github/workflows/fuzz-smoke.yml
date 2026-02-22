@@ -1,0 +1,54 @@
+name: "Fuzz: Smoke Test"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'fuzz/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'fuzz/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+jobs:
+  fuzz-smoke:
+    name: "Fuzz smoke test (60s)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Build smoke target
+        run: cargo +nightly fuzz build fuzz_state_machine_smoke
+
+      - name: Run smoke test (60 seconds)
+        run: |
+          cargo +nightly fuzz run fuzz_state_machine_smoke \
+            -- \
+            -max_total_time=60 \
+            -print_final_stats=1 \
+            -max_len=65536
+
+      - name: Upload corpus
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-corpus
+          path: fuzz/corpus/fuzz_state_machine_smoke/
+          retention-days: 7
