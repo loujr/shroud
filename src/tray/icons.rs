@@ -55,8 +55,8 @@ fn generate_icon_data(icon_type: IconType) -> Vec<ksni::Icon> {
 
             // For connected state, draw a standalone lock icon (no circle background)
             if icon_type == IconType::Connected {
-                let green = [255u8, 46, 160, 67]; // Solid green
-                let green_border = [180u8, 30, 120, 50]; // Semi-transparent darker green
+                let green = [255u8, 63, 168, 140]; // Brand teal (#3FA88C)
+                let green_border = [180u8, 42, 112, 94]; // Semi-transparent darker teal
                 let transparent = [0u8, 0, 0, 0];
 
                 let center = size / 2;

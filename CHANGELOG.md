@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.18.2] - 2026-02-28
+
+### Changed
+- **tray: brand teal for connected icon** — replaced the green lock icon color with Shroud's brand teal (`#3FA88C` / `rgb(63, 168, 140)`) from the website design token `--shroud-connected`. Border darkened proportionally to `rgb(42, 112, 94)`. Aligns the system tray with vpnshroud.org brand identity.
+
+---
+
 ## [1.18.1] - 2026-02-21
 
 ### Added
