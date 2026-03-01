@@ -2,13 +2,11 @@
 
 [![CI](https://github.com/loujr/shroud/actions/workflows/ci.yml/badge.svg)](https://github.com/loujr/shroud/actions/workflows/ci.yml)
 [![Security Audit](https://github.com/loujr/shroud/actions/workflows/scheduled.yml/badge.svg)](https://github.com/loujr/shroud/actions/workflows/scheduled.yml)
-[![Version](https://img.shields.io/badge/version-1.18.1-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue)](CHANGELOG.md)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 **A provider-agnostic VPN connection manager for Linux.**
-
-v2.0 is here. I've been running v1 as my only VPN manager on my daily driver. Every bug I hit, I fixed. Every annoyance, I smoothed out. v1 was built for me. v2 is built for you.
 
 A **lock shroud** is the protective metal casing around a padlock's shackle. It doesn't replace the lock. It protects the lock from attack.
 
