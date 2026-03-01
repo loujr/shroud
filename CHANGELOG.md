@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.0] - 2026-03-01
+
+### Changed
+- **release: v2.0 public launch** — first public release. Transferred repository from staging organization to `loujr/shroud`. Version bumped from 1.18.2 to 2.0.0 to mark the public release milestone. Crate renamed from `shroud` to `vpn-shroud` on crates.io (`shroud` was taken). Binary name remains `shroud` — install with `cargo install vpn-shroud`, run with `shroud`. No code changes from 1.18.2.
+
+---
+
 ## [1.18.2] - 2026-02-28
 
 ### Changed
