@@ -11,7 +11,7 @@ homepage = "https://vpnshroud.org"
 documentation = "https://vpnshroud.org/docs"
 keywords = ["vpn", "openvpn", "networkmanager", "linux", "tray"]
 categories = ["command-line-utilities", "network-programming"]
-rust-version = "1.85"
+rust-version = "1.87"
 
 [lib]
 name = "shroud"
