@@ -160,7 +160,7 @@ async fn run_daemon_mode(args: cli::Args) {
     })
     .expect("Error setting Ctrl-C handler");
 
-    info!("Starting VPNShroud VPN Manager");
+    info!("Starting VPNShroud");
     let (dbus_tx, dbus_rx) = mpsc::channel(64); // NM events (larger buffer for VPN flapping)
     let (ipc_tx, ipc_rx) = mpsc::channel(32); // IPC commands
 

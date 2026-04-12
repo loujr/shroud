@@ -72,7 +72,7 @@ impl Autostart {
             r#"[Desktop Entry]
 Type=Application
 Version=1.0
-Name=VPNShroud VPN Manager
+Name=VPNShroud Manager
 GenericName=VPN Manager
 Comment=VPN connection manager with kill switch protection
 Exec={}

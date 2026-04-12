@@ -1,5 +1,5 @@
 post_install() {
-    echo ":: VPNShroud VPN Manager installed successfully"
+    echo ":: VPNShroud Manager installed successfully"
     echo "::"
     echo ":: Quick start (desktop mode):"
     echo "::   shroud                        Start daemon with system tray"
