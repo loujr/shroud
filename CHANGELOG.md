@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.4] - 2026-04-11
+
+### Security
+- **deps: fix RUSTSEC-2026-0097 (rand unsoundness)** — updated `rand` 0.9.2 → 0.9.3. No direct exploit path (rand used for reconnect jitter), but resolves `cargo audit` warning.
+
+### Fixed
+- **branding: remove redundant "VPN" from user-facing strings** — notifications, desktop entry, and install messages no longer say "VPNShroud VPN".
+
+---
+
 ## [2.0.3] - 2026-04-11
 
 ### Changed
