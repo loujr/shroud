@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-Commercial
 # Copyright (C) 2026 Louis Nelson Jr. <https://lousclues.com>
-# Unified test runner for VPNShroud
+# Unified test runner for VPN Shroud
 set -euo pipefail
 
 case "${1:-all}" in
@@ -41,7 +41,7 @@ case "${1:-all}" in
         cargo test --all-features -- --test-threads=4
         ;;
     *)
-        echo "VPNShroud Test Runner"
+        echo "VPN Shroud Test Runner"
         echo ""
         echo "Usage: $0 {unit|integration|security|regression|coverage|all|ci}"
         echo ""

@@ -1,8 +1,8 @@
-# VPNShroud Documentation
+# VPN Shroud Documentation
 
 Welcome. You're in the right place.
 
-This is the full documentation for VPNShroud. Everything you need to use it, understand it, and (if you're brave) contribute to it.
+This is the full documentation for VPN Shroud. Everything you need to use it, understand it, and (if you're brave) contribute to it.
 
 ---
 
@@ -12,7 +12,7 @@ New here? Start with these:
 
 | Doc | What You'll Learn |
 |-----|-------------------|
-| [Installation](INSTALL.md) | How to get VPNShroud running |
+| [Installation](INSTALL.md) | How to get VPN Shroud running |
 | [CLI Reference](CLI.md) | Every command at your fingertips |
 | [Configuration](CONFIGURATION.md) | The config file, explained |
 
@@ -20,7 +20,7 @@ New here? Start with these:
 
 ## Features
 
-The things that make VPNShroud useful:
+The things that make VPN Shroud useful:
 
 | Doc | What It Covers |
 |-----|----------------|
@@ -37,13 +37,13 @@ The things that make VPNShroud useful:
 
 ---
 
-## Understanding VPNShroud
+## Understanding VPN Shroud
 
 The why and how:
 
 | Doc | What's Inside |
 |-----|---------------|
-| [Principles](PRINCIPLES.md) | Why VPNShroud is built the way it is |
+| [Principles](PRINCIPLES.md) | Why VPN Shroud is built the way it is |
 | [Architecture](ARCHITECTURE.md) | How the pieces fit together |
 | [Resilience](RESILIENCE.md) | Failure modes and recovery |
 | [Security](SECURITY.md) | Security policy and reporting |

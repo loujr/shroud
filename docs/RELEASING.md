@@ -128,7 +128,7 @@ Don't let users sit on a broken release.
 
 ## Version Numbering
 
-VPNShroud follows [Semantic Versioning](https://semver.org/):
+VPN Shroud follows [Semantic Versioning](https://semver.org/):
 
 | Change | Example | Bump |
 |--------|---------|------|
@@ -136,7 +136,7 @@ VPNShroud follows [Semantic Versioning](https://semver.org/):
 | New feature | New command added | Minor (1.8.x → 1.9.0) |
 | Bug fix | Crash fixed | Patch (1.8.7 → 1.8.8) |
 
-For VPNShroud specifically:
+For VPN Shroud specifically:
 
 - **Major**: Breaking config changes, removed commands
 - **Minor**: New features, new config options

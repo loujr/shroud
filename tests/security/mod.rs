@@ -3,7 +3,7 @@
 
 //! Security Test Suite
 //!
-//! These tests verify the security properties of VPNShroud:
+//! These tests verify the security properties of VPN Shroud:
 //! - Signal handling during critical operations
 //! - Privilege escalation prevention
 //! - Resource exhaustion handling

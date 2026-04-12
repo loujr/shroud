@@ -72,7 +72,7 @@ impl Autostart {
             r#"[Desktop Entry]
 Type=Application
 Version=1.0
-Name=VPNShroud Manager
+Name=VPN Shroud Manager
 GenericName=VPN Manager
 Comment=VPN connection manager with kill switch protection
 Exec={}
@@ -250,7 +250,7 @@ mod tests {
 
         assert!(content.contains("[Desktop Entry]"));
         assert!(content.contains("Type=Application"));
-        assert!(content.contains("Name=VPNShroud"));
+        assert!(content.contains("Name=VPN Shroud"));
         assert!(content.contains("Exec="));
         assert!(content.contains("Terminal=false"));
 
