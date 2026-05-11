@@ -6,6 +6,7 @@
 //! Provides the core state machine implementation and types for the VPN manager.
 
 pub mod machine;
+mod transitions;
 pub mod types;
 
 pub use machine::{StateMachine, StateMachineConfig};
