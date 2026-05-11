@@ -114,7 +114,15 @@ src/
 ├── killswitch/          # Firewall rules
 │   ├── boot.rs          # Boot-time kill switch
 │   ├── cleanup.rs       # Rule cleanup
-│   ├── firewall.rs      # iptables/nftables rules
+│   ├── firewall/        # iptables/nftables coordinator (split per-backend)
+│   │   ├── mod.rs       # Public API: KillSwitch, KillSwitchStatus
+│   │   ├── error.rs     # KillSwitchError
+│   │   ├── builder.rs   # Rule builder
+│   │   ├── chains.rs    # Chain naming/lifecycle
+│   │   ├── iptables.rs  # iptables backend
+│   │   ├── ip6tables.rs # ip6tables backend
+│   │   └── nftables.rs  # nftables backend
+│   ├── rules.rs         # Canonical DoH provider list
 │   ├── paths.rs         # Binary detection
 │   └── sudo_check.rs    # Privilege verification
 │
@@ -123,12 +131,18 @@ src/
 │   └── connections.rs   # Connection handling
 │
 ├── state/               # State machine
-│   ├── machine.rs       # Transitions
+│   ├── machine.rs       # StateMachine, handle_event dispatcher
+│   ├── transitions.rs   # Per-source-state transition helpers
 │   └── types.rs         # VpnState, Event enums
 │
 ├── supervisor/          # Core event loop
 │   ├── event_loop.rs    # Main loop
-│   ├── handlers.rs      # Command handlers
+│   ├── handlers/        # Event/command handlers (split by family)
+│   │   ├── mod.rs       # handle_dbus_event / handle_ipc_command dispatchers
+│   │   ├── nm.rs        # NetworkManager event handlers
+│   │   ├── health.rs    # Health-check event handlers
+│   │   ├── user.rs      # User-initiated IPC command handlers
+│   │   └── system.rs    # System (suspend/resume, reload) handlers
 │   ├── reconnect.rs     # Reconnection logic
 │   └── state_sync.rs    # State synchronization
 │

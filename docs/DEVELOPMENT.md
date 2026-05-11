@@ -241,8 +241,12 @@ src/
 |------|--------------|
 | `src/main.rs` | Entry point, mode detection |
 | `src/supervisor/event_loop.rs` | The main event loop |
-| `src/state/machine.rs` | State transitions |
-| `src/killswitch/firewall.rs` | iptables rule generation |
+| `src/supervisor/handlers/mod.rs` | D-Bus event and IPC command dispatchers |
+| `src/state/machine.rs` | State machine, `handle_event` dispatcher |
+| `src/state/transitions.rs` | Per-source-state transition helpers |
+| `src/killswitch/firewall/mod.rs` | Kill-switch coordinator (public API) |
+| `src/killswitch/firewall/iptables.rs` | iptables rule generation |
+| `src/killswitch/firewall/nftables.rs` | nftables rule generation |
 | `src/nm/client.rs` | nmcli wrapper |
 | `src/ipc/protocol.rs` | Command/response types |
 
@@ -308,7 +312,7 @@ sudo iptables -L SHROUD_KILLSWITCH -n -v
 
 4. Add help text in `src/cli/help.rs`
 
-5. Handle the command in `src/supervisor/handlers.rs`
+5. Handle the command in the appropriate file under `src/supervisor/handlers/` (user-initiated commands go in `user.rs`)
 
 ---
 
