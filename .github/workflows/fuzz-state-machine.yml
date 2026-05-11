@@ -35,7 +35,8 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        # See fuzz-smoke.yml for why --locked is omitted.
+        run: cargo install cargo-fuzz
 
       - name: Build all fuzz targets
         run: |
@@ -83,7 +84,8 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        # See fuzz-smoke.yml for why --locked is omitted.
+        run: cargo install cargo-fuzz
 
       - name: Check if target is selected
         id: check

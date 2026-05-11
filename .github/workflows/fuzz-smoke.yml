@@ -32,7 +32,11 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        # Note: --locked omitted intentionally. cargo-fuzz's bundled Cargo.lock
+        # pins an old rustix that uses `rustc_*` attributes now rejected by
+        # current nightly rustc. Letting cargo resolve transitive deps fresh
+        # picks a rustix that compiles.
+        run: cargo install cargo-fuzz
 
       - name: Build smoke target
         run: cargo +nightly fuzz build fuzz_state_machine_smoke
