@@ -97,7 +97,7 @@ fn regression_connection_failed_from_reconnecting() {
 fn regression_killswitch_state_managed() {
     // This test verifies the KillSwitch API contract exists via include_str!.
     // The real struct can't be instantiated here without pulling in iptables/config.
-    let firewall_content = include_str!("../src/killswitch/firewall.rs");
+    let firewall_content = include_str!("../src/killswitch/firewall/mod.rs");
 
     // Verify the struct tracks state
     assert!(
@@ -398,7 +398,7 @@ fn regression_signal_handlers() {
 // TODO: Replace with behavioral test when KillSwitchError is exposed via lib.rs.
 #[test]
 fn regression_killswitch_error_types() {
-    let content = include_str!("../src/killswitch/firewall.rs");
+    let content = include_str!("../src/killswitch/firewall/error.rs");
     assert!(
         content.contains("pub enum KillSwitchError"),
         "KillSwitchError type must be a public enum"
