@@ -12,6 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.6] - 2026-05-10
+
+### Security
+- **deps: fix RUSTSEC-2026-0104 (rustls-webpki CRL parsing panic)** — reachable panic in certificate revocation list parsing. Updated `rustls-webpki` 0.103.11 → 0.103.13 via `cargo update`. Dependency chain: `ureq` → `rustls` → `rustls-webpki`. Affects health-check HTTPS requests to VPN exit-IP validation endpoints. No direct exploit path in Shroud (we do not configure custom CRLs), but the vulnerable dependency fails `cargo audit`.
+- **deps: fix RUSTSEC-2026-0098 (rustls-webpki URI name-constraint bypass)** — name constraints for URI names were incorrectly accepted. Same upgrade path as above; fixed in 0.103.12.
+- **deps: fix RUSTSEC-2026-0099 (rustls-webpki wildcard name-constraint bypass)** — name constraints were accepted for certificates asserting a wildcard name. Same upgrade path as above; fixed in 0.103.12.
+
+### Changed
+- **refactor(killswitch): split `firewall.rs` into per-backend submodules** — decomposed the ~86 KB coordinator into `firewall/{mod, error, iptables, ip6tables, nftables, chains, builder}.rs` to make security-critical code easier to audit. Public API (`crate::killswitch::firewall::{KillSwitch, KillSwitchError, KillSwitchStatus}`) and every `SHROUD-VULN-*` comment preserved. Zero behaviour change.
+- **refactor(supervisor): split `handlers.rs` by event family** — decomposed the 1618-line file into `handlers/{mod, nm, health, user, system}.rs`. `mod.rs` now contains only the `handle_dbus_event` and `handle_ipc_command` dispatchers; method bodies live in dedicated submodules. Two private helpers (`reload_configuration`, `resolve_restart_path`) were promoted to `pub(super)` so the dispatcher can still reach them — call sites unchanged. Zero behaviour change.
+- **refactor(state): extract per-source-state transitions into `transitions.rs`** — the ~200-line transition match in `StateMachine::handle_event` was replaced by a thin call to `compute_transition`, which dispatches to one `from_*` helper per source state (`from_disconnected`, `from_connecting`, `from_connected`, `from_degraded`, `from_reconnecting`, `from_failed`) plus the global `UserDisable`/`Wake` fall-through. `retries` field promoted from private to `pub(super)` (within-module visibility change only). Public API and behaviour unchanged; the `debug_assert!` retry-counter invariant is preserved.
+
+---
+
 ## [2.0.5] - 2026-04-13
 
 ### Changed
