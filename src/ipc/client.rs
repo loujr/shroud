@@ -145,14 +145,13 @@ pub async fn send_command_on_stream(
     if !response_line.trim().is_empty() {
         if let Ok(resp) = serde_json::from_str::<IpcResponse>(response_line.trim()) {
             match resp {
-                IpcResponse::HelloOk { version } => {
-                    if version != PROTOCOL_VERSION {
-                        return Err(ClientError::VersionMismatch {
-                            server_version: version,
-                            client_version: PROTOCOL_VERSION,
-                        });
-                    }
+                IpcResponse::HelloOk { version } if version != PROTOCOL_VERSION => {
+                    return Err(ClientError::VersionMismatch {
+                        server_version: version,
+                        client_version: PROTOCOL_VERSION,
+                    });
                 }
+                IpcResponse::HelloOk { .. } => {}
                 IpcResponse::VersionMismatch {
                     server_version,
                     client_version,
